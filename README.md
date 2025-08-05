@@ -7,8 +7,8 @@ It analyzes log error messages using OpenAI's GPT and decides whether to create 
 
 ```mermaid
 graph TD
-    A[log input] --> B[analyze_log (GPT)]
-    B -->|create_ticket == true| C[create_ticket]
+    A[Log Input] --> B[Analyze Log - GPT]
+    B -->|create_ticket == true| C[Create Ticket]
     B -->|false| D[END]
     C --> D
 ```
