@@ -3,9 +3,11 @@ load_dotenv()
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from agent.datadog import get_logs
+from agent.jira import create_ticket as create_jira_ticket, check_jira_for_ticket
 
 llm = ChatOpenAI(
-    model="gpt-4-1106-preview",
+    model="gpt-3.5-turbo",
     temperature=0
 )
 
@@ -38,7 +40,22 @@ def analyze_log(state):
             "ticket_description": content
         }
 
+
+
 def create_ticket(state):
+    title = state.get("ticket_title")
+    description = state.get("ticket_description")
+
+    if check_jira_for_ticket(title):
+        return {
+            "message": f"⚠️ Ticket ya existente para: {title}"
+        }
+
+    create_jira_ticket(title, description)
     return {
-        "message": f"✅ Ticket creado:\n📌 Título: {state.get('ticket_title')}\n📝 Descripción: {state.get('ticket_description')}"
+        "message": f"✅ Ticket creado:\n📌 Título: {title}\n📝 Descripción: {description}"
     }
+
+def fetch_logs(_: dict) -> dict:
+    logs = get_logs()
+    return {"log": logs[0] if logs else ""}
