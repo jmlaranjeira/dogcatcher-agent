@@ -1,4 +1,5 @@
 from agent.graph import build_graph
+from dotenv import load_dotenv
 
 graph = build_graph()
 
