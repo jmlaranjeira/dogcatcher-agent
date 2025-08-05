@@ -38,7 +38,17 @@ pip install -r requirements.txt
 OPENAI_API_KEY=sk-...
 ```
 
-### 3. Run the agent
+### 3. Set your Python version (optional but recommended)
+
+Create a `.python-version` file with the following content:
+
+```
+3.11.9
+```
+
+This ensures consistency across environments and tools like Pyenv or IDE integrations.
+
+### 4. Run the agent
 
 ```bash
 python main.py
