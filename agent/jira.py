@@ -11,6 +11,8 @@ JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")
 JIRA_USER = os.getenv("JIRA_USER")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
+TICKET_FLAG = os.getenv("TICKET_FLAG", "")
+TICKET_LABEL = os.getenv("TICKET_LABEL", "")
 
 def escape_for_jql(text: str) -> str:
     """
@@ -67,19 +69,72 @@ def check_jira_for_ticket(summary: str, similarity_threshold: float = 0.9) -> bo
         return False
 
 def create_ticket(state: dict) -> dict:
-    """
-    Simulate the creation of a Jira ticket with the given state information.
-    """
-    title = state.get("ticket_title")
+    # print("🚀 Entering create_ticket")
+    import json
+    debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
+    # print("📥 State received in create_ticket:", json.dumps(debug_state, indent=2))
+
     description = state.get("ticket_description")
+    title = state.get("ticket_title")
 
     if title is None or description is None:
-        print("⚠️ Skipping ticket creation due to missing title or description.")
+        # print("⚠️ Skipping ticket creation due to missing title or description.")
         return state
 
-    print("\n🪄 Simulating JIRA Ticket Creation...")
-    print(f"📌 Title      : {title}")
-    print(f"📝 Description: {description}")
-    print("✅ Ticket created successfully (simulated)\n")
+    if not all([JIRA_DOMAIN, JIRA_USER, JIRA_API_TOKEN, JIRA_PROJECT_KEY]):
+        # print("❌ Missing Jira configuration in .env")
+        # print(f"ℹ️ Simulated ticket creation: {TICKET_FLAG} {title.replace('**', '')}")
+        return state
+
+    auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
+    auth_encoded = base64.b64encode(auth_string.encode()).decode()
+
+    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue"
+    headers = {
+        "Authorization": f"Basic {auth_encoded}",
+        "Content-Type": "application/json"
+    }
+
+    formatted_summary = f"{TICKET_FLAG} {title.replace('**', '')}"
+
+    payload = {
+        "fields": {
+            "project": {"key": JIRA_PROJECT_KEY},
+            "summary": formatted_summary,
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {
+                                "text": description,
+                                "type": "text"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "issuetype": {"name": "Bug"},
+            "labels": [TICKET_LABEL] if TICKET_LABEL else [],
+            "priority": {"name": "Low"},
+            "customfield_10767": [{"value": "Team Vega"}]
+        }
+    }
+
+    print(f"🚀 Creating ticket in project: {JIRA_PROJECT_KEY}")
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        issue_key = response.json().get("key", "UNKNOWN")
+        jira_url = f"https://{JIRA_DOMAIN}/browse/{issue_key}"
+        print(f"✅ Jira ticket created: {issue_key}")
+        print(f"🔗 {jira_url}")
+        state["jira_response_key"] = issue_key
+        state["jira_response_url"] = jira_url
+    except requests.RequestException:
+        print("❌ Failed to create Jira ticket.")
 
     return state

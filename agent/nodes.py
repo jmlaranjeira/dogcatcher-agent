@@ -1,6 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
+print("✅ Using Jira project:", os.getenv("JIRA_PROJECT_KEY"))
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from agent.datadog import get_logs
@@ -51,6 +54,11 @@ def analyze_log(state):
         desc = parsed.get("ticket_description")
         if not title or not desc:
             raise ValueError("Missing title or description")
+        import copy
+        serializable_state = copy.deepcopy({**state, **parsed})
+        if isinstance(serializable_state.get("seen_logs"), set):
+            serializable_state["seen_logs"] = list(serializable_state["seen_logs"])
+        print("📦 State after analyze_log:", json.dumps(serializable_state, indent=2))
         return {**state, **parsed}
     except (json.JSONDecodeError, ValueError):
         return {
@@ -62,10 +70,23 @@ def analyze_log(state):
         }
 
 def create_ticket(state):
+    import os
+    import copy
+    import json
+
+    # print("🚀 Entering create_ticket")
+    # Only allow one ticket per run
+    if state.get("ticket_created"):
+        # print("⚠️ Ticket already created in this session. Skipping.")
+        return {**state, "message": "⚠️ Only one ticket allowed per run."}
+    debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
+    # print("📥 State received in create_ticket:", json.dumps(debug_state, indent=2))
+
     title = state.get("ticket_title")
     description = state.get("ticket_description")
 
     if not title or not description:
+        # print("⚠️ Ticket title or description missing. Ticket not created.")
         return {
             **state,
             "message": "⚠️ Ticket title or description missing. Ticket not created."
@@ -84,16 +105,79 @@ def create_ticket(state):
     full_description = f"{description.strip()}\n{extra_info.strip()}"
 
     if check_jira_for_ticket(title):
+        msg = f"⚠️ Ticket already exists for: {title}"
+        # print(msg)
         return {
             **state,
-            "message": f"⚠️ Ticket already exists for: {title}"
+            "message": msg
         }
 
+    # Prepare payload for Jira ticket creation
+    TICKET_FLAG = os.getenv("TICKET_FLAG", "")
+    TICKET_LABEL = os.getenv("TICKET_LABEL", "")
+
+    # Remove "**" from title if present
+    clean_title = title.replace("**", "")
+
+    summary = f"{TICKET_FLAG} {clean_title}".strip()
+
+    # Atlassian Document Format (ADF) for description
+    description_adf = {
+        "version": 1,
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": full_description
+                    }
+                ]
+            }
+        ]
+    }
+
+    payload = {
+        "fields": {
+            "summary": summary,
+            "description": description_adf,
+            "labels": [TICKET_LABEL] if TICKET_LABEL else [],
+            "priority": {"name": "Low"},
+            "customfield_10767": {"value": "Team Vega"},
+        }
+    }
+
     state["ticket_description"] = full_description
-    create_jira_ticket(state)
+    state["ticket_title"] = summary
+    state["jira_payload"] = payload
+
+    if os.getenv("AUTO_CREATE_TICKET", "false").lower() == "true":
+        try:
+            print(f"🚀 Creating ticket in project: {os.getenv('JIRA_PROJECT_KEY')}")
+            create_jira_ticket(state)
+            issue_key = state.get("jira_response_key", None)
+            if not issue_key:
+                # fallback to response json if available
+                response = state.get("jira_response", None)
+                if response:
+                    issue_key = response.json().get("key", "UNKNOWN")
+            jira_url = f"https://{os.getenv('JIRA_DOMAIN')}/browse/{issue_key}"
+            print(f"✅ Jira ticket created: {issue_key}")
+            print(f"🔗 {jira_url}")
+        except Exception:
+            print("❌ Failed to create Jira ticket.")
+    else:
+        print("\n🧪 Simulated Ticket Creation (AUTO_CREATE_TICKET is false)...")
+        print(f"📌 Title      : {summary}")
+        print(f"📝 Description: {full_description}")
+        print(f"📦 Payload    : {json.dumps(payload, indent=2)}")
+        print("✅ Ticket creation skipped (simulation mode enabled)\n")
+
+    state["ticket_created"] = True
     return {
         **state,
-        "message": f"✅ Ticket created:\n📌 Title: {title}\n📝 Description: {full_description}"
+        "message": f"✅ Ticket created:\n📌 Title: {summary}\n📝 Description: {full_description}"
     }
 
 def fetch_logs(state):

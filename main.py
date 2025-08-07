@@ -3,6 +3,8 @@ from agent.graph import build_graph
 from dotenv import load_dotenv
 
 load_dotenv()
+import os
+print("✅ Using Jira project:", os.getenv("JIRA_PROJECT_KEY"))
 
 graph = build_graph()
 logs = get_logs()
