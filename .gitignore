@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 *.log
 *.sqlite3
+agent/**/__pycache__/
+.DS_Store

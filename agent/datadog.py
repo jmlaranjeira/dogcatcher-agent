@@ -17,6 +17,7 @@ HEADERS = {
 
 MAX_LOG_DETAIL_LENGTH = 300
 
+# Fetch error logs from Datadog based on service and environment parameters.
 def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
@@ -47,7 +48,7 @@ def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
         results.append({
             "logger": logger_name,
             "thread": thread_name,
-            "message": msg,
+            "log_message": msg,
             "detail": detail
         })
 
@@ -69,6 +70,6 @@ if __name__ == "__main__":
         print(f"\nLog #{i}")
         print(f"Logger  : {log['logger']}")
         print(f"Thread  : {log['thread']}")
-        print(f"Message : {log['message']}")
+        print(f"Message : {log['log_message']}")
         print(f"Detail  : {log['detail']}")
         print("-" * 60)

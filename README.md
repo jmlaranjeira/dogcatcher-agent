@@ -17,7 +17,7 @@ graph TD
 
 - Uses GPT (via LangChain) to extract structured info from raw logs
 - Conditional routing in LangGraph
-- Simulates ticket creation (prints result)
+- Simulates or triggers real ticket creation (Jira-ready)
 - Built in modular steps, ready to integrate with external tools like Jira or Datadog
 
 ## 🛠️ Setup Instructions
@@ -70,13 +70,27 @@ Install them via `pip install -r requirements.txt`, or individually:
 
 ```
 langgraph-agent-demo/
-├── main.py                # Entrypoint: runs the graph
-├── .env                   # Your OpenAI API key (not committed)
+├── main.py                # Entrypoint: runs the LangGraph agent
+├── .env                   # Configuration for API keys (not committed)
 ├── agent/
-│   ├── graph.py           # Graph construction with conditional edges
-│   └── nodes.py           # Logic for each graph node (GPT call, ticket creation)
+│   ├── datadog.py         # Log fetching and parsing logic
+│   ├── graph.py           # Graph construction using LangGraph
+│   ├── jira.py            # Jira API integration and deduplication
+│   └── nodes.py           # Node logic: LLM analysis, ticket creation, etc.
 └── README.md
 ```
+
+## 💡 How it works (Detailed)
+
+The agent follows a LangGraph-based state machine with memory.
+
+- It pulls logs (from Datadog or another source)
+- It checks if each log is a duplicate
+- It sends the log message and metadata to an LLM
+- If the response suggests creating a ticket, it checks Jira for duplicates
+- If not found, it creates the ticket (simulated or real)
+
+State is preserved across iterations, avoiding reprocessing.
 
 ## 🧱 Built With
 
