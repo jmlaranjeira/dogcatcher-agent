@@ -40,3 +40,4 @@ typing_extensions==4.14.1
 urllib3==2.5.0
 xxhash==3.5.0
 zstandard==0.23.0
+rapidfuzz==3.9.6
