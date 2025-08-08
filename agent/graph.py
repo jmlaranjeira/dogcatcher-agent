@@ -28,6 +28,7 @@ class GraphState(TypedDict, total=False):
     # outputs / side info
     ticket_created: bool
     jira_payload: Dict[str, Any]
+    severity: str
 
 state_schema = GraphState
 

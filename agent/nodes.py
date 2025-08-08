@@ -15,7 +15,18 @@ llm = ChatOpenAI(
 )
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a support engineer. Analyze log messages and return a JSON with fields: error_type, create_ticket, ticket_title and ticket_description."),
+    (
+        "system",
+        (
+            "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
+            "Fields required: "
+            "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
+            "create_ticket (boolean), "
+            "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
+            "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
+            "severity (one of: low, medium, high)."
+        ),
+    ),
     ("human", "{log_message}")
 ])
 
@@ -83,7 +94,7 @@ def analyze_log(state):
         import pprint
         print("🚨 Estado retornado de analyze_log:")
         pprint.pprint({**state, **parsed})
-        return {**state, **parsed}
+        return {**state, **parsed, "severity": parsed.get("severity", "low")}
     except (json.JSONDecodeError, ValueError):
         return {
             **state,
@@ -150,7 +161,26 @@ def create_ticket(state):
 
     full_description = f"{description.strip()}\n{extra_info.strip()}"
 
-    if check_jira_for_ticket(title):
+    from agent.jira import find_similar_ticket, comment_on_issue
+    key, score, existing_summary = find_similar_ticket(title, state)
+    if key:
+        print(f"⚠️ Duplicate detected → {key} ({existing_summary}) with score {score:.2f}")
+        if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
+            comment = (
+                f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
+                f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
+                f"Original message: {log_data.get('message', 'N/A')}\n"
+            )
+            comment_on_issue(key, comment)
+        processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
+        _save_processed_fingerprints(processed)
+        return {
+            **state,
+            "message": f"⚠️ Duplicate in Jira: {key} — {existing_summary}",
+            "ticket_created": True
+        }
+
+    if check_jira_for_ticket(title, state):
         processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
         _save_processed_fingerprints(processed)
         msg = f"⚠️ Ticket already exists for: {title}"
@@ -166,12 +196,12 @@ def create_ticket(state):
     TICKET_LABEL = os.getenv("TICKET_LABEL", "")
 
     # labels to include (simulation payload only; real payload built in jira.create_ticket)
-    labels = [TICKET_LABEL] if TICKET_LABEL else []
-    if state.get("log_fingerprint"):
-        labels.append(f"logfp-{state['log_fingerprint']}")
+    labels = ["datadog-log"]
 
-    # Remove "**" from title if present
-    clean_title = title.replace("**", "")
+    etype = state.get("error_type")
+    base_title = title.replace("**", "")
+    prefix = "[Datadog]" + (f"[{etype}]" if etype else "")
+    clean_title = f"{prefix} {base_title}".strip()
 
     # Atlassian Document Format (ADF) for description
     description_adf = {
