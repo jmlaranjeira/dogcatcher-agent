@@ -6,14 +6,14 @@ Automated agent that reads **Datadog error logs**, analyzes them with an **LLM**
 
 ## 🔄 End‑to‑end Flow
 ```mermaid
-graph TD
-    A[Fetch Datadog Logs] --> B[Analyze Log (LLM)]
-    B -->|create ticket| C[Check Similar Issues in Jira]
-    B -->|no ticket| G[Next Log]
-    C -->|duplicate| D[Comment on Existing Ticket]
-    C -->|unique| E[Create Jira Ticket]
-    D --> G
-    E --> G
+graph TD;
+    A[Fetch Datadog Logs] --> B[Analyze Log / LLM];
+    B -->|create ticket| C[Check Similar Issues in Jira];
+    B -->|no ticket| G[Next Log];
+    C -->|duplicate| D[Comment on Existing Ticket];
+    C -->|unique| E[Create Jira Ticket];
+    D --> G;
+    E --> G;
 ```
 
 ---
