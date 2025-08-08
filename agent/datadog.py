@@ -22,6 +22,19 @@ def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
 
+    # --- config validation ---
+    missing = []
+    if not DATADOG_API_KEY:
+        missing.append("DATADOG_API_KEY")
+    if not DATADOG_APP_KEY:
+        missing.append("DATADOG_APP_KEY")
+    if not DATADOG_SITE:
+        missing.append("DATADOG_SITE")
+    if missing:
+        print(f"❌ Missing Datadog configuration: {', '.join(missing)}. Returning no logs.")
+        return []
+    # --- end validation ---
+
     url = f"https://api.{DATADOG_SITE}/api/v2/logs/events/search"
     payload = {
         "filter": {
@@ -48,21 +61,12 @@ def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
         results.append({
             "logger": logger_name,
             "thread": thread_name,
-            "log_message": msg,
+            "message": msg,
+            "timestamp": attr.get("timestamp"),
             "detail": detail
         })
 
     return results
-
-def extract_stable_query_key(msg):
-    for token in ["__UUID__", "__HASH__", "__NUM__"]:
-        if token in msg:
-            return msg.split(token)[0].strip()
-    return msg.strip()
-
-def escape_for_jql(text):
-    import re
-    return re.sub(r"([\\'\"~*+?&|!(){}\[\]^])", r"\\\\\1", text)
 
 if __name__ == "__main__":
     logs = get_logs()
@@ -70,6 +74,6 @@ if __name__ == "__main__":
         print(f"\nLog #{i}")
         print(f"Logger  : {log['logger']}")
         print(f"Thread  : {log['thread']}")
-        print(f"Message : {log['log_message']}")
+        print(f"Message : {log['message']}")
         print(f"Detail  : {log['detail']}")
         print("-" * 60)
