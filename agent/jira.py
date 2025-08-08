@@ -1,6 +1,10 @@
 import os
 import requests
 import base64
+import hashlib
+import json
+import pathlib
+
 from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
@@ -14,14 +18,23 @@ JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
 TICKET_FLAG = os.getenv("TICKET_FLAG", "")
 TICKET_LABEL = os.getenv("TICKET_LABEL", "")
 
-def escape_for_jql(text: str) -> str:
-    """
-    Escape special characters in text for use in JQL queries.
-    """
-    special_chars = ['\\', '\'', '"', '~', '*', '+', '?', '&', '|', '!', '(', ')', '{', '}', '[', ']', '^']
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
+_CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
+
+
+def _load_processed_fingerprints():
+    try:
+        with open(_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return set(data) if isinstance(data, list) else set()
+    except Exception:
+        return set()
+
+
+def _save_processed_fingerprints(fps):
+    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(sorted(list(fps)), f, ensure_ascii=False, indent=2)
+
 
 def check_jira_for_ticket(summary: str, similarity_threshold: float = 0.9) -> bool:
     """
@@ -32,7 +45,7 @@ def check_jira_for_ticket(summary: str, similarity_threshold: float = 0.9) -> bo
         print("❌ Missing Jira configuration in .env")
         return False
 
-    jql = f'project = {JIRA_PROJECT_KEY} ORDER BY created DESC'
+    jql = f"project = {JIRA_PROJECT_KEY} AND statusCategory != Done ORDER BY created DESC"
     print(f"🔍 JQL used: {jql}")
 
     auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
@@ -46,7 +59,7 @@ def check_jira_for_ticket(summary: str, similarity_threshold: float = 0.9) -> bo
 
     params = {
         "jql": jql,
-        "maxResults": 50,
+        "maxResults": 100,
         "fields": "summary"
     }
 
@@ -68,39 +81,53 @@ def check_jira_for_ticket(summary: str, similarity_threshold: float = 0.9) -> bo
         print(f"❌ Error checking Jira: {e}")
         return False
 
+
 def create_ticket(state: dict) -> dict:
-    # print("🚀 Entering create_ticket")
-    import json
-    debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
-    # print("📥 State received in create_ticket:", json.dumps(debug_state, indent=2))
+    print(f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}")
+
+    assert "ticket_title" in state and "ticket_description" in state, "Missing LLM fields before jira.create_ticket"
 
     description = state.get("ticket_description")
     title = state.get("ticket_title")
+    print(f"🧾 Title to create: {title}")
+    print(f"📝 Description to create: {description[:160]}{'...' if description and len(description) > 160 else ''}")
+
+    if state.get("ticket_created"):
+        print("🔔 Ya se ha creado un ticket en esta ejecución (incluye simulación). Se omite crear más.")
+        return {**state, "message": "⚠️ Solo se permite crear un ticket por ejecución (incluye simulación)."}
 
     if title is None or description is None:
-        # print("⚠️ Skipping ticket creation due to missing title or description.")
         return state
 
     if not all([JIRA_DOMAIN, JIRA_USER, JIRA_API_TOKEN, JIRA_PROJECT_KEY]):
-        # print("❌ Missing Jira configuration in .env")
-        # print(f"ℹ️ Simulated ticket creation: {TICKET_FLAG} {title.replace('**', '')}")
         return state
 
-    auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
-    auth_encoded = base64.b64encode(auth_string.encode()).decode()
+    log_data = state.get("log_data", {})
+    # Stronger idempotence across runs: stable fingerprint from logger|thread|message
+    fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
+    fingerprint = hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
+    processed = _load_processed_fingerprints()
+    if fingerprint in processed:
+        print(f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}")
+        return {**state, "message": "⚠️ Log already processed previously (fingerprint match).", "ticket_created": True}
+    # Put fingerprint into state so Jira payload can add a label
+    state["log_fingerprint"] = fingerprint
 
-    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue"
-    headers = {
-        "Authorization": f"Basic {auth_encoded}",
-        "Content-Type": "application/json"
-    }
+    if check_jira_for_ticket(title):
+        print("⚠️ Duplicate ticket detected in Jira, skipping creation.")
+        processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
+        _save_processed_fingerprints(processed)
+        return {**state, "message": "⚠️ Duplicate ticket found in Jira, skipping creation.", "ticket_created": True}
 
-    formatted_summary = f"{TICKET_FLAG} {title.replace('**', '')}"
+    # labels to include (simulation payload only; real payload built in jira.create_ticket)
+    labels = [TICKET_LABEL] if TICKET_LABEL else []
+    if state.get("log_fingerprint"):
+        labels.append(f"logfp-{state['log_fingerprint']}")
 
     payload = {
         "fields": {
             "project": {"key": JIRA_PROJECT_KEY},
-            "summary": formatted_summary,
+            "summary": f"{TICKET_FLAG} {title.replace('**', '')}".strip(),
             "description": {
                 "type": "doc",
                 "version": 1,
@@ -117,24 +144,50 @@ def create_ticket(state: dict) -> dict:
                 ]
             },
             "issuetype": {"name": "Bug"},
-            "labels": [TICKET_LABEL] if TICKET_LABEL else [],
+            "labels": labels,
             "priority": {"name": "Low"},
             "customfield_10767": [{"value": "Team Vega"}]
         }
     }
 
-    print(f"🚀 Creating ticket in project: {JIRA_PROJECT_KEY}")
+    AUTO_CREATE_TICKET = os.getenv("AUTO_CREATE_TICKET", "").lower() in ("1", "true", "yes")
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        issue_key = response.json().get("key", "UNKNOWN")
-        jira_url = f"https://{JIRA_DOMAIN}/browse/{issue_key}"
-        print(f"✅ Jira ticket created: {issue_key}")
-        print(f"🔗 {jira_url}")
-        state["jira_response_key"] = issue_key
-        state["jira_response_url"] = jira_url
-    except requests.RequestException:
-        print("❌ Failed to create Jira ticket.")
+    if AUTO_CREATE_TICKET:
+        print(f"🚀 Creating ticket in project: {JIRA_PROJECT_KEY}")
+        print(f"🧾 Summary sent to Jira: {payload['fields']['summary']}")
+        try:
+            auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
+            auth_encoded = base64.b64encode(auth_string.encode()).decode()
 
-    return state
+            url = f"https://{JIRA_DOMAIN}/rest/api/3/issue"
+            headers = {
+                "Authorization": f"Basic {auth_encoded}",
+                "Content-Type": "application/json"
+            }
+            response = requests.post(url, headers=headers, json=payload)
+            print(f"🔴 Jira API raw response code: {response.status_code}")
+            print(f"🔴 Jira API raw response body: {response.text}")
+            response.raise_for_status()
+            response_json = response.json()
+            issue_key = response_json.get("key", "UNKNOWN")
+            jira_url = f"https://{JIRA_DOMAIN}/browse/{issue_key}"
+            print(f"✅ Jira ticket created: {issue_key}")
+            print(f"🔗 {jira_url}")
+            state["jira_response_key"] = issue_key
+            state["jira_response_url"] = jira_url
+            state["jira_response_raw"] = response_json
+            processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
+            _save_processed_fingerprints(processed)
+            return state
+        except requests.RequestException as e:
+            print(f"❌ Failed to create Jira ticket. Exception: {str(e)}")
+            return state
+    else:
+        print(f"ℹ️ Simulated ticket creation: {payload['fields']['summary']}")
+        print("✅ Ticket creation skipped (simulation mode enabled)\n")
+        state["ticket_created"] = True
+        persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
+        if persist_sim and state.get("log_fingerprint"):
+            processed.add(state["log_fingerprint"])
+            _save_processed_fingerprints(processed)
+        return state

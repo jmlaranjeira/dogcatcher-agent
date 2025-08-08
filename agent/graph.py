@@ -4,12 +4,30 @@ from agent.nodes import create_ticket as create_jira_ticket
 
 
 # Shared state is a simple dict (JSON-like)
-from typing import TypedDict, List, Set
+from typing import TypedDict, List, Set, Dict, Any
 
-class GraphState(TypedDict):
+class GraphState(TypedDict, total=False):
+    # core
     logs: List[dict]
     log_index: int
     seen_logs: Set[str]
+    finished: bool
+    skipped_duplicate: bool
+
+    # produced by analyze_log / consumed by create_ticket
+    create_ticket: bool
+    error_type: str
+    ticket_title: str
+    ticket_description: str
+
+    # context passed around
+    log_message: str
+    log_data: Dict[str, Any]
+    message: str
+
+    # outputs / side info
+    ticket_created: bool
+    jira_payload: Dict[str, Any]
 
 state_schema = GraphState
 
@@ -18,19 +36,20 @@ def analyze_log_wrapper(state):
     if "seen_logs" not in state:
         state["seen_logs"] = set()
     log = state["logs"][state["log_index"]]
+    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('message', '<no message>')}"
+    print(f"🔍 Analyzing log #{state.get('log_index')} with key: {log_key}")
     # Skip logs that have already been analyzed based on a unique log key
-    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('log_message', '<no message>')}"
     if log_key in state["seen_logs"]:
+        print(f"⏭️ Skipping duplicate log #{state.get('log_index')}: {log_key}")
         return {
             **state,
             "skipped_duplicate": True
         }
     seen_logs = state["seen_logs"]
     seen_logs.add(log_key)
-    print(f"🔍 Analyzing log: {log_key}")
     new_state = analyze_log({
         **state,
-        "log_message": log.get("log_message", "<no message>"),
+        "log_message": log.get("message", "<no message>"),
         "log_data": log,
         "seen_logs": seen_logs
     })
@@ -42,14 +61,12 @@ def next_log(state):
     index = state.get("log_index", 0) + 1
 
     if index >= len(logs):
-        print("✅ No more logs. Terminating.")
         return {**state, "finished": True}
 
     # Skip duplicate logs
     log = logs[index]
-    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('log_message', '<no message>')}"
+    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('message', '<no message>')}"
     if log_key in state.get("seen_logs", set()):
-        print(f"⏭️ Duplicate log skipped: {log_key}")
         return {
             **state,
             "log_index": index,
@@ -59,7 +76,7 @@ def next_log(state):
     return {
         **state,
         "log_index": index,
-        "log_message": log.get("log_message", "<no message>"),
+        "log_message": log.get("message", "<no message>"),
         "log_data": log
     }
 
