@@ -1,19 +1,20 @@
 # 🧠 Datadog → LLM → Jira Agent (LangGraph)
 
-Automated agent that reads **Datadog error logs**, analyzes them with an **LLM** (LangChain + OpenAI), performs **smart de‑duplication** against Jira, and **creates at most three tickets per run** with rich context.
+Automated agent that reads **Datadog error logs**, analyzes them with an **LLM** (LangChain + OpenAI), performs **smart de‑duplication** against Jira, and creates tickets with a **configurable per‑run cap** (default **3**).
 
 ---
 
 ## 🔄 End‑to‑end Flow
 ```mermaid
 graph TD;
-    A[Fetch Datadog Logs] --> B[Analyze Log / LLM];
-    B -->|create ticket| C[Check Similar Issues in Jira];
-    B -->|no ticket| G[Next Log];
-    C -->|duplicate| D[Comment on Existing Ticket];
-    C -->|unique| E[Create Jira Ticket];
-    D --> G;
+    A[Fetch Datadog Logs] --> B[Deduplicate In-Run];
+    B --> C[Analyze Log / LLM];
+    C -->|no ticket| G[Next Log];
+    C -->|create ticket| D[Check Similar Issues in Jira];
+    D -->|duplicate| E[Comment on Existing Ticket];
+    D -->|unique| F[Create Jira Ticket];
     E --> G;
+    F --> G;
 ```
 
 ---
@@ -21,7 +22,7 @@ graph TD;
 ## 🚀 Key Features
 - **Datadog ingestion** (service/env/time window) with `logger`, `thread`, `timestamp`, `detail`.
 - **LLM analysis (gpt‑4o‑mini)** → `error_type`, `severity (low|medium|high)`, `ticket_title`, `ticket_description` (markdown: *Problem summary*, *Possible Causes*, *Suggested Actions*).
-- **Ticket guard**: creates **up to 3** real Jira tickets per execution.
+- **Ticket guard**: configurable per‑run cap via `MAX_TICKETS_PER_RUN` or `--max-tickets` (**0 = no cap**, default **3**).
 - **Idempotence & de‑dup**
   - In‑run: skip duplicated logs by `logger|thread|message`.
   - Cross‑run: fingerprint (`sha1`) cached in `.agent_cache/processed_logs.json`.
@@ -53,32 +54,36 @@ pip install -r requirements.txt
 ## ⚙️ Configuration (.env)
 ```ini
 # OpenAI
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=sk-...                # API key for OpenAI access
+OPENAI_MODEL=gpt-4o-mini             # OpenAI model to use for analysis
+OPENAI_RESPONSE_FORMAT=json_object   # Response format: json_object (default) or text
+OPENAI_TEMPERATURE=0                 # Controls randomness (0 = deterministic)
 
 # Datadog
-DATADOG_API_KEY=...
-DATADOG_APP_KEY=...
-DATADOG_SITE=datadoghq.eu  # or datadoghq.com
-DATADOG_SERVICE=dehnproject
-DATADOG_ENV=dev             # dev|prod
-DATADOG_HOURS_BACK=48       # time window
-DATADOG_LIMIT=50            # page size
-DATADOG_MAX_PAGES=3         # pagination safeguard
-DATADOG_TIMEOUT=20          # seconds
-DATADOG_STATUSES=error,critical
-DATADOG_QUERY_EXTRA=        # e.g. @message:"Blob Not Found"
-DATADOG_QUERY_EXTRA_MODE=AND  # AND|OR for DATADOG_QUERY_EXTRA terms
+DATADOG_API_KEY=...                  # Datadog API key
+DATADOG_APP_KEY=...                  # Datadog application key
+DATADOG_SITE=datadoghq.eu            # Datadog site to query (e.g., datadoghq.com or datadoghq.eu)
+DATADOG_SERVICE=dehnproject          # Datadog service name filter
+DATADOG_ENV=dev                      # Datadog environment filter (e.g., dev or prod)
+DATADOG_HOURS_BACK=48                # Time window in hours to fetch logs from
+DATADOG_LIMIT=50                     # Number of logs per page to fetch
+DATADOG_MAX_PAGES=3                  # Maximum pages to paginate through
+DATADOG_TIMEOUT=20                   # Timeout in seconds for Datadog API requests
+DATADOG_STATUSES=error,critical      # Comma-separated list of log statuses to filter
+DATADOG_QUERY_EXTRA=                 # Extra query terms for Datadog search (optional)
+DATADOG_QUERY_EXTRA_MODE=AND         # Logical operator for extra query terms (AND or OR)
 
 # Jira
-JIRA_DOMAIN=your-domain.atlassian.net
-JIRA_USER=you@company.com
-JIRA_API_TOKEN=...
-JIRA_PROJECT_KEY=DPRO
+JIRA_DOMAIN=your-domain.atlassian.net  # Jira instance domain
+JIRA_USER=you@company.com               # Jira user email
+JIRA_API_TOKEN=...                      # Jira API token for authentication
+JIRA_PROJECT_KEY=DPRO                   # Jira project key for ticket creation
 
 # Agent behavior
-AUTO_CREATE_TICKET=false     # true/1/yes => real creation
-PERSIST_SIM_FP=false         # persist fingerprints in simulation
-COMMENT_ON_DUPLICATE=true    # comment on matched issue
+AUTO_CREATE_TICKET=false             # true/1/yes to create real tickets; false to simulate
+PERSIST_SIM_FP=false                 # Persist fingerprints even in simulation mode
+COMMENT_ON_DUPLICATE=true            # Add comments on detected duplicate issues
+MAX_TICKETS_PER_RUN=3                # Per-run cap on real ticket creation (0 = no cap)
 ```
 
 Notes:
@@ -99,6 +104,9 @@ You can also run with CLI arguments:
 ```bash
 python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
 ```
+```bash
+python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --max-tickets 5
+```
 
 - `--dry-run`: run in simulation mode without creating Jira tickets.
 - `--real`: (alternative to --dry-run) run in real mode and create tickets.
@@ -106,6 +114,47 @@ python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
 - `--service`: Datadog service name to filter logs.
 - `--hours`: time window in hours for logs to fetch.
 - `--limit`: maximum logs per page from Datadog.
+- `--max-tickets`: per-run cap on real ticket creation (0 = no cap).
+
+---
+
+## 📈 Reporting (tools/report.py)
+The agent writes an audit trail to `.agent_cache/audit_logs.jsonl`. You can summarize recent runs with:
+
+```bash
+python tools/report.py --since-hours 24
+```
+
+**What you get** (key fields):
+- **Total decisions**
+- **Tickets created** (real mode)
+- **Duplicates / no-create** (skipped)
+- **Simulated (dry-run)** and **Would create (simulated true)**
+- Optional: **Cap reached (limit)** counts
+- Breakdowns: **By error_type**, **By severity**, **By decision**
+- Top **fingerprints** and **Jira issues**
+
+Example output snippet:
+
+```
+=== Audit Summary ===
+Total decisions: 42
+Tickets created: 3
+Duplicates / no-create: 28
+Simulated (dry-run): 11
+Would create (simulated true): 8
+By decision:
+  created: 3
+  duplicate-fingerprint: 18
+  duplicate-jira: 7
+  simulated: 11
+  no-create: 3
+```
+
+**Notes**
+- The report reads from `.agent_cache/audit_logs.jsonl`. To start fresh, rotate or delete that file.
+- `--since-hours` filters by time window; omit it to include all history.
+```
 
 ---
 

@@ -12,11 +12,29 @@ load_dotenv()
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from agent.jira import create_ticket as create_jira_ticket
+import os
+
+# LLM configuration via environment variables
+# OPENAI_MODEL: model name (default: gpt-4o-mini)
+# OPENAI_TEMPERATURE: float (default: 0)
+# OPENAI_RESPONSE_FORMAT: "json_object" or "text" (default: json_object)
+_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+_temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
+_resp_fmt = (os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object").lower()
+try:
+    _temp = float(_temp_raw)
+except Exception:
+    _temp = 0.0
+
+if _resp_fmt == "json_object":
+    _model_kwargs = {"response_format": {"type": "json_object"}}
+else:
+    _model_kwargs = {}
 
 llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0,
-    model_kwargs={"response_format": {"type": "json_object"}}
+    model=_model,
+    temperature=_temp,
+    model_kwargs=_model_kwargs,
 )
 
 prompt = ChatPromptTemplate.from_messages([
@@ -43,6 +61,7 @@ import hashlib
 import pathlib
 from typing import Set as _Set
 import datetime
+
 
 _CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
 _AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
@@ -95,10 +114,6 @@ def analyze_log(state):
         desc = parsed.get("ticket_description")
         if not title or not desc:
             raise ValueError("Missing title or description")
-        import copy
-        serializable_state = copy.deepcopy({**state, **parsed})
-        if isinstance(serializable_state.get("seen_logs"), set):
-            serializable_state["seen_logs"] = list(serializable_state["seen_logs"])
         print(f"🧠 Log analyzed → Type: {parsed.get('error_type')}, Create ticket: {parsed.get('create_ticket')}")
         import pprint
         print("🚨 Returned state from analyze_log:")
@@ -113,12 +128,14 @@ def analyze_log(state):
             "ticket_description": content
         }
 
+
 def create_ticket(state):
     import os
     print(f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}")
     import pprint
     print("🔎 State received in create_ticket:")
     pprint.pprint(state)
+    state.setdefault("_tickets_created_in_run", 0)
     assert "ticket_title" in state and "ticket_description" in state, "Missing LLM fields before jira.create_ticket"
     title = state.get("ticket_title")
     description = state.get("ticket_description")
@@ -128,17 +145,6 @@ def create_ticket(state):
         return {**state, "message": "❌ ticket_description is None. Skipping ticket creation.", "ticket_created": True}
     print(f"📝 Description to create: {description[:160]}{'...' if description and len(description) > 160 else ''}")
 
-    import copy
-    import json
-
-    MAX_TICKETS_PER_RUN = 3
-    if state.get("_tickets_created_in_run", 0) >= MAX_TICKETS_PER_RUN:
-        print(f"🔔 Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN}). Skipping.")
-        return {**state, "message": f"⚠️ Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN})."}
-
-    state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
-
-    debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
 
     if not title or not description:
         return {
@@ -156,7 +162,7 @@ def create_ticket(state):
     if fingerprint in processed:
         print(f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}")
 
-        # Append audit log entry for duplicate
+        # Append audit log entry for duplicate (fingerprint cache)
         audit_entry = {
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
             "fingerprint": fingerprint,
@@ -173,6 +179,7 @@ def create_ticket(state):
         _append_audit_log(audit_entry)
 
         return {**state, "message": "⚠️ Log already processed previously (fingerprint match).", "ticket_created": True}
+
     # Put fingerprint into state so Jira payload can add a label
     state["log_fingerprint"] = fingerprint
 
@@ -193,7 +200,30 @@ def create_ticket(state):
 
     full_description = f"{description.strip()}\n{extra_info.strip()}"
 
-    from agent.jira import find_similar_ticket, comment_on_issue
+    # If the LLM decided not to create a ticket, short-circuit here
+    if not state.get("create_ticket", False):
+        audit_entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "fingerprint": fingerprint,
+            "error_type": state.get("error_type"),
+            "severity": state.get("severity"),
+            "create_ticket": False,
+            "duplicate": False,
+            "decision": "no-create",
+            "existing_issue_key": None,
+            "jira_key": None,
+            "occurrences": occ,
+            "message": "LLM chose not to create a ticket"
+        }
+        _append_audit_log(audit_entry)
+        return {
+            **state,
+            "message": "ℹ️ LLM decision: do not create a ticket for this log.",
+            "ticket_created": True
+        }
+
+    from agent.jira import find_similar_ticket, comment_on_issue, _normalize_log_message
+    # Check duplicates in Jira (including direct log match via Original Log)
     key, score, existing_summary = find_similar_ticket(title, state)
     if key:
         print(f"⚠️ Duplicate detected → {key} ({existing_summary}) with score {score:.2f}")
@@ -205,8 +235,9 @@ def create_ticket(state):
                 f"Original message: {log_data.get('message', 'N/A')}\n"
             )
             comment_on_issue(key, comment)
-        processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
-        _save_processed_fingerprints(processed)
+        if state.get("log_fingerprint"):
+            processed.add(state["log_fingerprint"])
+            _save_processed_fingerprints(processed)
 
         # Append audit log entry for duplicate detected via Jira
         audit_entry = {
@@ -230,13 +261,9 @@ def create_ticket(state):
             "ticket_created": True
         }
 
-
-    # Prepare payload for Jira ticket creation
-
-    # labels to include (simulation payload only; real payload built in jira.create_ticket)
+    # Build labels for simulation payload (real payload is built in jira.create_ticket)
     labels = ["datadog-log"]
     try:
-        from agent.jira import _normalize_log_message
         norm_msg = _normalize_log_message((state.get("log_data") or {}).get("message", ""))
         if norm_msg:
             import hashlib as _hashlib
@@ -292,12 +319,33 @@ def create_ticket(state):
     state["ticket_title"] = clean_title
     state["jira_payload"] = payload
 
-    # Fetch environment variable to determine if ticket should be auto-created
+    # Creation mode & dynamic per-run cap
     auto_create = os.getenv("AUTO_CREATE_TICKET", "false").lower() == "true"
+    try:
+        max_tickets = int(os.getenv("MAX_TICKETS_PER_RUN", "3") or "0")
+    except Exception:
+        max_tickets = 3
 
     if auto_create:
+        # Enforce per-run cap only for real creation
+        if max_tickets > 0 and state.get("_tickets_created_in_run", 0) >= max_tickets:
+            print(f"🔔 Ticket creation limit reached for this run (max {max_tickets}). Skipping.")
+            _append_audit_log({
+                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "fingerprint": fingerprint,
+                "error_type": state.get("error_type"),
+                "severity": state.get("severity"),
+                "create_ticket": False,
+                "duplicate": False,
+                "decision": "cap-reached",
+                "existing_issue_key": None,
+                "jira_key": None,
+                "occurrences": occ,
+                "message": f"Per-run ticket cap reached ({max_tickets})"
+            })
+            return {**state, "message": f"⚠️ Ticket creation limit reached for this run (max {max_tickets}).", "ticket_created": True}
+
         try:
-            # Attempt to create the Jira ticket
             print(f"🚀 Creating ticket in project: {os.getenv('JIRA_PROJECT_KEY')}")
             state = create_jira_ticket(state)
             issue_key = state.get("jira_response_key", None)
@@ -311,6 +359,9 @@ def create_ticket(state):
                 if state.get("log_fingerprint"):
                     processed.add(state["log_fingerprint"])
                     _save_processed_fingerprints(processed)
+
+                # Count this successful creation towards the per-run cap
+                state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
 
                 # Append audit log entry for created ticket
                 audit_entry = {
@@ -330,10 +381,8 @@ def create_ticket(state):
             else:
                 print("❌ No Jira issue key found after ticket creation attempt.")
                 if "jira_response_raw" in state:
-                    import json
                     print(json.dumps(state["jira_response_raw"], indent=2))
         except Exception as e:
-            # Log any unexpected errors during ticket creation but do not raise
             print(f"❌ Failed to create Jira ticket due to unexpected error: {e}")
     else:
         # Simulation mode: do not create ticket, just print payload info
@@ -364,11 +413,17 @@ def create_ticket(state):
         }
         _append_audit_log(audit_entry)
 
+    final_msg = (
+        f"✅ Ticket created:\n📌 Title: {clean_title}\n📝 Description: {full_description}"
+        if auto_create else
+        f"🧪 Simulation only (no ticket created):\n📌 Title: {clean_title}\n📝 Description: {full_description}"
+    )
     return {
         **state,
-        "message": f"✅ Ticket created:\n📌 Title: {clean_title}\n📝 Description: {full_description}",
+        "message": final_msg,
         "ticket_created": True
     }
+
 
 def fetch_logs(state):
     if state.get("skipped_duplicate"):
