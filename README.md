@@ -178,6 +178,8 @@ langgraph-agent-demo/
 │   ├── state.py           # Shared state types
 │   ├── jira.py            # Jira API + matching + commenting
 │   └── nodes.py           # LLM analysis + ticket creation + guards
+|── tools/
+│   └── report.py          # Audit report generator
 └── requirements.txt
 ```
 
