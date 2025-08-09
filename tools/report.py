@@ -77,10 +77,23 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     by_sev = Counter(str(r.get("severity", "<unknown>")).lower() for r in rows)
     by_decision = Counter(str(r.get("decision", "<unknown>")).lower() for r in rows)
 
-    # Creation/duplicate metrics (robust to missing keys)
-    created = sum(1 for r in rows if r.get("ticket_created") is True)
-    # "duplicate" here means we decided not to create because of an existing issue or fingerprint
-    duplicates = sum(1 for r in rows if r.get("create_ticket") is False or r.get("duplicate") is True)
+    # Decision-based metrics (robust against older logs)
+    def _dec(r: Dict[str, Any]) -> str:
+        return str(r.get("decision", "")).lower()
+
+    created = sum(1 for r in rows if _dec(r) == "created")
+    dupes = sum(1 for r in rows if _dec(r).startswith("duplicate"))
+    simulated = sum(1 for r in rows if _dec(r) == "simulated")
+    # How many would be created in dry-run (LLM decided create_ticket=True)
+    would_create = sum(1 for r in rows if _dec(r) == "simulated" and r.get("create_ticket") is True)
+    cap_reached = sum(1 for r in rows if _dec(r) == "cap-reached")
+    unknown_decisions = sum(1 for r in rows if not _dec(r))
+
+    # Backward compatibility: if decision is missing, fall back to booleans
+    if created == 0 and any(r.get("ticket_created") is True for r in rows):
+        created = sum(1 for r in rows if r.get("ticket_created") is True)
+    if dupes == 0 and any((r.get("create_ticket") is False) or (r.get("duplicate") is True) for r in rows):
+        dupes = sum(1 for r in rows if (r.get("create_ticket") is False) or (r.get("duplicate") is True))
 
     # Fingerprint frequency (top noise sources)
     by_fp = Counter(r.get("fingerprint") or r.get("log_fingerprint") or r.get("log_key") for r in rows)
@@ -91,7 +104,11 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "total": total,
         "created": created,
-        "duplicates": duplicates,
+        "duplicates": dupes,
+        "simulated": simulated,
+        "would_create": would_create,
+        "cap_reached": cap_reached,
+        "unknown_decisions": unknown_decisions,
         "by_error": by_error,
         "by_severity": by_sev,
         "by_decision": by_decision,
@@ -104,11 +121,23 @@ def print_summary(summary: Dict[str, Any], top_n: int = 10) -> None:
     total = summary["total"]
     created = summary["created"]
     duplicates = summary["duplicates"]
+    simulated = summary.get("simulated", 0)
+    would_create = summary.get("would_create", 0)
+    cap_reached = summary.get("cap_reached", 0)
+    unknown_decisions = summary.get("unknown_decisions", 0)
 
     print("\n=== Audit Summary ===")
     print(f"Total decisions: {total}")
     print(f"Tickets created: {created}")
     print(f"Duplicates / no-create: {duplicates}")
+    if simulated:
+        print(f"Simulated (dry-run): {simulated}")
+        if would_create:
+            print(f"Would create (simulated true): {would_create}")
+    if cap_reached:
+        print(f"Cap reached (limit): {cap_reached}")
+    if unknown_decisions:
+        print(f"Unknown decision: {unknown_decisions}")
 
     def _print_counter(title: str, cnt: Counter):
         print(f"\n{title}")
