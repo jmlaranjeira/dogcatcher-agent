@@ -43,6 +43,29 @@ def _save_processed_fingerprints(fps):
     with open(_CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(list(fps)), f, ensure_ascii=False, indent=2)
 
+# --- Inserted helper function ---
+def _add_labels_to_issue(issue_key: str, labels_to_add: list[str]) -> bool:
+    if not all([JIRA_DOMAIN, JIRA_USER, JIRA_API_TOKEN]):
+        return False
+    if not labels_to_add:
+        return True
+    auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
+    auth_encoded = base64.b64encode(auth_string.encode()).decode()
+    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue/{issue_key}"
+    headers = {"Authorization": f"Basic {auth_encoded}", "Content-Type": "application/json"}
+    body = {
+        "update": {
+            "labels": [{"add": lbl} for lbl in labels_to_add]
+        }
+    }
+    try:
+        resp = requests.put(url, headers=headers, json=body)
+        print(f"🏷️ Add labels response: {resp.status_code}")
+        return resp.status_code in (200, 204)
+    except requests.RequestException as e:
+        print(f"❌ Failed to add labels: {e}")
+        return False
+
 import re
 
 _RE_WS = re.compile(r"\s+")
@@ -132,14 +155,26 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
         tokens.append("pre-persist")
 
     token_clauses = []
-    for t in set(tokens[:6]):  # limit to a few tokens
+    for t in set(tokens[:8]):  # allow a few more tokens
         token_clauses.append(f'summary ~ "\\"{t}\\""')
         token_clauses.append(f'description ~ "\\"{t}\\""')
+    # Add phrase-based clauses when present in normalized summary or current log
+    phrases = []
+    haystack = (norm_summary + " " + ((state or {}).get("log_data") or {}).get("message", "")).strip()
+    norm_current_log = _normalize_log_message(((state or {}).get("log_data") or {}).get("message", ""))
+    haystack = (norm_summary + " " + (norm_current_log or "")).strip()
+    if "blob not found" in haystack:
+        phrases.append("blob not found")
+    if "file size" in haystack:
+        phrases.append("file size")
+    for p in phrases:
+        token_clauses.append(f'summary ~ "\\"{p}\\""')
+        token_clauses.append(f'description ~ "\\"{p}\\""')
     token_clauses.append('labels = datadog-log')
     token_filter = " OR ".join(token_clauses) if token_clauses else "labels = datadog-log"
 
     jql = (
-        f"project = {JIRA_PROJECT_KEY} AND statusCategory != Done AND created >= -180d AND (" +
+        f"project = {JIRA_PROJECT_KEY} AND statusCategory != Done AND created >= -365d AND (" +
         token_filter + ") ORDER BY created DESC"
     )
     print(f"🔍 JQL used: {jql}")
@@ -300,6 +335,14 @@ def create_ticket(state: dict) -> dict:
                 f"Original message: {log_data.get('message', 'N/A')}\n"
             )
             comment_on_issue(key, comment)
+        # Retro-seed the loghash label into the existing issue so future matches are O(1)
+        try:
+            norm_msg = _normalize_log_message((state.get("log_data") or {}).get("message", ""))
+            if norm_msg:
+                loghash = hashlib.sha1(norm_msg.encode("utf-8")).hexdigest()[:12]
+                _add_labels_to_issue(key, [f"loghash-{loghash}"])
+        except Exception:
+            pass
         processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
         _save_processed_fingerprints(processed)
         return {
