@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: datadog-llm-jira-agent:latest
+    container_name: datadog-llm-jira-agent
+    restart: unless-stopped
+
+    # Load your credentials and configuration (DO NOT bake them into the image)
+    env_file:
+      - .env
+
+    # Volume is used to store cache and audit logs
+    volumes:
+      - agent_cache:/app/.agent_cache
+
+    # Command by default: you can override it for real/dry-run
+    # Example commands:
+    # command: ["python","main.py","--real","--env","prod","--service","dehnproject","--hours","48","--limit","100","--max-tickets","5"]
+    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
+    command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
+
+    # Resources (Optional)
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+volumes:
+  agent_cache:
