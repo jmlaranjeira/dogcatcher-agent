@@ -424,7 +424,7 @@ def create_ticket(state: dict) -> dict:
             state["jira_response_key"] = issue_key
             state["jira_response_url"] = jira_url
             state["jira_response_raw"] = response_json
-            processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
+            processed.add(state.get("log_fingerprint")) if state.get("log_fingerprint") else None
             _save_processed_fingerprints(processed)
             return state
         except requests.RequestException as e:

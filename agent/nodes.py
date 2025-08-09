@@ -61,6 +61,7 @@ import hashlib
 import pathlib
 from typing import Set as _Set
 import datetime
+import json as _json
 
 
 _CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
@@ -154,6 +155,19 @@ def create_ticket(state):
         }
 
     log_data = state.get("log_data", {})
+
+    # Optional severity remapping via env JSON (e.g., {"blob-not-found":"medium","business-logic":"low"})
+    try:
+        _rules_raw = os.getenv("SEVERITY_RULES_JSON", "").strip()
+        if _rules_raw:
+            _rules = _json.loads(_rules_raw)
+            if isinstance(_rules, dict):
+                et = (state.get("error_type") or "").strip().lower()
+                mapped = _rules.get(et)
+                if isinstance(mapped, str) and mapped.lower() in ("low","medium","high"):
+                    state["severity"] = mapped.lower()
+    except Exception:
+        pass
 
     # Stronger idempotence across runs: stable fingerprint from logger|thread|message
     fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
@@ -272,8 +286,16 @@ def create_ticket(state):
     except Exception:
         pass
 
-    etype = state.get("error_type")
+    etype = (state.get("error_type") or "").strip().lower()
     base_title = title.replace("**", "")
+
+    # Aggregation for very noisy pattern: blob-not-found
+    aggregate_blob = os.getenv("AGGREGATE_BLOB_NOT_FOUND", "true").lower() in ("1","true","yes")
+    if aggregate_blob and etype == "blob-not-found":
+        base_title = "Investigate Blob Not Found errors (aggregated)"
+        # Mark aggregation via label to ease future O(1) lookups
+        labels.append("aggregate-blob-not-found")
+
     MAX_TITLE = 120
     if len(base_title) > MAX_TITLE:
         base_title = base_title[: MAX_TITLE - 1] + "…"
