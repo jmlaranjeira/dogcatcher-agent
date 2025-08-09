@@ -70,9 +70,48 @@ def _extract_text_from_description(desc):
                 txt = item.get("text")
                 if txt:
                     parts.append(txt)
-        return "\n".join(parts)[:400]
+        return "\n".join(parts)[:4000]
     except Exception:
         return ""
+
+# --- Inserted helper functions ---
+def _extract_original_log(desc) -> str:
+    """Extracts the value after "Original Log:" from a Jira description (ADF or plain text)."""
+    text = _extract_text_from_description(desc)
+    if not text:
+        return ""
+    for line in text.splitlines():
+        m = re.match(r"\s*Original\s+Log:\s*(.*)\s*$", line, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+def _normalize_log_message(text: str) -> str:
+    """Normalize log messages by removing volatile tokens like UUIDs/IDs, timestamps, and collapsing whitespace."""
+    if not text:
+        return ""
+    t = text.lower()
+    # Redact emails, URLs, and JWT-like tokens first (so they don't influence hashes/similarity)
+    t = re.sub(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", " <email> ", t)
+    t = re.sub(r"\bhttps?://[^\s]+", " <url> ", t)
+    # JWT-like tokens (three base64url segments with dots)
+    t = re.sub(r"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", " <token> ", t)
+    # Remove UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    t = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", " ", t)
+    # Remove 24-hex object ids (e.g., Mongo IDs)
+    t = re.sub(r"\b[0-9a-f]{24}\b", " ", t)
+    # Remove ISO datetime like 2025-08-09T12:34:56.789Z or 2025-08-09 12:34:56
+    t = re.sub(r"\b\d{4}-\d{2}-\d{2}[tT ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\b", " ", t)
+    # Remove bracketed timestamps [2025-08-09 12:34:56,123]
+    t = re.sub(r"\[?\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,\.]\d+)?\]?", " ", t)
+    # Replace long numbers/hashes with a placeholder
+    t = re.sub(r"\b\d{5,}\b", " ", t)
+    t = re.sub(r"\b[a-f0-9]{10,}\b", " ", t)
+    # Collapse punctuation and whitespace
+    t = _RE_PUNCT.sub(" ", t)
+    t = _RE_WS.sub(" ", t).strip()
+    return t
+# --- End inserted helper functions ---
 
 def _sim(a: str, b: str) -> float:
     if not a or not b:
@@ -111,6 +150,29 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
     url = f"https://{JIRA_DOMAIN}/rest/api/3/search"
     headers = {"Authorization": f"Basic {auth_encoded}", "Content-Type": "application/json"}
     params = {"jql": jql, "maxResults": 200, "fields": "summary,description,labels,created,status"}
+    current_log_msg = ((state or {}).get("log_data") or {}).get("message", "")
+    norm_current_log = _normalize_log_message(current_log_msg)
+
+    # Fast path: exact label lookup for normalized log hash
+    if norm_current_log:
+        try:
+            loghash = hashlib.sha1(norm_current_log.encode("utf-8")).hexdigest()[:12]
+            jql_hash = (
+                f"project = {JIRA_PROJECT_KEY} AND statusCategory != Done AND labels = loghash-{loghash} "
+                f"ORDER BY created DESC"
+            )
+            params_hash = {"jql": jql_hash, "maxResults": 10, "fields": "summary,description,labels,created,status"}
+            resp_hash = requests.get(url, headers=headers, params=params_hash)
+            resp_hash.raise_for_status()
+            issues_hash = resp_hash.json().get("issues", [])
+            if issues_hash:
+                first = issues_hash[0]
+                print(f"⚠️ Exact duplicate by label loghash-{loghash}: {first.get('key')}")
+                return first.get("key"), 1.00, first.get("fields", {}).get("summary", "")
+        except requests.RequestException as _e:
+            print(f"ℹ️ Hash label lookup failed (non-fatal): {_e}")
+        except Exception as _e:
+            print(f"ℹ️ Hash computation/lookup error (non-fatal): {_e}")
 
     try:
         response = requests.get(url, headers=headers, params=params)
@@ -124,6 +186,16 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
         best = (None, 0.0, None)
         for issue in issues:
             fields = issue.get("fields", {})
+            # --- Direct Original Log similarity check (short-circuit) ---
+            log_sim = None
+            orig_log_issue = _extract_original_log(fields.get("description"))
+            norm_issue_log = _normalize_log_message(orig_log_issue)
+            if norm_current_log and norm_issue_log:
+                log_sim = _sim(norm_current_log, norm_issue_log)
+                if log_sim >= 0.90:
+                    print(f"⚠️ Direct log match found (sim={log_sim:.2f}) against {issue.get('key')} — short-circuiting as duplicate.")
+                    return issue.get("key"), 1.00, fields.get("summary", "")
+            # --- end direct check ---
             s = _normalize(fields.get("summary", ""))
             d = _normalize(_extract_text_from_description(fields.get("description")))
             title_sim = _sim(q_text, s)
@@ -135,6 +207,9 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
             if logger and (logger.lower() in s or logger.lower() in d):
                 score += 0.05
             if any(t in s or t in d for t in tokens):
+                score += 0.05
+
+            if log_sim is not None and 0.70 <= log_sim < 0.90:
                 score += 0.05
 
             if score > best[1]:
@@ -190,9 +265,12 @@ def create_ticket(state: dict) -> dict:
     print(f"🧾 Title to create: {title}")
     print(f"📝 Description to create: {description[:160]}{'...' if description and len(description) > 160 else ''}")
 
-    if state.get("ticket_created"):
-        print("🔔 Ya se ha creado un ticket en esta ejecución (incluye simulación). Se omite crear más.")
-        return {**state, "message": "⚠️ Solo se permite crear un ticket por ejecución (incluye simulación)."}
+    MAX_TICKETS_PER_RUN = 3
+    if state.get("_tickets_created_in_run", 0) >= MAX_TICKETS_PER_RUN:
+        print(f"🔔 Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución. Se omite crear más.")
+        return {**state, "message": f"⚠️ Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución."}
+
+    state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
 
     if title is None or description is None:
         return state
@@ -233,8 +311,16 @@ def create_ticket(state: dict) -> dict:
     # Remove "**" from title if present
     clean_title = (title or "").replace("**", "").strip()
 
-    # labels to include (simulation payload only; real payload built in jira.create_ticket)
+    # Base labels
     labels = ["datadog-log"]
+    # Add stable label for exact duplicate detection
+    try:
+      norm_msg = _normalize_log_message((state.get("log_data") or {}).get("message", ""))
+      if norm_msg:
+          loghash = hashlib.sha1(norm_msg.encode("utf-8")).hexdigest()[:12]
+          labels.append(f"loghash-{loghash}")
+    except Exception:
+      pass
 
     sev = (state.get("severity") or "low").lower()
     priority_name = "Low" if sev == "low" else ("High" if sev == "high" else "Medium")

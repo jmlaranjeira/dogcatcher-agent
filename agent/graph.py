@@ -44,7 +44,8 @@ def analyze_log_wrapper(state):
         print(f"⏭️ Skipping duplicate log #{state.get('log_index')}: {log_key}")
         return {
             **state,
-            "skipped_duplicate": True
+            "skipped_duplicate": True,
+            "create_ticket": False,
         }
     seen_logs = state["seen_logs"]
     seen_logs.add(log_key)

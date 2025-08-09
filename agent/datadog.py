@@ -8,6 +8,16 @@ load_dotenv()
 DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
 DATADOG_APP_KEY = os.getenv("DATADOG_APP_KEY")
 DATADOG_SITE = os.getenv("DATADOG_SITE", "datadoghq.eu")
+DATADOG_SERVICE = os.getenv("DATADOG_SERVICE", "dehnproject")
+DATADOG_ENV = os.getenv("DATADOG_ENV", "dev")
+try:
+    DATADOG_HOURS_BACK = int(os.getenv("DATADOG_HOURS_BACK", "24"))
+except Exception:
+    DATADOG_HOURS_BACK = 24
+try:
+    DATADOG_LIMIT = int(os.getenv("DATADOG_LIMIT", "10"))
+except Exception:
+    DATADOG_LIMIT = 10
 
 HEADERS = {
     "DD-API-KEY": DATADOG_API_KEY,
@@ -18,7 +28,14 @@ HEADERS = {
 MAX_LOG_DETAIL_LENGTH = 300
 
 # Fetch error logs from Datadog based on service and environment parameters.
-def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
+def get_logs(service=None, env=None, hours_back=None, limit=None):
+    service = DATADOG_SERVICE if service is None else service
+    env = DATADOG_ENV if env is None else env
+    hours_back = DATADOG_HOURS_BACK if hours_back is None else hours_back
+    limit = DATADOG_LIMIT if limit is None else limit
+
+    print(f"🔎 Datadog query → service={service}, env={env}, hours_back={hours_back}, limit={limit}")
+
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
 
@@ -54,7 +71,20 @@ def get_logs(service="dehnproject", env="prod", hours_back=24, limit=10):
         msg = attr.get("message", "<no message>")
         logger_name = attr.get("attributes", {}).get("logger", {}).get("name", "unknown.logger")
         thread_name = attr.get("attributes", {}).get("logger", {}).get("thread_name", "unknown.thread")
+        logger_name = str(logger_name) if logger_name is not None else "unknown.logger"
+        thread_name = str(thread_name) if thread_name is not None else "unknown.thread"
         detail = attr.get("attributes", {}).get("properties", {}).get("Log", "no detailed log")
+        # Coerce non-string payloads to JSON/text to avoid type errors
+        if isinstance(detail, (dict, list)):
+            try:
+                import json as _json
+                detail = _json.dumps(detail, ensure_ascii=False)
+            except Exception:
+                detail = str(detail)
+        elif detail is None:
+            detail = "no detailed log"
+        else:
+            detail = str(detail)
         if len(detail) > MAX_LOG_DETAIL_LENGTH:
             detail = detail[:MAX_LOG_DETAIL_LENGTH] + "... [truncated]"
 
