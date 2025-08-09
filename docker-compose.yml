@@ -15,7 +15,7 @@ services:
 
     # Volume is used to store cache and audit logs
     volumes:
-      - agent_cache:/app/.agent_cache
+      - ./_agent_cache:/app/.agent_cache
 
     # Command by default: you can override it for real/dry-run
     # Example commands:
@@ -29,6 +29,3 @@ services:
         limits:
           cpus: "1.0"
           memory: 1G
-
-volumes:
-  agent_cache:
