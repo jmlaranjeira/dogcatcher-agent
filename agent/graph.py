@@ -36,7 +36,13 @@ state_schema = GraphState
 def analyze_log_wrapper(state):
     if "seen_logs" not in state:
         state["seen_logs"] = set()
-    log = state["logs"][state["log_index"]]
+    # Guard: if there are no logs or index is out of range, finish gracefully
+    logs = state.get("logs", [])
+    idx = state.get("log_index", 0)
+    if not logs or idx >= len(logs):
+        print("ℹ️ No logs to analyze; finishing.")
+        return {**state, "finished": True, "create_ticket": False}
+    log = logs[idx]
     log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('message', '<no message>')}"
     print(f"🔍 Analyzing log #{state.get('log_index')} with key: {log_key}")
     # Skip logs that have already been analyzed based on a unique log key

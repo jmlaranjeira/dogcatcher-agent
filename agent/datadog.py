@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -8,6 +9,8 @@ load_dotenv()
 DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
 DATADOG_APP_KEY = os.getenv("DATADOG_APP_KEY")
 DATADOG_SITE = os.getenv("DATADOG_SITE", "datadoghq.eu")
+
+# Optional runtime configuration via environment
 DATADOG_SERVICE = os.getenv("DATADOG_SERVICE", "dehnproject")
 DATADOG_ENV = os.getenv("DATADOG_ENV", "dev")
 try:
@@ -18,6 +21,18 @@ try:
     DATADOG_LIMIT = int(os.getenv("DATADOG_LIMIT", "10"))
 except Exception:
     DATADOG_LIMIT = 10
+try:
+    DATADOG_MAX_PAGES = int(os.getenv("DATADOG_MAX_PAGES", "1"))  # pagination safeguard
+except Exception:
+    DATADOG_MAX_PAGES = 1
+try:
+    DATADOG_TIMEOUT = int(os.getenv("DATADOG_TIMEOUT", "15"))  # seconds
+except Exception:
+    DATADOG_TIMEOUT = 15
+# Extra query terms appended to Datadog filter (e.g., status:error OR status:critical)
+DATADOG_QUERY_EXTRA = os.getenv("DATADOG_QUERY_EXTRA", "")
+# Default statuses; keep classic 'error' unless overridden via DATADOG_QUERY_EXTRA
+DATADOG_STATUSES = os.getenv("DATADOG_STATUSES", "error")
 
 HEADERS = {
     "DD-API-KEY": DATADOG_API_KEY,
@@ -27,19 +42,8 @@ HEADERS = {
 
 MAX_LOG_DETAIL_LENGTH = 300
 
-# Fetch error logs from Datadog based on service and environment parameters.
-def get_logs(service=None, env=None, hours_back=None, limit=None):
-    service = DATADOG_SERVICE if service is None else service
-    env = DATADOG_ENV if env is None else env
-    hours_back = DATADOG_HOURS_BACK if hours_back is None else hours_back
-    limit = DATADOG_LIMIT if limit is None else limit
 
-    print(f"🔎 Datadog query → service={service}, env={env}, hours_back={hours_back}, limit={limit}")
-
-    now = datetime.utcnow()
-    start = now - timedelta(hours=hours_back)
-
-    # --- config validation ---
+def _missing_dd_config() -> list[str]:
     missing = []
     if not DATADOG_API_KEY:
         missing.append("DATADOG_API_KEY")
@@ -47,56 +51,157 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         missing.append("DATADOG_APP_KEY")
     if not DATADOG_SITE:
         missing.append("DATADOG_SITE")
+    return missing
+
+
+# Fetch error logs from Datadog based on service and environment parameters.
+def get_logs(service=None, env=None, hours_back=None, limit=None):
+    service = DATADOG_SERVICE if service is None else service
+    env = DATADOG_ENV if env is None else env
+    hours_back = DATADOG_HOURS_BACK if hours_back is None else hours_back
+    limit = DATADOG_LIMIT if limit is None else limit
+
+    print(
+        f"🔎 Datadog query → service={service}, env={env}, hours_back={hours_back}, limit={limit}, "
+        f"max_pages={DATADOG_MAX_PAGES}"
+    )
+
+    now = datetime.utcnow()
+    start = now - timedelta(hours=hours_back)
+
+    # --- config validation ---
+    missing = _missing_dd_config()
     if missing:
         print(f"❌ Missing Datadog configuration: {', '.join(missing)}. Returning no logs.")
         return []
     # --- end validation ---
 
-    url = f"https://api.{DATADOG_SITE}/api/v2/logs/events/search"
-    payload = {
-        "filter": {
-            "from": start.isoformat() + "Z",
-            "to": now.isoformat() + "Z",
-            "query": f"service:{service} env:{env} status:error",
-        },
-        "page": {"limit": limit},
-    }
+    base_url = f"https://api.{DATADOG_SITE}/api/v2/logs/events/search"
 
-    response = requests.post(url, json=payload, headers=HEADERS)
-    response.raise_for_status()
+    # Compose base query
+    # Allow multiple statuses via DATADOG_STATUSES (e.g., "error,critical")
+    statuses = [s.strip() for s in DATADOG_STATUSES.split(",") if s.strip()]
+    if statuses:
+        status_part = "(" + " OR ".join([f"status:{s}" for s in statuses]) + ")"
+    else:
+        status_part = "status:error"
 
-    results = []
-    for log in response.json().get("data", []):
-        attr = log["attributes"]
-        msg = attr.get("message", "<no message>")
-        logger_name = attr.get("attributes", {}).get("logger", {}).get("name", "unknown.logger")
-        thread_name = attr.get("attributes", {}).get("logger", {}).get("thread_name", "unknown.thread")
-        logger_name = str(logger_name) if logger_name is not None else "unknown.logger"
-        thread_name = str(thread_name) if thread_name is not None else "unknown.thread"
-        detail = attr.get("attributes", {}).get("properties", {}).get("Log", "no detailed log")
-        # Coerce non-string payloads to JSON/text to avoid type errors
-        if isinstance(detail, (dict, list)):
+    # Build optional extra clause from DATADOG_QUERY_EXTRA
+    extra_terms = [t.strip() for t in DATADOG_QUERY_EXTRA.split(",") if t.strip()]
+    extra_mode = os.getenv("DATADOG_QUERY_EXTRA_MODE", "AND").upper()
+    if extra_terms:
+        joiner = " OR " if extra_mode == "OR" else " AND "
+        # Wrap extras in parentheses to avoid precedence surprises
+        extra_clause = " (" + joiner.join(extra_terms) + ")"
+    else:
+        extra_clause = ""
+
+    # Compose final query
+    dd_query = f"service:{service} env:{env} {status_part}{extra_clause}".strip()
+    print(f"🔎 dd_query = {dd_query}")
+
+    def _fetch_page(cursor: str | None = None):
+        payload = {
+            "filter": {
+                "from": start.isoformat() + "Z",
+                "to": now.isoformat() + "Z",
+                "query": dd_query,
+            },
+            "page": {"limit": limit},
+        }
+        if cursor:
+            payload["page"]["cursor"] = cursor
+        try:
+            resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=DATADOG_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            next_cursor = None
             try:
-                import json as _json
-                detail = _json.dumps(detail, ensure_ascii=False)
+                next_cursor = ((data or {}).get("meta") or {}).get("page", {}).get("after")
             except Exception:
+                next_cursor = None
+            return data.get("data", []) or [], next_cursor
+        except requests.RequestException as e:
+            print(f"❌ Datadog request failed: {e}")
+            return [], None
+
+    # Pagination loop (bounded by DATADOG_MAX_PAGES)
+    results = []
+    page = 0
+    cursor = None
+    while True:
+        page += 1
+        data, cursor = _fetch_page(cursor)
+        if not data:
+            break
+        for log in data:
+            attr = log.get("attributes", {})
+            msg = attr.get("message", "<no message>")
+            logger_name = attr.get("attributes", {}).get("logger", {}).get("name", "unknown.logger")
+            thread_name = attr.get("attributes", {}).get("logger", {}).get("thread_name", "unknown.thread")
+            logger_name = str(logger_name) if logger_name is not None else "unknown.logger"
+            thread_name = str(thread_name) if thread_name is not None else "unknown.thread"
+            detail = attr.get("attributes", {}).get("properties", {}).get("Log", "no detailed log")
+            # Coerce non-string payloads to JSON/text to avoid type errors
+            if isinstance(detail, (dict, list)):
+                try:
+                    detail = json.dumps(detail, ensure_ascii=False)
+                except Exception:
+                    detail = str(detail)
+            elif detail is None:
+                detail = "no detailed log"
+            else:
                 detail = str(detail)
-        elif detail is None:
-            detail = "no detailed log"
-        else:
-            detail = str(detail)
-        if len(detail) > MAX_LOG_DETAIL_LENGTH:
-            detail = detail[:MAX_LOG_DETAIL_LENGTH] + "... [truncated]"
+            if len(detail) > MAX_LOG_DETAIL_LENGTH:
+                detail = detail[:MAX_LOG_DETAIL_LENGTH] + "... [truncated]"
 
-        results.append({
-            "logger": logger_name,
-            "thread": thread_name,
-            "message": msg,
-            "timestamp": attr.get("timestamp"),
-            "detail": detail
-        })
+            results.append({
+                "logger": logger_name,
+                "thread": thread_name,
+                "message": msg,
+                "timestamp": attr.get("timestamp"),
+                "detail": detail,
+            })
+        if not cursor or page >= DATADOG_MAX_PAGES:
+            break
 
+    # If no results and we used an extra clause, retry once without it to aid diagnosis
+    if not results and extra_clause:
+        print("🧪 No results with extra clause; retrying once without DATADOG_QUERY_EXTRA…")
+        def _fetch_page_no_extra(cursor: str | None = None):
+            payload = {
+                "filter": {
+                    "from": start.isoformat() + "Z",
+                    "to": now.isoformat() + "Z",
+                    "query": f"service:{service} env:{env} {status_part}".strip(),
+                },
+                "page": {"limit": limit},
+            }
+            if cursor:
+                payload["page"]["cursor"] = cursor
+            try:
+                resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=DATADOG_TIMEOUT)
+                resp.raise_for_status()
+                data = resp.json()
+                next_cursor = None
+                try:
+                    next_cursor = ((data or {}).get("meta") or {}).get("page", {}).get("after")
+                except Exception:
+                    next_cursor = None
+                return data.get("data", []) or [], next_cursor
+            except requests.RequestException as e:
+                print(f"❌ Datadog fallback request failed: {e}")
+                return [], None
+
+        # One-page probe (we only need to know if there are any logs without the extra)
+        data_no_extra, _ = _fetch_page_no_extra(None)
+        print(f"🧪 Fallback (no extra) returned {len(data_no_extra)} logs on first page.")
+        if data_no_extra:
+            print("💡 Suggestion: relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate.")
+
+    print(f"🪵 Collected {len(results)} logs from Datadog")
     return results
+
 
 if __name__ == "__main__":
     logs = get_logs()
