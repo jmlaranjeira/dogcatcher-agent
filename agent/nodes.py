@@ -1,12 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
-print("🚀 Starting agent for Jira project:", os.getenv("JIRA_PROJECT_KEY"))
-
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from agent.jira import create_ticket as create_jira_ticket, check_jira_for_ticket
+from agent.jira import create_ticket as create_jira_ticket
 
 llm = ChatOpenAI(
     model="gpt-4o-mini",
@@ -122,9 +119,12 @@ def create_ticket(state):
     import copy
     import json
 
-    if state.get("ticket_created"):
-        print("🔔 Ya se ha creado un ticket en esta ejecución (incluye simulación). Se omite crear más.")
-        return {**state, "message": "⚠️ Solo se permite crear un ticket por ejecución (incluye simulación)."}
+    MAX_TICKETS_PER_RUN = 3
+    if state.get("_tickets_created_in_run", 0) >= MAX_TICKETS_PER_RUN:
+        print(f"🔔 Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución. Se omite crear más.")
+        return {**state, "message": f"⚠️ Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución."}
+
+    state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
 
     # print("🚀 Entering create_ticket")
     debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
@@ -180,16 +180,6 @@ def create_ticket(state):
             "ticket_created": True
         }
 
-    if check_jira_for_ticket(title, state):
-        processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
-        _save_processed_fingerprints(processed)
-        msg = f"⚠️ Ticket already exists for: {title}"
-        # print(msg)
-        return {
-            **state,
-            "message": msg,
-            "ticket_created": True
-        }
 
     # Prepare payload for Jira ticket creation
     TICKET_FLAG = os.getenv("TICKET_FLAG", "")
@@ -197,6 +187,15 @@ def create_ticket(state):
 
     # labels to include (simulation payload only; real payload built in jira.create_ticket)
     labels = ["datadog-log"]
+    try:
+        from agent.jira import _normalize_log_message
+        norm_msg = _normalize_log_message((state.get("log_data") or {}).get("message", ""))
+        if norm_msg:
+            import hashlib as _hashlib
+            loghash = _hashlib.sha1(norm_msg.encode("utf-8")).hexdigest()[:12]
+            labels.append(f"loghash-{loghash}")
+    except Exception:
+        pass
 
     etype = state.get("error_type")
     base_title = title.replace("**", "")
@@ -225,7 +224,9 @@ def create_ticket(state):
             "summary": clean_title,
             "description": description_adf,
             "labels": labels,
-            "priority": {"name": "Low"},
+            "priority": {"name": ("Low" if (state.get("severity") or "low").lower() == "low"
+                      else ("High" if (state.get("severity") or "low").lower() == "high"
+                            else "Medium"))},
             "customfield_10767": [{"value": "Team Vega"}],
         }
     }
