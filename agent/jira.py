@@ -1,3 +1,9 @@
+"""Jira integration utilities.
+
+Helpers to search for similar issues, add comments, and create tickets with
+consistent labels and deduplication logic. All logs and comments are in
+English for consistency across the project.
+"""
 import os
 import requests
 import base64
@@ -160,7 +166,6 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
         token_clauses.append(f'description ~ "\\"{t}\\""')
     # Add phrase-based clauses when present in normalized summary or current log
     phrases = []
-    haystack = (norm_summary + " " + ((state or {}).get("log_data") or {}).get("message", "")).strip()
     norm_current_log = _normalize_log_message(((state or {}).get("log_data") or {}).get("message", ""))
     haystack = (norm_summary + " " + (norm_current_log or "")).strip()
     if "blob not found" in haystack:
@@ -260,9 +265,6 @@ def find_similar_ticket(summary: str, state: dict | None = None, similarity_thre
         print(f"❌ Error checking Jira: {e}")
         return None, 0.0, None
 
-def check_jira_for_ticket(summary: str, state: dict | None = None, similarity_threshold: float = 0.82) -> bool:
-    key, score, _ = find_similar_ticket(summary, state, similarity_threshold)
-    return key is not None
 
 def comment_on_issue(issue_key: str, comment_text: str) -> bool:
     if not all([JIRA_DOMAIN, JIRA_USER, JIRA_API_TOKEN]):
@@ -302,8 +304,8 @@ def create_ticket(state: dict) -> dict:
 
     MAX_TICKETS_PER_RUN = 3
     if state.get("_tickets_created_in_run", 0) >= MAX_TICKETS_PER_RUN:
-        print(f"🔔 Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución. Se omite crear más.")
-        return {**state, "message": f"⚠️ Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución."}
+        print(f"🔔 Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN}). Skipping.")
+        return {**state, "message": f"⚠️ Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN})."}
 
     state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
 
@@ -329,9 +331,11 @@ def create_ticket(state: dict) -> dict:
     if key:
         print(f"⚠️ Duplicate detected → {key} ({existing_summary}) with score {score:.2f}")
         if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
+            fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
             comment = (
                 f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
                 f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
+                f"Occurrences in last {state.get('window_hours', 48)}h: {(state.get('fp_counts') or {}).get(fp_source, 1)}\n"
                 f"Original message: {log_data.get('message', 'N/A')}\n"
             )
             comment_on_issue(key, comment)

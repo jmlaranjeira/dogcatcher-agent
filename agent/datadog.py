@@ -1,5 +1,13 @@
+"""Datadog log fetcher.
+
+Provides a small client function `get_logs` to retrieve logs from the Datadog
+Logs v2 Search API, with environment-driven defaults and safe pagination.
+All comments and messages are in English for consistency across the project.
+"""
 import os
 import json
+from typing import List, Dict, Any, Optional, Tuple
+
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -54,6 +62,47 @@ def _missing_dd_config() -> list[str]:
     return missing
 
 
+def _coerce_detail(value: Any, fallback: str = "no detailed log") -> str:
+    """Return a safe string representation for the `detail` field.
+
+    - Dict/list are JSON-encoded (UTF-8, not ASCII-escaped).
+    - None becomes `fallback`.
+    - Other types are stringified.
+    """
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    if value is None:
+        return fallback
+    return str(value)
+
+
+def _build_dd_query(service: str, env: str, statuses_csv: str, extra_csv: str, extra_mode: str) -> Tuple[str, str]:
+    """Build Datadog Logs query string and return (query, extra_clause).
+
+    `extra_csv` supports comma-separated terms and `extra_mode` combines them as
+    AND/OR. Parentheses are applied to avoid precedence issues.
+    """
+    statuses = [s.strip() for s in statuses_csv.split(",") if s.strip()]
+    if statuses:
+        status_part = "(" + " OR ".join([f"status:{s}" for s in statuses]) + ")"
+    else:
+        status_part = "status:error"
+
+    extra_terms = [t.strip() for t in extra_csv.split(",") if t.strip()]
+    mode = (extra_mode or "AND").upper()
+    if extra_terms:
+        joiner = " OR " if mode == "OR" else " AND "
+        extra_clause = " (" + joiner.join(extra_terms) + ")"
+    else:
+        extra_clause = ""
+
+    query = f"service:{service} env:{env} {status_part}{extra_clause}".strip()
+    return query, extra_clause
+
+
 # Fetch error logs from Datadog based on service and environment parameters.
 def get_logs(service=None, env=None, hours_back=None, limit=None):
     service = DATADOG_SERVICE if service is None else service
@@ -78,26 +127,15 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
 
     base_url = f"https://api.{DATADOG_SITE}/api/v2/logs/events/search"
 
-    # Compose base query
-    # Allow multiple statuses via DATADOG_STATUSES (e.g., "error,critical")
-    statuses = [s.strip() for s in DATADOG_STATUSES.split(",") if s.strip()]
-    if statuses:
-        status_part = "(" + " OR ".join([f"status:{s}" for s in statuses]) + ")"
-    else:
-        status_part = "status:error"
-
-    # Build optional extra clause from DATADOG_QUERY_EXTRA
-    extra_terms = [t.strip() for t in DATADOG_QUERY_EXTRA.split(",") if t.strip()]
-    extra_mode = os.getenv("DATADOG_QUERY_EXTRA_MODE", "AND").upper()
-    if extra_terms:
-        joiner = " OR " if extra_mode == "OR" else " AND "
-        # Wrap extras in parentheses to avoid precedence surprises
-        extra_clause = " (" + joiner.join(extra_terms) + ")"
-    else:
-        extra_clause = ""
-
-    # Compose final query
-    dd_query = f"service:{service} env:{env} {status_part}{extra_clause}".strip()
+    # Build final query (and keep the extra clause for optional fallback)
+    extra_mode = os.getenv("DATADOG_QUERY_EXTRA_MODE", "AND")
+    dd_query, extra_clause = _build_dd_query(
+        service=service,
+        env=env,
+        statuses_csv=DATADOG_STATUSES,
+        extra_csv=DATADOG_QUERY_EXTRA,
+        extra_mode=extra_mode,
+    )
     print(f"🔎 dd_query = {dd_query}")
 
     def _fetch_page(cursor: str | None = None):
@@ -141,17 +179,9 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
             thread_name = attr.get("attributes", {}).get("logger", {}).get("thread_name", "unknown.thread")
             logger_name = str(logger_name) if logger_name is not None else "unknown.logger"
             thread_name = str(thread_name) if thread_name is not None else "unknown.thread"
-            detail = attr.get("attributes", {}).get("properties", {}).get("Log", "no detailed log")
-            # Coerce non-string payloads to JSON/text to avoid type errors
-            if isinstance(detail, (dict, list)):
-                try:
-                    detail = json.dumps(detail, ensure_ascii=False)
-                except Exception:
-                    detail = str(detail)
-            elif detail is None:
-                detail = "no detailed log"
-            else:
-                detail = str(detail)
+            detail = _coerce_detail(
+                attr.get("attributes", {}).get("properties", {}).get("Log", "no detailed log")
+            )
             if len(detail) > MAX_LOG_DETAIL_LENGTH:
                 detail = detail[:MAX_LOG_DETAIL_LENGTH] + "... [truncated]"
 
@@ -173,7 +203,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 "filter": {
                     "from": start.isoformat() + "Z",
                     "to": now.isoformat() + "Z",
-                    "query": f"service:{service} env:{env} {status_part}".strip(),
+                    "query": f"service:{service} env:{env} {extra_clause}".strip() if not extra_clause else f"service:{service} env:{env} {extra_clause}".strip(),
                 },
                 "page": {"limit": limit},
             }

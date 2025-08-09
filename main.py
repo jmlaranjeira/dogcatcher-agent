@@ -1,3 +1,9 @@
+"""Main entry point for the Datadog → Jira automation agent.
+
+Loads environment variables, builds the processing graph, fetches logs,
+and runs the LangGraph pipeline to analyze and create Jira tickets.
+All logging and comments are in English for consistency.
+"""
 from agent.datadog import get_logs
 from agent.graph import build_graph
 from dotenv import load_dotenv

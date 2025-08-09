@@ -1,3 +1,11 @@
+"""Pipeline nodes for analysis and ticket creation.
+
+Contains:
+- analyze_log(state): LLM-based log analysis producing structured fields
+- create_ticket(state): orchestration and simulation of Jira ticket creation
+- fetch_logs(state): prepares the current log in state
+All comments and logs are in English for consistency across the project.
+"""
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -59,8 +67,6 @@ def analyze_log(state):
     logger = log_data.get("logger", "unknown.logger")
     thread = log_data.get("thread", "unknown.thread")
     detail = log_data.get("detail", "")
-    # Debug: structured log data
-    # print(json.dumps(log_data, indent=2))
     contextual_log = (
         f"[Logger]: {logger if logger else 'unknown.logger'}\n"
         f"[Thread]: {thread if thread else 'unknown.thread'}\n"
@@ -69,8 +75,6 @@ def analyze_log(state):
     )
 
     response = chain.invoke({"log_message": contextual_log})
-    # Debug: LLM response content
-    # print("🧠 LLM response:", response.content)
     content = response.content
     print("🧠 LLM raw content:", content)
     match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
@@ -86,10 +90,9 @@ def analyze_log(state):
         serializable_state = copy.deepcopy({**state, **parsed})
         if isinstance(serializable_state.get("seen_logs"), set):
             serializable_state["seen_logs"] = list(serializable_state["seen_logs"])
-        # print("📦 State after analyze_log:", json.dumps(serializable_state, indent=2))
         print(f"🧠 Log analyzed → Type: {parsed.get('error_type')}, Create ticket: {parsed.get('create_ticket')}")
         import pprint
-        print("🚨 Estado retornado de analyze_log:")
+        print("🚨 Returned state from analyze_log:")
         pprint.pprint({**state, **parsed})
         return {**state, **parsed, "severity": parsed.get("severity", "low")}
     except (json.JSONDecodeError, ValueError):
@@ -105,7 +108,7 @@ def create_ticket(state):
     import os
     print(f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}")
     import pprint
-    print("🔎 Estado recibido en create_ticket:")
+    print("🔎 State received in create_ticket:")
     pprint.pprint(state)
     assert "ticket_title" in state and "ticket_description" in state, "Missing LLM fields before jira.create_ticket"
     title = state.get("ticket_title")
@@ -121,17 +124,14 @@ def create_ticket(state):
 
     MAX_TICKETS_PER_RUN = 3
     if state.get("_tickets_created_in_run", 0) >= MAX_TICKETS_PER_RUN:
-        print(f"🔔 Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución. Se omite crear más.")
-        return {**state, "message": f"⚠️ Se alcanzó el máximo de {MAX_TICKETS_PER_RUN} tickets en esta ejecución."}
+        print(f"🔔 Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN}). Skipping.")
+        return {**state, "message": f"⚠️ Ticket creation limit reached for this run (max {MAX_TICKETS_PER_RUN})."}
 
     state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
 
-    # print("🚀 Entering create_ticket")
     debug_state = {k: (list(v) if isinstance(v, set) else v) for k, v in state.items()}
-    # print("📥 State received in create_ticket:", json.dumps(debug_state, indent=2))
 
     if not title or not description:
-        # print("⚠️ Ticket title or description missing. Ticket not created.")
         return {
             **state,
             "message": "⚠️ Ticket title or description missing. Ticket not created.",
@@ -150,6 +150,11 @@ def create_ticket(state):
     # Put fingerprint into state so Jira payload can add a label
     state["log_fingerprint"] = fingerprint
 
+    # Occurrence stats for this fingerprint (for description/comments)
+    log_key = fp_source
+    occ = (state.get("fp_counts") or {}).get(log_key, 1)
+    win = state.get("window_hours", 48)
+
     extra_info = f"""
     ---
     🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
@@ -157,6 +162,7 @@ def create_ticket(state):
     🧵 Thread: {log_data.get('thread', 'N/A')}
     📝 Original Log: {log_data.get('message', 'N/A')}
     🔍 Detail: {log_data.get('detail', 'N/A')}
+    📈 Occurrences in last {win}h: {occ}
     """
 
     full_description = f"{description.strip()}\n{extra_info.strip()}"
@@ -169,6 +175,7 @@ def create_ticket(state):
             comment = (
                 f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
                 f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
+                f"Occurrences in last {win}h: {occ}\n"
                 f"Original message: {log_data.get('message', 'N/A')}\n"
             )
             comment_on_issue(key, comment)
@@ -199,6 +206,9 @@ def create_ticket(state):
 
     etype = state.get("error_type")
     base_title = title.replace("**", "")
+    MAX_TITLE = 120
+    if len(base_title) > MAX_TITLE:
+        base_title = base_title[: MAX_TITLE - 1] + "…"
     prefix = "[Datadog]" + (f"[{etype}]" if etype else "")
     clean_title = f"{prefix} {base_title}".strip()
 
@@ -219,14 +229,20 @@ def create_ticket(state):
         ]
     }
 
+    severity = (state.get("severity") or "low").lower()
+    if severity == "low":
+        priority_name = "Low"
+    elif severity == "high":
+        priority_name = "High"
+    else:
+        priority_name = "Medium"
+
     payload = {
         "fields": {
             "summary": clean_title,
             "description": description_adf,
             "labels": labels,
-            "priority": {"name": ("Low" if (state.get("severity") or "low").lower() == "low"
-                      else ("High" if (state.get("severity") or "low").lower() == "high"
-                            else "Medium"))},
+            "priority": {"name": priority_name},
             "customfield_10767": [{"value": "Team Vega"}],
         }
     }
@@ -235,8 +251,12 @@ def create_ticket(state):
     state["ticket_title"] = clean_title
     state["jira_payload"] = payload
 
-    if os.getenv("AUTO_CREATE_TICKET", "false").lower() == "true":
+    # Fetch environment variable to determine if ticket should be auto-created
+    auto_create = os.getenv("AUTO_CREATE_TICKET", "false").lower() == "true"
+
+    if auto_create:
         try:
+            # Attempt to create the Jira ticket
             print(f"🚀 Creating ticket in project: {os.getenv('JIRA_PROJECT_KEY')}")
             state = create_jira_ticket(state)
             issue_key = state.get("jira_response_key", None)
@@ -245,18 +265,21 @@ def create_ticket(state):
                 print(f"✅ Jira ticket created: {issue_key}")
                 if jira_url:
                     print(f"🔗 {jira_url}")
-                # mark as created only on success and persist fingerprint
+                # Mark as created only on success and persist fingerprint
                 state["ticket_created"] = True
-                processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
-                _save_processed_fingerprints(processed)
+                if state.get("log_fingerprint"):
+                    processed.add(state["log_fingerprint"])
+                    _save_processed_fingerprints(processed)
             else:
                 print("❌ No Jira issue key found after ticket creation attempt.")
                 if "jira_response_raw" in state:
                     import json
                     print(json.dumps(state["jira_response_raw"], indent=2))
-        except Exception:
-            print("❌ Failed to create Jira ticket.")
+        except Exception as e:
+            # Log any unexpected errors during ticket creation but do not raise
+            print(f"❌ Failed to create Jira ticket due to unexpected error: {e}")
     else:
+        # Simulation mode: do not create ticket, just print payload info
         print("\n🧪 Simulated Ticket Creation (AUTO_CREATE_TICKET is false)...")
         print(f"📌 Title      : {clean_title}")
         print(f"📝 Description: {full_description}")
@@ -278,16 +301,24 @@ def fetch_logs(state):
     if state.get("skipped_duplicate"):
         return state
 
-    # Debug: processing new log
-    # print("🔄 Processing new log...")
-    # print(json.dumps(state, indent=2))
     logs = state.get("logs", [])
-    # print("🪵 fetch_logs called")
-    # print(json.dumps(state, indent=2))
+
+    # Compute per-run fingerprint counts once (logger|thread|message)
+    if "fp_counts" not in state:
+        counts = {}
+        for lg in logs:
+            k = f"{lg.get('logger','')}|{lg.get('thread','')}|{lg.get('message','')}"
+            counts[k] = counts.get(k, 0) + 1
+        state["fp_counts"] = counts
+        try:
+            import os as _os
+            state["window_hours"] = int(_os.getenv("DATADOG_HOURS_BACK", "48"))
+        except Exception:
+            state["window_hours"] = 48
+
     index = state.get("log_index", 0)
     if index < len(logs):
         log = logs[index]
-        # print(f"📝 Current log message: {log.get('message', '<no message>')}")
         return {
             **state,
             "log_message": log.get("message", ""),
