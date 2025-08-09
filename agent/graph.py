@@ -1,99 +1,87 @@
-from langgraph.graph import StateGraph, END
+"""Graph definition for the Datadog → LLM → Jira pipeline.
+
+This module wires the processing flow using LangGraph. The state is a plain
+dictionary carrying the current log, LLM outputs, and control flags.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from agent.state import GraphState
+
+from langgraph.graph import END, StateGraph
 from agent.nodes import analyze_log, fetch_logs
 from agent.nodes import create_ticket as create_jira_ticket
 
 
-# Shared state is a simple dict (JSON-like)
-from typing import TypedDict, List, Set, Dict, Any
+def analyze_log_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Load the current log, skip local duplicates, then call `analyze_log`.
 
-class GraphState(TypedDict, total=False):
-    # core
-    logs: List[dict]
-    log_index: int
-    seen_logs: Set[str]
-    finished: bool
-    skipped_duplicate: bool
-
-    # produced by analyze_log / consumed by create_ticket
-    create_ticket: bool
-    error_type: str
-    ticket_title: str
-    ticket_description: str
-
-    # context passed around
-    log_message: str
-    log_data: Dict[str, Any]
-    message: str
-
-    # outputs / side info
-    ticket_created: bool
-    jira_payload: Dict[str, Any]
-    severity: str
-
-state_schema = GraphState
-
-# Wrapper for analyze_log to handle current log and duplicate detection
-def analyze_log_wrapper(state):
+    Local duplicate detection uses a simple fingerprint: ``logger|thread|message``
+    for the current item. If the log list is empty or the index is out of range,
+    mark the graph as finished gracefully.
+    """
     if "seen_logs" not in state:
         state["seen_logs"] = set()
-    # Guard: if there are no logs or index is out of range, finish gracefully
+
     logs = state.get("logs", [])
     idx = state.get("log_index", 0)
     if not logs or idx >= len(logs):
         print("ℹ️ No logs to analyze; finishing.")
         return {**state, "finished": True, "create_ticket": False}
+
     log = logs[idx]
-    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('message', '<no message>')}"
+    log_key = (
+        f"{log.get('logger', 'unknown')}|"
+        f"{log.get('thread', 'unknown')}|"
+        f"{log.get('message', '<no message>')}"
+    )
     print(f"🔍 Analyzing log #{state.get('log_index')} with key: {log_key}")
-    # Skip logs that have already been analyzed based on a unique log key
+
+    # Skip logs already analyzed in this run
     if log_key in state["seen_logs"]:
         print(f"⏭️ Skipping duplicate log #{state.get('log_index')}: {log_key}")
-        return {
-            **state,
-            "skipped_duplicate": True,
-            "create_ticket": False,
-        }
-    seen_logs = state["seen_logs"]
-    seen_logs.add(log_key)
-    new_state = analyze_log({
+        return {**state, "skipped_duplicate": True, "create_ticket": False}
+
+    state["seen_logs"].add(log_key)
+
+    return analyze_log({
         **state,
         "log_message": log.get("message", "<no message>"),
         "log_data": log,
-        "seen_logs": seen_logs
+        "seen_logs": state["seen_logs"],
     })
-    return new_state
 
-# Function to advance to next log, avoiding infinite loops via 'visited' set
-def next_log(state):
+
+def next_log(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Advance to the next log or finish if the end is reached."""
     logs = state.get("logs", [])
     index = state.get("log_index", 0) + 1
 
     if index >= len(logs):
         return {**state, "finished": True}
 
-    # Skip duplicate logs
     log = logs[index]
-    log_key = f"{log.get('logger', 'unknown')}|{log.get('thread', 'unknown')}|{log.get('message', '<no message>')}"
+    log_key = (
+        f"{log.get('logger', 'unknown')}|"
+        f"{log.get('thread', 'unknown')}|"
+        f"{log.get('message', '<no message>')}"
+    )
+
     if log_key in state.get("seen_logs", set()):
-        return {
-            **state,
-            "log_index": index,
-            "skipped_duplicate": True
-        }
+        return {**state, "log_index": index, "skipped_duplicate": True}
 
     return {
         **state,
         "log_index": index,
         "log_message": log.get("message", "<no message>"),
-        "log_data": log
+        "log_data": log,
     }
 
-# Build the LangGraph execution flow with steps:
-# 1. Fetch log
-# 2. Analyze log
-# 3. Create ticket or move to next log
-# 4. Avoid duplicate processing with memory (seen_logs and visited)
+
 def build_graph():
+    """Compile and return the LangGraph graph for this pipeline."""
     builder = StateGraph(GraphState)
 
     builder.set_entry_point("fetch_logs")
@@ -105,23 +93,17 @@ def build_graph():
 
     builder.add_conditional_edges(
         "analyze_log",
-        lambda state: "create_ticket" if state.get("create_ticket") else "next_log",
-        {
-            "create_ticket": "create_ticket",
-            "next_log": "next_log"
-        }
+        lambda s: "create_ticket" if s.get("create_ticket") else "next_log",
+        {"create_ticket": "create_ticket", "next_log": "next_log"},
     )
 
     builder.add_edge("create_ticket", "next_log")
 
     builder.add_node("next_log", next_log)
-    # Conditional finish: if 'finished', terminate; else, continue
     builder.add_conditional_edges(
         "next_log",
-        lambda state: END if state.get("finished") else "analyze_log",
-        {
-            END: END,
-            "analyze_log": "analyze_log"
-        }
+        lambda s: END if s.get("finished") else "analyze_log",
+        {END: END, "analyze_log": "analyze_log"},
     )
+
     return builder.compile()
