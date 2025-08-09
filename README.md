@@ -84,6 +84,10 @@ AUTO_CREATE_TICKET=false             # true/1/yes to create real tickets; false 
 PERSIST_SIM_FP=false                 # Persist fingerprints even in simulation mode
 COMMENT_ON_DUPLICATE=true            # Add comments on detected duplicate issues
 MAX_TICKETS_PER_RUN=3                # Per-run cap on real ticket creation (0 = no cap)
+SEVERITY_RULES_JSON=                 # JSON mapping error_type→severity, e.g. {"blob-not-found":"medium"}
+COMMENT_COOLDOWN_MINUTES=120         # Minutes to wait before re-commenting the same Jira issue (0 disables)
+AGGREGATE_EMAIL_NOT_FOUND=false      # Aggregate email-not-found into one parent ticket (adds label aggregate-email-not-found)
+AGGREGATE_KAFKA_CONSUMER=false       # Aggregate kafka-consumer into one parent ticket (adds label aggregate-kafka-consumer)
 ```
 
 Notes:
@@ -155,6 +159,41 @@ By decision:
 - The report reads from `.agent_cache/audit_logs.jsonl`. To start fresh, rotate or delete that file.
 - `--since-hours` filters by time window; omit it to include all history.
 
+## 🐳 Docker
+You can run the agent in a container (handy for CI or a long‑running service).
+
+### Build
+```bash
+docker build -t dd-jira-agent:latest .
+```
+
+### Dry‑run (safe)
+```bash
+docker run --rm \
+  --env-file ./.env \
+  -e AUTO_CREATE_TICKET=false \
+  -v $(pwd)/.agent_cache:/app/.agent_cache \
+  dd-jira-agent:latest \
+  python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+```
+
+### Real mode (creates Jira tickets — be cautious)
+```bash
+docker run --rm \
+  --env-file ./.env \
+  -e AUTO_CREATE_TICKET=true \
+  -v $(pwd)/.agent_cache:/app/.agent_cache \
+  dd-jira-agent:latest \
+  python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --max-tickets 5
+```
+
+### docker‑compose (optional)
+`docker-compose.yml` includes a ready‑to‑run service:
+```bash
+docker compose up --build
+```
+It mounts `.agent_cache` as a volume and loads variables from `.env`. Override CLI flags via `command:` in the compose file.
+
 ---
 
 ## 🧪 Duplicate Matching — Details
@@ -170,15 +209,22 @@ Normalization removes email addresses, URLs/tokens, UUIDs, timestamps, long hash
 ## 📦 Project Structure
 ```
 langgraph-agent-demo/
-├── main.py                # Entrypoint
+├── main.py                # Entrypoint & CLI
 ├── .env                   # Secrets & config
+├── Dockerfile             # Container image
+├── docker-compose.yml     # Optional compose service
+├── .dockerignore
 ├── agent/
 │   ├── datadog.py         # Fetch & parse logs
 │   ├── graph.py           # LangGraph wiring
 │   ├── state.py           # Shared state types
-│   ├── jira.py            # Jira API + matching + commenting
-│   └── nodes.py           # LLM analysis + ticket creation + guards
-|── tools/
+│   ├── nodes.py           # LLM analysis + ticket creation + guards
+│   └── jira/              # Jira integration (modular)
+│       ├── __init__.py    # Public API: create_ticket, comment_on_issue, find_similar_ticket
+│       ├── client.py      # HTTP helpers (search/create/comment/labels)
+│       ├── match.py       # Similarity, JQL, Original Log extraction
+│       └── utils.py       # Normalization, loghash, fingerprint & comment caches
+├── tools/
 │   └── report.py          # Audit report generator
 └── requirements.txt
 ```

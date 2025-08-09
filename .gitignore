@@ -6,3 +6,5 @@ __pycache__/
 *.sqlite3
 agent/**/__pycache__/
 .DS_Store
+_agent_cache/
+.agent_cache/

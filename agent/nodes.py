@@ -12,6 +12,9 @@ load_dotenv()
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from agent.jira import create_ticket as create_jira_ticket
+
+# --- Import comment cool-down helpers ---
+from agent.jira.utils import should_comment as _should_comment, update_comment_timestamp as _touch_comment
 import os
 
 # LLM configuration via environment variables
@@ -242,13 +245,22 @@ def create_ticket(state):
     if key:
         print(f"⚠️ Duplicate detected → {key} ({existing_summary}) with score {score:.2f}")
         if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
-            comment = (
-                f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
-                f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
-                f"Occurrences in last {win}h: {occ}\n"
-                f"Original message: {log_data.get('message', 'N/A')}\n"
-            )
-            comment_on_issue(key, comment)
+            cooldown_min = 0
+            try:
+                cooldown_min = int(os.getenv("COMMENT_COOLDOWN_MINUTES", "120") or "0")
+            except Exception:
+                cooldown_min = 120
+            if _should_comment(key, cooldown_min):
+                comment = (
+                    f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
+                    f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
+                    f"Occurrences in last {win}h: {occ}\n"
+                    f"Original message: {log_data.get('message', 'N/A')}\n"
+                )
+                comment_on_issue(key, comment)
+                _touch_comment(key)
+            else:
+                print(f"🕑 Duplicate comment suppressed by cool-down for issue {key}.")
         if state.get("log_fingerprint"):
             processed.add(state["log_fingerprint"])
             _save_processed_fingerprints(processed)
@@ -295,6 +307,17 @@ def create_ticket(state):
         base_title = "Investigate Blob Not Found errors (aggregated)"
         # Mark aggregation via label to ease future O(1) lookups
         labels.append("aggregate-blob-not-found")
+
+    # Aggregation for noisy patterns: email-not-found and kafka-consumer (optional)
+    aggregate_email = os.getenv("AGGREGATE_EMAIL_NOT_FOUND", "false").lower() in ("1","true","yes")
+    if aggregate_email and etype == "email-not-found":
+        base_title = "Investigate Email Not Found errors (aggregated)"
+        labels.append("aggregate-email-not-found")
+
+    aggregate_kafka = os.getenv("AGGREGATE_KAFKA_CONSUMER", "false").lower() in ("1","true","yes")
+    if aggregate_kafka and etype == "kafka-consumer":
+        base_title = "Investigate Kafka Consumer errors (aggregated)"
+        labels.append("aggregate-kafka-consumer")
 
     MAX_TITLE = 120
     if len(base_title) > MAX_TITLE:
