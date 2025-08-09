@@ -154,7 +154,6 @@ By decision:
 **Notes**
 - The report reads from `.agent_cache/audit_logs.jsonl`. To start fresh, rotate or delete that file.
 - `--since-hours` filters by time window; omit it to include all history.
-```
 
 ---
 
