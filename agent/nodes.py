@@ -42,8 +42,10 @@ import json
 import hashlib
 import pathlib
 from typing import Set as _Set
+import datetime
 
 _CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
+_AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
 
 
 def _load_processed_fingerprints() -> _Set[str]:
@@ -59,6 +61,13 @@ def _save_processed_fingerprints(fps: _Set[str]) -> None:
     _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(_CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(list(fps)), f, ensure_ascii=False, indent=2)
+
+
+def _append_audit_log(entry: dict) -> None:
+    _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
 
 # Analyze a log entry using an LLM to extract structured incident data.
 def analyze_log(state):
@@ -146,6 +155,23 @@ def create_ticket(state):
     processed = _load_processed_fingerprints()
     if fingerprint in processed:
         print(f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}")
+
+        # Append audit log entry for duplicate
+        audit_entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "fingerprint": fingerprint,
+            "error_type": state.get("error_type"),
+            "severity": state.get("severity"),
+            "create_ticket": False,
+            "duplicate": True,
+            "decision": "duplicate-fingerprint",
+            "existing_issue_key": None,
+            "jira_key": None,
+            "occurrences": (state.get("fp_counts") or {}).get(fp_source, 1),
+            "message": "Duplicate log skipped (fingerprint cache)"
+        }
+        _append_audit_log(audit_entry)
+
         return {**state, "message": "⚠️ Log already processed previously (fingerprint match).", "ticket_created": True}
     # Put fingerprint into state so Jira payload can add a label
     state["log_fingerprint"] = fingerprint
@@ -181,6 +207,23 @@ def create_ticket(state):
             comment_on_issue(key, comment)
         processed.add(state["log_fingerprint"]) if state.get("log_fingerprint") else None
         _save_processed_fingerprints(processed)
+
+        # Append audit log entry for duplicate detected via Jira
+        audit_entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "fingerprint": fingerprint,
+            "error_type": state.get("error_type"),
+            "severity": state.get("severity"),
+            "create_ticket": False,
+            "duplicate": True,
+            "decision": "duplicate-jira",
+            "existing_issue_key": key,
+            "jira_key": key,
+            "occurrences": occ,
+            "message": f"Duplicate in Jira: {key} — {existing_summary}"
+        }
+        _append_audit_log(audit_entry)
+
         return {
             **state,
             "message": f"⚠️ Duplicate in Jira: {key} — {existing_summary}",
@@ -189,8 +232,6 @@ def create_ticket(state):
 
 
     # Prepare payload for Jira ticket creation
-    TICKET_FLAG = os.getenv("TICKET_FLAG", "")
-    TICKET_LABEL = os.getenv("TICKET_LABEL", "")
 
     # labels to include (simulation payload only; real payload built in jira.create_ticket)
     labels = ["datadog-log"]
@@ -270,6 +311,22 @@ def create_ticket(state):
                 if state.get("log_fingerprint"):
                     processed.add(state["log_fingerprint"])
                     _save_processed_fingerprints(processed)
+
+                # Append audit log entry for created ticket
+                audit_entry = {
+                    "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                    "fingerprint": fingerprint,
+                    "error_type": state.get("error_type"),
+                    "severity": state.get("severity"),
+                    "create_ticket": True,
+                    "duplicate": False,
+                    "decision": "created",
+                    "existing_issue_key": None,
+                    "jira_key": issue_key,
+                    "occurrences": occ,
+                    "message": "Ticket created successfully"
+                }
+                _append_audit_log(audit_entry)
             else:
                 print("❌ No Jira issue key found after ticket creation attempt.")
                 if "jira_response_raw" in state:
@@ -290,6 +347,22 @@ def create_ticket(state):
         if persist_sim and state.get("log_fingerprint"):
             processed.add(state["log_fingerprint"])
             _save_processed_fingerprints(processed)
+
+        # Append audit log entry for simulation
+        audit_entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "fingerprint": fingerprint,
+            "error_type": state.get("error_type"),
+            "severity": state.get("severity"),
+            "create_ticket": bool(state.get("create_ticket")),
+            "duplicate": False,
+            "decision": "simulated",
+            "existing_issue_key": None,
+            "jira_key": None,
+            "occurrences": occ,
+            "message": "Ticket creation simulated (dry run)"
+        }
+        _append_audit_log(audit_entry)
 
     return {
         **state,
