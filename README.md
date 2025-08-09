@@ -218,7 +218,12 @@ langgraph-agent-demo/
 │   ├── datadog.py         # Fetch & parse logs
 │   ├── graph.py           # LangGraph wiring
 │   ├── state.py           # Shared state types
-│   ├── nodes.py           # LLM analysis + ticket creation + guards
+│   └── node/              # Agent nodes (split from nodes.py)
+│       ├── __init__.py    # Node registry / exports
+│       ├── analysis.py    # LLM analysis node
+│       ├── ticket.py      # Ticket creation node
+│       ├── dedup.py       # Deduplication/guard node
+│       └── ...            # (other agent nodes as needed)
 │   └── jira/              # Jira integration (modular)
 │       ├── __init__.py    # Public API: create_ticket, comment_on_issue, find_similar_ticket
 │       ├── client.py      # HTTP helpers (search/create/comment/labels)
