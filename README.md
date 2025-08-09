@@ -95,6 +95,18 @@ python main.py
 - **Simulation** (`AUTO_CREATE_TICKET=false`): analyzes logs and simulates ticket creation.
 - **Real** (`AUTO_CREATE_TICKET=true`): creates **up to 3** real tickets per run; on duplicates it comments and does not create.
 
+You can also run with CLI arguments:
+```bash
+python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+```
+
+- `--dry-run`: run in simulation mode without creating Jira tickets.
+- `--real`: (alternative to --dry-run) run in real mode and create tickets.
+- `--env`: Datadog environment to query (`dev` or `prod`).
+- `--service`: Datadog service name to filter logs.
+- `--hours`: time window in hours for logs to fetch.
+- `--limit`: maximum logs per page from Datadog.
+
 ---
 
 ## 🧪 Duplicate Matching — Details
