@@ -1,0 +1,9 @@
+{
+  "dehnproject": {
+    "owner": "your-github-org-or-user",
+    "name": "your-repo-name",
+    "default_branch": "main"
+  }
+}
+
+
