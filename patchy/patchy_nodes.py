@@ -8,7 +8,8 @@ from typing import Any, Dict, TypedDict
 
 from .utils.audit import append_audit
 from .utils.git_tools import RepoConfig, clone_repo, git_create_branch, git_commit_push
-from .utils.gh_api import create_pull_request, find_existing_pr
+from .utils.gh_api import create_pull_request, find_existing_pr, add_labels
+from agent.jira.client import add_comment as jira_add_comment, is_configured as jira_is_configured
 
 
 class PatchyState(TypedDict, total=False):
@@ -152,6 +153,18 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         pr = create_pull_request(owner, repo, head=branch, base=base, title=title, body=pr_text, draft=draft)
         url = pr.get("html_url")
+        number = int(pr.get("number", 0) or 0)
+        # Label PR
+        try:
+            add_labels(owner, repo, number, ["auto-fix", "patchy", "low-risk"])
+        except Exception:
+            pass
+        # Comment on Jira if configured and key provided
+        if jira and jira_is_configured():
+            try:
+                jira_add_comment(jira, f"Refs: ({jira}) {url}")
+            except Exception:
+                pass
         append_audit({
             "service": service,
             "status": "draft_opened" if draft else "opened",
