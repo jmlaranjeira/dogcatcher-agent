@@ -19,9 +19,9 @@ services:
 
     # Command by default: you can override it for real/dry-run
     # Example commands:
-    # command: ["python","main.py","--real","--env","prod","--service","dehnproject","--hours","48","--limit","100","--max-tickets","5"]
+    command: ["python","main.py","--real","--env","prod","--service","dehnproject","--hours","48","--limit","100","--max-tickets","5"]
     # command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
-    command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
+    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
 
     # Resources (Optional)
     deploy:

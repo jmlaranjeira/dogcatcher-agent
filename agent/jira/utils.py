@@ -74,7 +74,6 @@ def save_processed_fingerprints(fps: Iterable[str]) -> None:
     with open(_CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(list(set(fps))), f, ensure_ascii=False, indent=2)
 
-
 # --- Comment cool-down helpers ---
 import datetime as _dt
 
