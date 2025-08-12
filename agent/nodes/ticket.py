@@ -36,6 +36,11 @@ def _map_severity_from_env(error_type: str, current: str) -> str:
         return current
 
 
+def _maybe_escalate_severity_by_occurrences(current_sev: str, occ: int) -> str:
+    # Reverted: no automatic escalation based on occurrences
+    return current_sev
+
+
 # === Patch: Insert new helper functions ===
 
 def _append_audit(*, decision: str, state: Dict[str, Any], fingerprint: str, occ: int, jira_key: str | None = None, duplicate: bool = False, create: bool = False, message: str = "") -> None:
@@ -276,7 +281,7 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     """
     log_data = state.get("log_data", {})
 
-    # Optional severity override
+    # Optional severity override and occurrence-based escalation
     state["severity"] = _map_severity_from_env(state.get("error_type"), state.get("severity"))
 
     # Stable fingerprint across runs
@@ -287,6 +292,8 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     # Occurrence stats for description/comments
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
     win = state.get("window_hours", 48)
+
+    # Keep severity unchanged (no automatic occurrence-based escalation)
 
     # Extra info block
     extra_info = _build_extra_info(log_data, win, occ)
