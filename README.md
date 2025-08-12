@@ -88,6 +88,11 @@ SEVERITY_RULES_JSON=                 # JSON mapping error_type→severity, e.g. 
 COMMENT_COOLDOWN_MINUTES=120         # Minutes to wait before re-commenting the same Jira issue (0 disables)
 AGGREGATE_EMAIL_NOT_FOUND=false      # Aggregate email-not-found into one parent ticket (adds label aggregate-email-not-found)
 AGGREGATE_KAFKA_CONSUMER=false       # Aggregate kafka-consumer into one parent ticket (adds label aggregate-kafka-consumer)
+
+# Optional occurrence-based escalation (disabled by default)
+OCC_ESCALATE_ENABLED=false           # Enable escalation based on occurrences in time window
+OCC_ESCALATE_THRESHOLD=10            # Escalate when occurrences >= threshold
+OCC_ESCALATE_TO=high                 # Target severity when escalating (low|medium|high)
 ```
 
 Notes:
@@ -218,11 +223,10 @@ langgraph-agent-demo/
 │   ├── datadog.py         # Fetch & parse logs
 │   ├── graph.py           # LangGraph wiring
 │   ├── state.py           # Shared state types
-│   └── node/              # Agent nodes (split from nodes.py)
+│   └── nodes/             # Agent nodes (split from nodes.py)
 │       ├── __init__.py    # Node registry / exports
 │       ├── analysis.py    # LLM analysis node
 │       ├── ticket.py      # Ticket creation node
-│       ├── dedup.py       # Deduplication/guard node
 │       └── ...            # (other agent nodes as needed)
 │   └── jira/              # Jira integration (modular)
 │       ├── __init__.py    # Public API: create_ticket, comment_on_issue, find_similar_ticket
