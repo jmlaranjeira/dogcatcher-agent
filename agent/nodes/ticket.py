@@ -9,6 +9,7 @@ import datetime
 from agent.jira import create_ticket as create_jira_ticket, find_similar_ticket, comment_on_issue
 from agent.jira.utils import normalize_log_message as _normalize_log_message
 from agent.jira.utils import should_comment as _should_comment, update_comment_timestamp as _touch_comment
+from agent.jira.utils import priority_name_from_severity as _priority_name_from_severity
 
 # Module-level constants
 MAX_TITLE = 120
@@ -34,6 +35,30 @@ def _map_severity_from_env(error_type: str, current: str) -> str:
         return current
     except json.JSONDecodeError:
         return current
+
+
+def _maybe_escalate_severity_by_occurrences(current_sev: str, occ: int) -> str:
+    """Optionally escalate severity based on occurrences in window.
+
+    Controlled by env vars:
+    - OCC_ESCALATE_ENABLED (default: false)
+    - OCC_ESCALATE_THRESHOLD (default: 10)
+    - OCC_ESCALATE_TO (one of low|medium|high, default: high)
+    """
+    try:
+        enabled = (os.getenv("OCC_ESCALATE_ENABLED", "false") or "").lower() in ("1", "true", "yes")
+        threshold = int(os.getenv("OCC_ESCALATE_THRESHOLD", "10") or "10")
+        target = (os.getenv("OCC_ESCALATE_TO", "high") or "high").strip().lower()
+    except Exception:
+        enabled, threshold, target = False, 10, "high"
+
+    if not enabled or occ < threshold:
+        return current_sev
+
+    order = {"low": 0, "medium": 1, "high": 2}
+    cur = (current_sev or "low").strip().lower()
+    tgt = target if target in order else "high"
+    return target if order.get(tgt, 2) > order.get(cur, 0) else current_sev
 
 
 # === Patch: Insert new helper functions ===
@@ -118,13 +143,7 @@ def _build_labels_and_title(etype: str, title: str, norm_msg: str | None) -> tup
 
 
 def _build_payload(clean_title: str, full_description: str, severity: str) -> dict:
-    sev = (severity or "low").lower()
-    if sev == "low":
-        priority_name = "Low"
-    elif sev == "high":
-        priority_name = "High"
-    else:
-        priority_name = "Medium"
+    priority_name = _priority_name_from_severity(severity)
 
     description_adf = {
         "version": 1,
@@ -276,7 +295,7 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     """
     log_data = state.get("log_data", {})
 
-    # Optional severity override
+    # Optional severity override and occurrence-based escalation
     state["severity"] = _map_severity_from_env(state.get("error_type"), state.get("severity"))
 
     # Stable fingerprint across runs
@@ -287,6 +306,9 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     # Occurrence stats for description/comments
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
     win = state.get("window_hours", 48)
+
+    # Occurrence-based escalation (optional)
+    state["severity"] = _maybe_escalate_severity_by_occurrences(state.get("severity"), occ)
 
     # Extra info block
     extra_info = _build_extra_info(log_data, win, occ)

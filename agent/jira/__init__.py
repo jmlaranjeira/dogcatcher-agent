@@ -14,6 +14,7 @@ from .utils import (
     normalize_log_message,
     load_processed_fingerprints,
     save_processed_fingerprints,
+    priority_name_from_severity,
 )
 
 __all__ = [
@@ -54,8 +55,7 @@ def _base_labels(state: Dict[str, Any]) -> list[str]:
 
 
 def _priority_name(sev: str | None) -> str:
-    sev = (sev or "low").lower()
-    return "Low" if sev == "low" else ("High" if sev == "high" else "Medium")
+    return priority_name_from_severity(sev)
 
 
 def _try_handle_duplicate(state: Dict[str, Any], title: str, fp_source: str, processed: set[str]) -> tuple[Dict[str, Any], bool]:
