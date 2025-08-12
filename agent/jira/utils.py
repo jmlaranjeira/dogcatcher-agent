@@ -74,6 +74,20 @@ def save_processed_fingerprints(fps: Iterable[str]) -> None:
     with open(_CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(list(set(fps))), f, ensure_ascii=False, indent=2)
 
+
+# --- Severity/Priority helper ---
+def priority_name_from_severity(sev: str | None) -> str:
+    """Map internal severity (low|medium|high) to Jira priority name.
+
+    Defaults to Low when missing/unknown.
+    """
+    s = (sev or "low").strip().lower()
+    if s == "high":
+        return "High"
+    if s == "medium":
+        return "Medium"
+    return "Low"
+
 # --- Comment cool-down helpers ---
 import datetime as _dt
 
