@@ -127,6 +127,54 @@ python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --
 
 ---
 
+## Patchy v0 – Draft PR flow (🩹🤖)
+
+Patchy is a minimal self-healing PR bot that, given a `service`, `error_type` and `loghash`, clones the target repo, creates a tiny change, and opens a draft PR with guardrails.
+
+### CLI
+```bash
+# env
+export GITHUB_TOKEN=ghp_xxx
+export PATCHY_WORKSPACE=/tmp/patchy-workspace
+
+python -m patchy.patchy_graph \
+  --service dehnproject \
+  --error-type npe \
+  --loghash 4c452e2d1c49 \
+  --draft true
+```
+
+### Env
+- `GITHUB_TOKEN` (required)
+- `PATCHY_WORKSPACE` (default `/tmp/patchy-workspace`)
+- `REPAIR_ALLOWED_SERVICES` (CSV allow-list; empty = all)
+- `REPAIR_MAX_PRS_PER_RUN` (default 1)
+
+### Behavior
+- Nodes: `resolve_repo` → `locate_fault` (placeholder) → `create_pr` → `finish`.
+- Shallow clone with token-injected remote, new branch `fix/{service}/{loghash[:8]}`.
+- Touch file `PATCHY_TOUCH.md` with metadata; commit & push; open draft PR.
+- PR title: `fix({service}): auto-fix for {error_type} [{loghash}]`.
+- PR body includes Jira (if provided) and `loghash-<sha>` tag.
+- Guardrails: allow-list, per-run cap, duplicate PR check by branch.
+- Audit JSONL: `.agent_cache/audit_patchy.jsonl`.
+
+### Docker (optional)
+Add a service to `docker-compose.yml` (example):
+```yaml
+  patchy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: patchy-agent:latest
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PATCHY_WORKSPACE=/workspace
+    volumes:
+      - ./_patchy_workspace:/workspace
+    command: ["python","-m","patchy.patchy_graph","--service","dehnproject","--error-type","npe","--loghash","4c452e2d1c49"]
+```
+
 ## 📈 Reporting (tools/report.py)
 The agent writes an audit trail to `.agent_cache/audit_logs.jsonl`. You can summarize recent runs with:
 

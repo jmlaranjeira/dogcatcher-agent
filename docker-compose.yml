@@ -29,3 +29,19 @@ services:
         limits:
           cpus: "1.0"
           memory: 1G
+  patchy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: patchy-agent:latest
+    container_name: patchy-agent
+    restart: "no"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PATCHY_WORKSPACE=/workspace
+      - REPAIR_ALLOWED_SERVICES=${REPAIR_ALLOWED_SERVICES}
+      - REPAIR_MAX_PRS_PER_RUN=${REPAIR_MAX_PRS_PER_RUN:-1}
+    volumes:
+      - ./_patchy_workspace:/workspace
+      - ./_agent_cache:/app/.agent_cache
+    command: ["python","-m","patchy.patchy_graph","--service","dehnproject","--error-type","npe","--loghash","4c452e2d1c49","--draft","true"]
