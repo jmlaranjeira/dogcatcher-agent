@@ -4,7 +4,9 @@ import os
 from typing import Optional, Dict, Any
 
 import requests
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def _headers() -> Dict[str, str]:
     token = os.getenv("GITHUB_TOKEN")
