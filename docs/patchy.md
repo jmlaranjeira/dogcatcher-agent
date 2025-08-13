@@ -41,15 +41,25 @@ python -m patchy.patchy_graph \
   --loghash 4c452e2d1c49 \
   --jira DPRO-1234 \
   --draft true \
+  --mode note \
   --stacktrace "at src/main/java/com/acme/Foo.java:123" \
   --hint "NullPointerException"
 ```
 
+Flags relevant to editing mode:
+- `--mode` (default: `note`): one of `touch | note | fix`.
+  - `touch`: create (or overwrite) a file with Patchy metadata. Safer when using a dedicated file (e.g., `PATCHY_TOUCH.md`).
+  - `note`: append a small Patchy note to the chosen file if it exists; otherwise create a new metadata file.
+  - `fix`: attempt a minimal, language‑aware placeholder fix (currently prepends guidance comments). Intended as v0 scaffold; real auto‑fix rules can be added per language.
+
 ## Behavior
 - Resolve repo via `repos.json`; shallow clone to `PATCHY_WORKSPACE/service`.
 - Create branch `fix/{service}/{loghash[:8]}`.
-- Locate fault from `--stacktrace`/`--hint` (best-effort). Prefer editing that file if allowed.
-- Apply minimal change (append a Patchy note) or create `PATCHY_TOUCH.md` with metadata.
+- Locate fault from `--stacktrace`/`--hint` (best‑effort). Prefer editing that file if allowed.
+- Apply change based on `--mode`:
+  - `touch`: create/overwrite target with Patchy metadata
+  - `note`: append Patchy note if file exists; else create metadata file
+  - `fix`: prepend guidance comment (language‑aware placeholder)
 - Run `lint_cmd`/`test_cmd` if configured; abort on failure.
 - Create draft PR; label `auto-fix`, `patchy`, `low-risk`.
 - If `--jira`, comment in the Jira issue with `Refs: (KEY) <PR_URL>`.

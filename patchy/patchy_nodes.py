@@ -209,22 +209,47 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         chosen_rel = (allowed or ["PATCHY_TOUCH.md"])[0]
     touch_path = repo_dir / chosen_rel
     touch_path.parent.mkdir(parents=True, exist_ok=True)
-    body_lines = [
-        "# Patchy touch file",
-        f"Service: {service}",
-        f"Error-Type: {error_type}",
-        f"Loghash: {loghash}",
-        f"Target: {chosen_rel}",
-    ]
-    if jira:
-        body_lines.append(f"Jira: {jira}")
-    if touch_path.exists():
-        with touch_path.open("a", encoding="utf-8") as f:
-            f.write("\n\n# Patchy note\n")
-            for ln in body_lines[1:]:
-                f.write(f"{ln}\n")
-    else:
-        touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
+    mode = (state.get("mode") or "note").strip().lower()
+    if mode in ("touch", "note"):
+        body_lines = [
+            "# Patchy touch file",
+            f"Service: {service}",
+            f"Error-Type: {error_type}",
+            f"Loghash: {loghash}",
+            f"Target: {chosen_rel}",
+        ]
+        if jira:
+            body_lines.append(f"Jira: {jira}")
+        if touch_path.exists() and mode == "note":
+            with touch_path.open("a", encoding="utf-8") as f:
+                f.write("\n\n# Patchy note\n")
+                for ln in body_lines[1:]:
+                    f.write(f"{ln}\n")
+        else:
+            touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
+    elif mode == "fix":
+        # Minimal safe fix attempt (language-aware placeholder)
+        suffix = touch_path.suffix.lower()
+        try:
+            if touch_path.exists():
+                content = touch_path.read_text(encoding="utf-8")
+            else:
+                content = ""
+            new_content = content
+            if suffix == ".java":
+                # Insert a null-guard comment near the top as a placeholder for v0
+                new_content = "// Patchy: ensure null-safety here if needed\n" + content
+            elif suffix in (".py",):
+                new_content = "# Patchy: ensure None checks here if needed\n" + content
+            elif suffix in (".ts", ".tsx", ".js"):
+                new_content = "// Patchy: ensure guard clauses here if needed\n" + content
+            else:
+                # Fallback to note
+                new_content = (content + "\n# Patchy: low-risk change placeholder\n") if content else "# Patchy: low-risk change placeholder\n"
+            touch_path.write_text(new_content, encoding="utf-8")
+        except Exception as e:
+            append_audit({"service": service, "status": "fix_apply_failed", "branch": branch, "message": str(e)})
+            return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}
 
     title = _pr_title(hint, error_type)
     commit_msg = title
