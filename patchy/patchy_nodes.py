@@ -26,6 +26,8 @@ class PatchyState(TypedDict, total=False):
     branch: str
     pr_url: str
     message: str
+    fault_file: str
+    fault_line: int
 
 
 def _allowed(service: str) -> bool:
@@ -84,12 +86,57 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
-    # Placeholder: in future, collect and narrow to a specific file/line
+    # V1: try to parse stacktrace `... at path/File.java:123` or `File.py:45`
+    st = (state.get("stacktrace") or "").strip()
+    hint = (state.get("hint") or "").strip()
+    repo_dir = Path(state.get("repo_dir") or ".")
+    fault_file: str | None = None
+    fault_line: int | None = None
+
+    import re
+    patterns = [
+        r"\b([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
+        r"\bat\s+([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, st)
+        if m:
+            fault_file, fault_line = m.group(1), int(m.group(2))
+            break
+
+    # If stacktrace not provided or no match, try a simple ripgrep for hint
+    if not fault_file and hint:
+        try:
+            import subprocess, json as _json
+            proc = subprocess.run(
+                ["rg", "-n", "-F", hint, "--json", "."], cwd=str(repo_dir), capture_output=True, text=True, check=True
+            )
+            for line in proc.stdout.splitlines():
+                try:
+                    obj = _json.loads(line)
+                except Exception:
+                    continue
+                if obj.get("type") == "match":
+                    path = obj.get("data", {}).get("path", {}).get("text")
+                    lno = obj.get("data", {}).get("line_number")
+                    if path and isinstance(lno, int):
+                        fault_file, fault_line = path, lno
+                        break
+        except Exception:
+            pass
+
+    if fault_file:
+        append_audit({
+            "service": state.get("service"),
+            "status": "fault_located",
+            "file": fault_file,
+            "line": fault_line,
+        })
+        return {**state, "fault_file": fault_file, "fault_line": fault_line or 1}
+
     append_audit({
         "service": state.get("service"),
-        "status": "locate_fault_placeholder",
-        "loghash": state.get("loghash"),
-        "error_type": state.get("error_type"),
+        "status": "fault_not_found",
     })
     return state
 
@@ -124,19 +171,32 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     # Create branch and minimal change (restricted to allowed_paths if provided)
     git_create_branch(repo_dir, branch)
 
-    # Pick a safe file to modify if allowed_paths configured, else fallback to PATCHY_TOUCH.md
-    touch_rel = (cfg.allowed_paths or ["PATCHY_TOUCH.md"])[0]
-    touch_path = repo_dir / touch_rel
+    # Decide target file: prefer fault_file if inside allowed_paths (or no restriction), else fallback
+    fault_file = state.get("fault_file")
+    allowed = cfg.allowed_paths or []
+    chosen_rel: str
+    if fault_file and (not allowed or any(str(fault_file).startswith(a) for a in allowed)):
+        chosen_rel = fault_file
+    else:
+        chosen_rel = (allowed or ["PATCHY_TOUCH.md"])[0]
+    touch_path = repo_dir / chosen_rel
     touch_path.parent.mkdir(parents=True, exist_ok=True)
     body_lines = [
         "# Patchy touch file",
         f"Service: {service}",
         f"Error-Type: {error_type}",
         f"Loghash: {loghash}",
+        f"Target: {chosen_rel}",
     ]
     if jira:
         body_lines.append(f"Jira: {jira}")
-    touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
+    if touch_path.exists():
+        with touch_path.open("a", encoding="utf-8") as f:
+            f.write("\n\n# Patchy note\n")
+            for ln in body_lines[1:]:
+                f.write(f"{ln}\n")
+    else:
+        touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
 
     commit_msg = f"chore(patchy): touch for {service} [{short}]"
     # Optional lint/tests
