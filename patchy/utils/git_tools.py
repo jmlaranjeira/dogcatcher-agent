@@ -14,6 +14,9 @@ class RepoConfig:
     owner: str
     name: str
     default_branch: str = "main"
+    allowed_paths: list[str] | None = None
+    lint_cmd: str | None = None
+    test_cmd: str | None = None
 
 
 def _token() -> str:

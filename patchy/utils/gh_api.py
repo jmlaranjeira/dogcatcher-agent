@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -43,6 +46,20 @@ def create_pull_request(
         "draft": draft,
     }
     resp = requests.post(url, headers=_headers(), json=payload, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def add_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> Dict[str, Any]:
+    """Add labels to an issue/PR (PRs are issues in GitHub API).
+
+    No-op if labels is empty.
+    """
+    if not labels:
+        return {"ok": True, "labels": []}
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/labels"
+    payload = {"labels": labels}
+    resp = requests.post(url, headers=_headers(), json=payload, timeout=20)
     resp.raise_for_status()
     return resp.json()
 
