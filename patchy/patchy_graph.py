@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--error-type", dest="error_type", default="unknown")
     parser.add_argument("--loghash", default="")
     parser.add_argument("--jira", default="")
+    parser.add_argument("--stacktrace", default="", help="Optional stacktrace to locate the faulted file/line")
+    parser.add_argument("--hint", default="", help="Optional search hint (symbol/text)")
     parser.add_argument("--draft", default="true")
     args = parser.parse_args()
 
@@ -39,6 +41,8 @@ def main() -> None:
         "loghash": args.loghash,
         "jira": args.jira,
         "draft": str(args.draft).lower() in ("1", "true", "yes"),
+        "stacktrace": args.stacktrace,
+        "hint": args.hint,
     }
 
     graph = build_graph()

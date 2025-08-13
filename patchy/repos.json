@@ -2,11 +2,17 @@
   "dehnproject": {
     "owner": "dehn",
     "name": "dehn-project-service",
-    "default_branch": "develop"
+    "default_branch": "develop",
+    "allowed_paths": ["README.md"],
+    "lint_cmd": "",
+    "test_cmd": ""
   },
   "dehnlicense": {
     "owner": "dehn",
     "name": "dehn-project-license-manager-service",
-    "default_branch": "develop"
+    "default_branch": "develop",
+    "allowed_paths": ["README.md"],
+    "lint_cmd": "",
+    "test_cmd": ""
   }
 }
