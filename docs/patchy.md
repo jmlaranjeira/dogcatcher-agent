@@ -55,6 +55,16 @@ python -m patchy.patchy_graph \
 - If `--jira`, comment in the Jira issue with `Refs: (KEY) <PR_URL>`.
 - Audit to `.agent_cache/audit_patchy.jsonl`.
 
+## Naming and PR conventions
+- Branch name:
+  - With Jira: `bugfix/<JIRA-KEY>-<brief>` (e.g., `bugfix/DPRO-2491-priceMissing`)
+  - Without Jira: `bugfix/<service>-<brief>`
+  - `<brief>` is camelCase from `--hint` or `--error-type`.
+- PR title: starts with `fix: ...` (same as commit message).
+- PR body:
+  - Short human-readable summary of what is improved/changed.
+  - Ends with Jira reference when provided: `Refs: [#DPRO-1234](https://<your-jira>/browse/DPRO-1234)`.
+
 ## Docker Compose
 ```bash
 # env file is used for secrets/config
