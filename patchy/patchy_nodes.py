@@ -82,6 +82,9 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
         "repo_owner": cfg.owner,
         "repo_name": cfg.name,
         "default_branch": cfg.default_branch,
+        "allowed_paths": cfg.allowed_paths,
+        "lint_cmd": cfg.lint_cmd,
+        "test_cmd": cfg.test_cmd,
     }
 
 
@@ -173,7 +176,7 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Decide target file: prefer fault_file if inside allowed_paths (or no restriction), else fallback
     fault_file = state.get("fault_file")
-    allowed = cfg.allowed_paths or []
+    allowed = state.get("allowed_paths") or []
     chosen_rel: str
     if fault_file and (not allowed or any(str(fault_file).startswith(a) for a in allowed)):
         chosen_rel = fault_file
@@ -200,8 +203,8 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
 
     commit_msg = f"chore(patchy): touch for {service} [{short}]"
     # Optional lint/tests
-    lint_cmd = (cfg.lint_cmd or "").strip()
-    test_cmd = (cfg.test_cmd or "").strip()
+    lint_cmd = (state.get("lint_cmd") or "").strip()
+    test_cmd = (state.get("test_cmd") or "").strip()
     if lint_cmd:
         try:
             import subprocess
