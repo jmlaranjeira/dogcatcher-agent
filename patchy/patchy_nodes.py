@@ -56,6 +56,9 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
         owner=cfg_raw["owner"],
         name=cfg_raw["name"],
         default_branch=cfg_raw.get("default_branch", "main"),
+        allowed_paths=cfg_raw.get("allowed_paths"),
+        lint_cmd=cfg_raw.get("lint_cmd"),
+        test_cmd=cfg_raw.get("test_cmd"),
     )
 
     # Cap check per run (simple counter in env var memory)
@@ -118,10 +121,13 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         })
         return {**state, "branch": branch, "pr_url": url, "message": "PR already exists"}
 
-    # Create branch and minimal change
+    # Create branch and minimal change (restricted to allowed_paths if provided)
     git_create_branch(repo_dir, branch)
 
-    touch_path = repo_dir / "PATCHY_TOUCH.md"
+    # Pick a safe file to modify if allowed_paths configured, else fallback to PATCHY_TOUCH.md
+    touch_rel = (cfg.allowed_paths or ["PATCHY_TOUCH.md"])[0]
+    touch_path = repo_dir / touch_rel
+    touch_path.parent.mkdir(parents=True, exist_ok=True)
     body_lines = [
         "# Patchy touch file",
         f"Service: {service}",
@@ -133,6 +139,24 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
 
     commit_msg = f"chore(patchy): touch for {service} [{short}]"
+    # Optional lint/tests
+    lint_cmd = (cfg.lint_cmd or "").strip()
+    test_cmd = (cfg.test_cmd or "").strip()
+    if lint_cmd:
+        try:
+            import subprocess
+            subprocess.run(lint_cmd, cwd=str(repo_dir), shell=True, check=True)
+        except Exception as e:
+            append_audit({"service": service, "status": "lint_failed", "branch": branch, "message": str(e)})
+            return {**state, "branch": branch, "message": f"Lint failed: {e}"}
+    if test_cmd:
+        try:
+            import subprocess
+            subprocess.run(test_cmd, cwd=str(repo_dir), shell=True, check=True)
+        except Exception as e:
+            append_audit({"service": service, "status": "tests_failed", "branch": branch, "message": str(e)})
+            return {**state, "branch": branch, "message": f"Tests failed: {e}"}
+
     try:
         git_commit_push(repo_dir, commit_msg)
     except Exception as e:
