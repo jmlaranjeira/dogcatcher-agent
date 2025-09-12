@@ -1,6 +1,6 @@
 # Dogcatcher-Agent Review & Improvement Plan
 
-The repository is now called **dogcatcher-agent** (previously `langgraph-agent-demo`).  
+The repository is now called **dogcatcher-agent**.  
 Please replace any outdated references with the correct name in code, docs, and configs.
 
 You already created a review in `docs/review-120925.md`.  
@@ -55,7 +55,7 @@ Now we want you to start improving the project step by step.
 - Deliverable: PR `docs: developer onboarding + contribution tips`.
 
 ### 7. Rename Consistency (High)
-- Replace any leftover `langgraph-agent-demo` references with `dogcatcher-agent` across:
+- Ensure all references use the correct repository name `dogcatcher-agent` across:
   - `README.md`, `agent.md`, `patchy.md`, `commands.md`  
   - Dockerfiles, compose, scripts, etc.  
 - Deliverable: PR `chore(rename): replace legacy repo name`.

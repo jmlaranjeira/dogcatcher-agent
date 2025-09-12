@@ -41,7 +41,7 @@ git clone https://github.com/YOUR-USERNAME/dogcatcher-agent.git
 cd dogcatcher-agent
 
 # 2. Add upstream remote
-git remote add upstream https://github.com/your-org/dogcatcher-agent.git
+git remote add upstream https://github.com/organization/dogcatcher-agent.git
 
 # 3. Create virtual environment
 python -m venv venv
@@ -519,8 +519,8 @@ We use [Semantic Versioning](https://semver.org/):
 ### Contact
 
 - **Maintainers**: @maintainer1, @maintainer2
-- **Issues**: [GitHub Issues](https://github.com/your-org/dogcatcher-agent/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/dogcatcher-agent/discussions)
+- **Issues**: [GitHub Issues](https://github.com/organization/dogcatcher-agent/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/organization/dogcatcher-agent/discussions)
 
 ---
 
