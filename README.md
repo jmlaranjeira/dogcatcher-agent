@@ -74,7 +74,7 @@ DATADOG_QUERY_EXTRA=                 # Extra query terms for Datadog search (opt
 DATADOG_QUERY_EXTRA_MODE=AND         # Logical operator for extra query terms (AND or OR)
 
 # Jira
-JIRA_DOMAIN=your-domain.atlassian.net  # Jira instance domain
+JIRA_DOMAIN=company.atlassian.net  # Jira instance domain
 JIRA_USER=you@company.com               # Jira user email
 JIRA_API_TOKEN=...                      # Jira API token for authentication
 JIRA_PROJECT_KEY=DPRO                   # Jira project key for ticket creation

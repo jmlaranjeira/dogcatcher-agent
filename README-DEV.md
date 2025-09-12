@@ -42,7 +42,7 @@ Welcome to the **Dogcatcher Agent** development environment! This guide will hel
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/dogcatcher-agent.git
+git clone https://github.com/organization/dogcatcher-agent.git
 cd dogcatcher-agent
 
 # Create virtual environment
@@ -160,8 +160,8 @@ DATADOG_HOURS_BACK=24
 DATADOG_LIMIT=50
 
 # Jira Configuration
-JIRA_DOMAIN=your-domain.atlassian.net
-JIRA_USER=your-email@example.com
+JIRA_DOMAIN=company.atlassian.net
+JIRA_USER=developer@company.com
 JIRA_API_TOKEN=your-jira-api-token
 JIRA_PROJECT_KEY=YOUR_PROJECT
 
@@ -552,8 +552,8 @@ A: Production deployment checklist:
 
 ## 🆘 Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/dogcatcher-agent/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/dogcatcher-agent/discussions)
+- **Issues**: [GitHub Issues](https://github.com/organization/dogcatcher-agent/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/organization/dogcatcher-agent/discussions)
 - **Documentation**: Check the `docs/` directory
 - **Code**: Review existing code and tests for examples
 

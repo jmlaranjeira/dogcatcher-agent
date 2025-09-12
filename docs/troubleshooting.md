@@ -62,7 +62,7 @@ grep -E "^[A-Z]" .env | cut -d'=' -f1
    ```bash
    # Add missing variables to .env
    echo "OPENAI_API_KEY=sk-your-key-here" >> .env
-   echo "JIRA_DOMAIN=your-domain.atlassian.net" >> .env
+   echo "JIRA_DOMAIN=company.atlassian.net" >> .env
    ```
 
 3. **Invalid variable values**:
@@ -169,8 +169,8 @@ curl -X GET "https://api.datadoghq.eu/api/v1/validate" \
 **Diagnosis**:
 ```bash
 # Test Jira API connection
-curl -X GET "https://your-domain.atlassian.net/rest/api/3/myself" \
-  -H "Authorization: Basic $(echo -n 'user@example.com:api-token' | base64)"
+curl -X GET "https://company.atlassian.net/rest/api/3/myself" \
+  -H "Authorization: Basic $(echo -n 'developer@company.com:api-token' | base64)"
 ```
 
 **Solutions**:
@@ -183,15 +183,15 @@ curl -X GET "https://your-domain.atlassian.net/rest/api/3/myself" \
 
 2. **Wrong domain format**:
    ```bash
-   # Correct format: your-domain.atlassian.net
-   # Not: https://your-domain.atlassian.net
+   # Correct format: company.atlassian.net
+   # Not: https://company.atlassian.net
    ```
 
 3. **Project key issues**:
    ```bash
    # Verify project key exists
-   curl -X GET "https://your-domain.atlassian.net/rest/api/3/project/YOUR_PROJECT" \
-     -H "Authorization: Basic $(echo -n 'user@example.com:api-token' | base64)"
+   curl -X GET "https://company.atlassian.net/rest/api/3/project/YOUR_PROJECT" \
+     -H "Authorization: Basic $(echo -n 'developer@company.com:api-token' | base64)"
    ```
 
 ### Problem: OpenAI API Connection Failed
@@ -544,8 +544,8 @@ When reporting issues, include:
 
 ### Support Channels
 
-- **GitHub Issues**: [Create an issue](https://github.com/your-org/dogcatcher-agent/issues)
-- **GitHub Discussions**: [Ask questions](https://github.com/your-org/dogcatcher-agent/discussions)
+- **GitHub Issues**: [Create an issue](https://github.com/organization/dogcatcher-agent/issues)
+- **GitHub Discussions**: [Ask questions](https://github.com/organization/dogcatcher-agent/discussions)
 - **Documentation**: Check the `docs/` directory
 - **Code Examples**: Review existing code and tests
 
