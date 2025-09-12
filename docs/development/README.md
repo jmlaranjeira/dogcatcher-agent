@@ -28,6 +28,14 @@ Step-by-step improvement roadmap
 - Success criteria and metrics
 - Progress tracking
 
+### 🔧 [Jira Integration Review Instructions](jira-integration-review-instructions.md)
+Comprehensive validation and testing procedures for Jira integration
+- Duplicate detection validation procedures
+- Test execution and hardening guidelines
+- Performance and caching validation
+- Reporting and audit verification
+- Acceptance criteria and success metrics
+
 ## 🚀 Quick Start for Developers
 
 1. **Understanding the system?** Read [Architecture Overview](architecture.md)
@@ -48,6 +56,7 @@ Step-by-step improvement roadmap
 - **Best Practices**: Coding standards and patterns
 - **Security**: Data protection and secure coding practices
 - **Testing**: Quality assurance and test coverage
+- **Integration Validation**: Jira integration testing and validation procedures
 
 ### 📈 Development Process
 - **Improvement Plan**: Structured approach to enhancements
@@ -75,7 +84,8 @@ Step-by-step improvement roadmap
 2. **Plan**: Follow the improvement plan for structured development
 3. **Implement**: Use the recommended patterns and practices
 4. **Test**: Ensure comprehensive test coverage
-5. **Document**: Update documentation with changes
+5. **Validate**: Follow Jira integration review procedures
+6. **Document**: Update documentation with changes
 
 ---
 
