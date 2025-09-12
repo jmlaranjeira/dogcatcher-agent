@@ -14,6 +14,7 @@ from agent.jira.utils import normalize_log_message, should_comment, update_comme
 from agent.jira.utils import priority_name_from_severity
 from agent.utils.logger import log_info, log_error, log_warning, log_ticket_operation, log_duplicate_detection
 from agent.config import get_config
+from agent.performance import get_performance_metrics
 
 # Get configuration
 config = get_config()
@@ -450,6 +451,10 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Updated state with ticket creation results
     """
+    # Start performance timing
+    metrics = get_performance_metrics()
+    metrics.start_timer("create_ticket")
+    
     log_ticket_operation("Starting ticket creation workflow")
     
     # Initialize run counter
@@ -471,7 +476,11 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     # 4. Execute ticket creation
     result = _execute_ticket_creation(state, payload)
     
+    # End performance timing
+    duration = metrics.end_timer("create_ticket")
+    
     log_ticket_operation("Ticket creation workflow completed", 
-                        ticket_created=result.get("ticket_created", False))
+                        ticket_created=result.get("ticket_created", False),
+                        duration_ms=round(duration * 1000, 2))
     
     return result
