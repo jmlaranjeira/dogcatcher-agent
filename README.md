@@ -261,7 +261,7 @@ Normalization removes email addresses, URLs/tokens, UUIDs, timestamps, long hash
 
 ## 📦 Project Structure
 ```
-langgraph-agent-demo/
+dogcatcher-agent/
 ├── main.py                # Entrypoint & CLI
 ├── .env                   # Secrets & config
 ├── Dockerfile             # Container image
