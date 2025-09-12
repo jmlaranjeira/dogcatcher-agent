@@ -34,9 +34,9 @@ def sanitize_text(text: str) -> str:
     text = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '<email>', text)
     
     # API keys and tokens (common patterns)
-    text = re.sub(r'sk-[a-zA-Z0-9]{20,}', '<api-key>', text)
+    text = re.sub(r'sk-[a-zA-Z0-9]{10,}', '<api-key>', text)
     text = re.sub(r'ghp_[a-zA-Z0-9]{36}', '<github-token>', text)
-    text = re.sub(r'[a-zA-Z0-9]{32,}', '<token>', text)
+    text = re.sub(r'\b[a-zA-Z0-9]{32,}\b', '<token>', text)
     
     # URLs with potential sensitive data
     text = re.sub(r'https?://[^\s]+', '<url>', text)
