@@ -13,15 +13,20 @@ from agent.config import get_config
 
 load_dotenv()
 
-# Get configuration
-config = get_config()
+# Export configuration constants for backward compatibility
+def get_jira_project_key() -> str:
+    return get_config().jira.project_key
 
+def get_jira_domain() -> str:
+    return get_config().jira.domain
 
 def is_configured() -> bool:
+    config = get_config()
     return all([config.jira.domain, config.jira.user, config.jira.api_token, config.jira.project_key])
 
 
 def _headers() -> Dict[str, str]:
+    config = get_config()
     auth_string = f"{config.jira.user}:{config.jira.api_token}"
     auth_encoded = base64.b64encode(auth_string.encode()).decode()
     return {"Authorization": f"Basic {auth_encoded}", "Content-Type": "application/json"}
@@ -30,6 +35,7 @@ def _headers() -> Dict[str, str]:
 def search(jql: str, *, fields: str = "summary,description", max_results: int = None) -> Optional[Dict[str, Any]]:
     if not is_configured():
         return None
+    config = get_config()
     if max_results is None:
         max_results = config.jira.search_max_results
     url = f"https://{config.jira.domain}/rest/api/3/search"
@@ -50,6 +56,7 @@ def search(jql: str, *, fields: str = "summary,description", max_results: int = 
 def create_issue(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not is_configured():
         return None
+    config = get_config()
     url = f"https://{config.jira.domain}/rest/api/3/issue"
     try:
         resp = requests.post(url, headers=_headers(), json=payload)
@@ -66,6 +73,7 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
     if not is_configured():
         log_error("Missing Jira configuration for commenting")
         return False
+    config = get_config()
     url = f"https://{config.jira.domain}/rest/api/3/issue/{issue_key}/comment"
     body = {
         "body": {
@@ -88,6 +96,7 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
 def add_labels(issue_key: str, labels_to_add: list[str]) -> bool:
     if not is_configured() or not labels_to_add:
         return False if not is_configured() else True
+    config = get_config()
     url = f"https://{config.jira.domain}/rest/api/3/issue/{issue_key}"
     body = {"update": {"labels": [{"add": lbl} for lbl in labels_to_add]}}
     try:

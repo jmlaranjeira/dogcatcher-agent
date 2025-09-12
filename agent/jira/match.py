@@ -23,8 +23,7 @@ from agent.performance import (
     cached_normalize_log_message
 )
 
-# Get configuration
-config = get_config()
+# Configuration will be loaded lazily in functions
 
 _USE_RAPIDFUZZ = False
 _spec = importlib.util.find_spec("rapidfuzz")
@@ -61,6 +60,7 @@ def find_similar_ticket(
         return None, 0.0, None
     
     if similarity_threshold is None:
+        config = get_config()
         similarity_threshold = config.jira.similarity_threshold
     
     # Check cache first
@@ -100,6 +100,7 @@ def find_similar_ticket(
     # Use optimized search parameters
     optimized_params = optimize_jira_search_params()
     
+    config = get_config()
     jql = (
         f"project = {config.jira.project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
         + token_filter

@@ -16,8 +16,7 @@ from agent.utils.logger import log_info, log_error, log_warning, log_ticket_oper
 from agent.config import get_config
 from agent.performance import get_performance_metrics
 
-# Get configuration
-config = get_config()
+# Configuration will be loaded lazily in functions
 
 
 @dataclass
@@ -168,6 +167,7 @@ def _build_jira_payload(state: Dict[str, Any], title: str, description: str) -> 
     Returns:
         TicketPayload with complete Jira payload and metadata
     """
+    config = get_config()
     log_info("Building Jira ticket payload")
     
     # Compute fingerprint for labels
@@ -185,7 +185,7 @@ def _build_jira_payload(state: Dict[str, Any], title: str, description: str) -> 
     # Build payload
     payload = {
         "fields": {
-            "project": {"key": config.jira.project_key},
+            "project": {"key": config.jira_project_key},
             "summary": clean_title,
             "description": {
                 "type": "doc",
@@ -222,6 +222,7 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
     Returns:
         Updated state with creation results
     """
+    config = get_config()
     log_info("Executing ticket creation")
     
     # Check per-run cap
@@ -234,7 +235,7 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
     state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
     
     # Create or simulate based on configuration
-    auto_create = config.agent.auto_create_ticket
+    auto_create = config.auto_create_ticket
     
     if auto_create:
         return _create_real_ticket(state, payload)
@@ -279,10 +280,11 @@ def _save_processed_fingerprints(fingerprints: set[str]) -> None:
 
 def _maybe_comment_duplicate(issue_key: str, score: float, state: Dict[str, Any]) -> None:
     """Add a comment to an existing duplicate ticket if configured."""
-    if not config.agent.comment_on_duplicate:
+    config = get_config()
+    if not config.comment_on_duplicate:
         return
     
-    cooldown_min = config.agent.comment_cooldown_minutes
+    cooldown_min = config.comment_cooldown_minutes
     
     if should_comment(issue_key, cooldown_min):
         log_data = state.get("log_data", {})
@@ -322,6 +324,7 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
 
 def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
     """Build labels for the ticket."""
+    config = get_config()
     labels = ["datadog-log"]
     
     # Add loghash label
@@ -336,10 +339,10 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
     # Add aggregation labels based on error type
     etype = (state.get("error_type") or "").strip().lower()
     
-    if config.agent.aggregate_email_not_found and etype == "email-not-found":
+    if config.aggregate_email_not_found and etype == "email-not-found":
         labels.append("aggregate-email-not-found")
     
-    if config.agent.aggregate_kafka_consumer and etype == "kafka-consumer":
+    if config.aggregate_kafka_consumer and etype == "kafka-consumer":
         labels.append("aggregate-kafka-consumer")
     
     return labels
@@ -347,16 +350,17 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
 
 def _clean_title(title: str, error_type: Optional[str]) -> str:
     """Clean and format the ticket title."""
+    config = get_config()
     base_title = title.replace("**", "").strip()
     
     # Handle aggregation cases
-    if error_type == "email-not-found" and config.agent.aggregate_email_not_found:
+    if error_type == "email-not-found" and config.aggregate_email_not_found:
         base_title = "Investigate Email Not Found errors (aggregated)"
-    elif error_type == "kafka-consumer" and config.agent.aggregate_kafka_consumer:
+    elif error_type == "kafka-consumer" and config.aggregate_kafka_consumer:
         base_title = "Investigate Kafka Consumer errors (aggregated)"
     
     # Truncate if too long
-    max_title = config.ui.max_title_length
+    max_title = config.max_title_length
     if len(base_title) > max_title:
         base_title = base_title[:max_title - 1] + "…"
     
@@ -375,7 +379,8 @@ def _is_cap_reached(state: Dict[str, Any]) -> bool:
 
 def _get_max_tickets() -> int:
     """Get the maximum number of tickets per run."""
-    return config.agent.max_tickets_per_run
+    config = get_config()
+    return config.max_tickets_per_run
 
 
 def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[str, Any]:
@@ -415,6 +420,7 @@ def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[s
 
 def _simulate_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> Dict[str, Any]:
     """Simulate ticket creation for dry-run mode."""
+    config = get_config()
     log_ticket_operation("Simulating ticket creation", title=payload.title)
     
     # Update state with payload info
@@ -423,7 +429,7 @@ def _simulate_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> 
     state["jira_payload"] = payload.payload
     
     # Optionally persist fingerprint even in simulation
-    persist_sim = config.agent.persist_sim_fp
+    persist_sim = config.persist_sim_fp
     if persist_sim:
         processed = _load_processed_fingerprints()
         processed.add(payload.fingerprint)
