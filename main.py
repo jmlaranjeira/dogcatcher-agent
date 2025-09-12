@@ -6,9 +6,11 @@ All logging and comments are in English for consistency.
 """
 from agent.graph import build_graph
 from agent.utils.logger import log_info, log_error, log_agent_progress
+from agent.config import get_config, reload_config
 from dotenv import load_dotenv
 import argparse
 import os
+import sys
 
 load_dotenv()
 
@@ -41,7 +43,21 @@ if args.max_tickets is not None:
 
 from agent.datadog import get_logs
 
-log_agent_progress("Starting agent", jira_project=os.getenv("JIRA_PROJECT_KEY"))
+# Load and validate configuration
+config = get_config()
+config.log_configuration()
+
+# Validate configuration
+issues = config.validate_configuration()
+if issues:
+    log_error("Configuration validation failed", issues=issues)
+    print("❌ Configuration issues found:")
+    for issue in issues:
+        print(f"  - {issue}")
+    print("\nPlease fix these issues and try again.")
+    sys.exit(1)
+
+log_agent_progress("Starting agent", jira_project=config.jira.project_key)
 
 graph = build_graph()
 logs = get_logs()
@@ -49,11 +65,11 @@ log_agent_progress("Logs loaded", log_count=len(logs))
 if not logs:
     log_info("No logs to process; exiting.")
     raise SystemExit(0)
-_auto = os.getenv('AUTO_CREATE_TICKET', 'false').lower() == 'true'
-try:
-    _max = int(os.getenv('MAX_TICKETS_PER_RUN', '3') or '0')
-except Exception:
-    _max = 3
+
+# Use configuration values
+_auto = config.agent.auto_create_ticket
+_max = config.agent.max_tickets_per_run
+
 if _auto:
     if _max > 0:
         log_info(f"Safety guard: up to {_max} real Jira tickets will be created per run.")

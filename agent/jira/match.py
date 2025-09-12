@@ -14,6 +14,10 @@ from .utils import (
     normalize_log_message,
     extract_text_from_description,
 )
+from agent.config import get_config
+
+# Get configuration
+config = get_config()
 
 _USE_RAPIDFUZZ = False
 _spec = importlib.util.find_spec("rapidfuzz")
@@ -36,12 +40,16 @@ def _sim(a: str, b: str) -> float:
 def find_similar_ticket(
     summary: str,
     state: Optional[dict] = None,
-    similarity_threshold: float = 0.82,
+    similarity_threshold: float = None,
 ):
     """Return (issue_key, score, issue_summary) if >= threshold, else (None, 0.0, None)."""
     if not client.is_configured():
-        print("❌ Missing Jira configuration in .env")
+        from agent.utils.logger import log_error
+        log_error("Missing Jira configuration in .env")
         return None, 0.0, None
+    
+    if similarity_threshold is None:
+        similarity_threshold = config.jira.similarity_threshold
 
     norm_summary = normalize_text(summary)
     tokens = [t for t in norm_summary.split() if len(t) >= 4]
@@ -70,28 +78,30 @@ def find_similar_ticket(
     token_filter = " OR ".join(token_clauses) if token_clauses else "labels = datadog-log"
 
     jql = (
-        f"project = {client.JIRA_PROJECT_KEY} AND statusCategory != Done AND created >= -365d AND ("
+        f"project = {config.jira.project_key} AND statusCategory != Done AND created >= -{config.jira.search_window_days}d AND ("
         + token_filter
         + ") ORDER BY created DESC"
     )
-    print(f"🔍 JQL used: {jql}")
+    from agent.utils.logger import log_info
+    log_info("JQL query built", jql=jql)
 
     # Fast path: exact label via loghash
     if norm_current_log:
         loghash = hashlib.sha1(norm_current_log.encode("utf-8")).hexdigest()[:12]
         jql_hash = (
-            f"project = {client.JIRA_PROJECT_KEY} AND statusCategory != Done AND labels = loghash-{loghash} "
+            f"project = {config.jira.project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"
         )
         resp_hash = client.search(jql_hash, fields="summary,description,labels,created,status", max_results=10)
         issues_hash = (resp_hash or {}).get("issues", [])
         if issues_hash:
             first = issues_hash[0]
-            print(f"⚠️ Exact duplicate by label loghash-{loghash}: {first.get('key')}")
+            from agent.utils.logger import log_info
+            log_info("Exact duplicate found by label", loghash=loghash, issue_key=first.get('key'))
             return first.get("key"), 1.00, first.get("fields", {}).get("summary", "")
 
     # General search
-    resp = client.search(jql, fields="summary,description,labels,created,status", max_results=200)
+    resp = client.search(jql, fields="summary,description,labels,created,status")
     issues = (resp or {}).get("issues", [])
 
     etype = (state or {}).get("error_type") if state else None
@@ -107,10 +117,12 @@ def find_similar_ticket(
         log_sim = None
         if norm_current_log and norm_issue_log:
             log_sim = _sim(norm_current_log, norm_issue_log)
-            if log_sim >= 0.90:
-                print(
-                    f"⚠️ Direct log match found (sim={log_sim:.2f}) against {issue.get('key')} — short-circuiting as duplicate."
-                )
+            if log_sim >= config.jira.direct_log_threshold:
+                from agent.utils.logger import log_info
+                log_info("Direct log match found", 
+                        similarity=log_sim, 
+                        issue_key=issue.get('key'), 
+                        action="short-circuiting as duplicate")
                 return issue.get("key"), 1.00, fields.get("summary", "")
 
         s = normalize_text(fields.get("summary", ""))
@@ -125,15 +137,17 @@ def find_similar_ticket(
             score += 0.05
         if any(t in s or t in d for t in tokens):
             score += 0.05
-        if log_sim is not None and 0.70 <= log_sim < 0.90:
+        if log_sim is not None and config.jira.partial_log_threshold <= log_sim < config.jira.direct_log_threshold:
             score += 0.05
 
         if score > best[1]:
             best = (issue.get("key"), score, fields.get("summary", ""))
 
     if best[0] and best[1] >= similarity_threshold:
-        print(f"⚠️ Similar ticket found with score {best[1]:.2f}: {best[2]}")
+        from agent.utils.logger import log_info
+        log_info("Similar ticket found", similarity_score=best[1], issue_summary=best[2])
         return best
 
-    print("✅ No similar ticket found with advanced matching.")
+    from agent.utils.logger import log_info
+    log_info("No similar ticket found with advanced matching")
     return None, 0.0, None

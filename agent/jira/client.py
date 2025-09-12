@@ -9,29 +9,30 @@ from typing import Optional, Dict, Any
 import requests
 from dotenv import load_dotenv
 from agent.utils.logger import log_api_response, log_error, log_info
+from agent.config import get_config
 
 load_dotenv()
 
-JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")
-JIRA_USER = os.getenv("JIRA_USER")
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
-JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
+# Get configuration
+config = get_config()
 
 
 def is_configured() -> bool:
-    return all([JIRA_DOMAIN, JIRA_USER, JIRA_API_TOKEN, JIRA_PROJECT_KEY])
+    return all([config.jira.domain, config.jira.user, config.jira.api_token, config.jira.project_key])
 
 
 def _headers() -> Dict[str, str]:
-    auth_string = f"{JIRA_USER}:{JIRA_API_TOKEN}"
+    auth_string = f"{config.jira.user}:{config.jira.api_token}"
     auth_encoded = base64.b64encode(auth_string.encode()).decode()
     return {"Authorization": f"Basic {auth_encoded}", "Content-Type": "application/json"}
 
 
-def search(jql: str, *, fields: str = "summary,description", max_results: int = 50) -> Optional[Dict[str, Any]]:
+def search(jql: str, *, fields: str = "summary,description", max_results: int = None) -> Optional[Dict[str, Any]]:
     if not is_configured():
         return None
-    url = f"https://{JIRA_DOMAIN}/rest/api/3/search"
+    if max_results is None:
+        max_results = config.jira.search_max_results
+    url = f"https://{config.jira.domain}/rest/api/3/search"
     try:
         resp = requests.get(url, headers=_headers(), params={
             "jql": jql,
@@ -49,7 +50,7 @@ def search(jql: str, *, fields: str = "summary,description", max_results: int = 
 def create_issue(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not is_configured():
         return None
-    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue"
+    url = f"https://{config.jira.domain}/rest/api/3/issue"
     try:
         resp = requests.post(url, headers=_headers(), json=payload)
         resp.raise_for_status()
@@ -65,7 +66,7 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
     if not is_configured():
         log_error("Missing Jira configuration for commenting")
         return False
-    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue/{issue_key}/comment"
+    url = f"https://{config.jira.domain}/rest/api/3/issue/{issue_key}/comment"
     body = {
         "body": {
             "type": "doc",
@@ -87,7 +88,7 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
 def add_labels(issue_key: str, labels_to_add: list[str]) -> bool:
     if not is_configured() or not labels_to_add:
         return False if not is_configured() else True
-    url = f"https://{JIRA_DOMAIN}/rest/api/3/issue/{issue_key}"
+    url = f"https://{config.jira.domain}/rest/api/3/issue/{issue_key}"
     body = {"update": {"labels": [{"add": lbl} for lbl in labels_to_add]}}
     try:
         resp = requests.put(url, headers=_headers(), json=body)
