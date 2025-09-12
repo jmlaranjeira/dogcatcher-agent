@@ -207,38 +207,38 @@ def optimize_jira_search_params() -> Dict[str, Any]:
     
     # Optimize search window based on project activity
     # For high-volume projects, reduce window to improve performance
-    if config.jira.search_window_days > 180:
+    if config.jira_search_window_days > 180:
         optimized_window = 180  # 6 months max
         log_info("Optimized Jira search window", 
-                original=config.jira.search_window_days, 
+                original=config.jira_search_window_days, 
                 optimized=optimized_window,
                 reason="High-volume project optimization")
     else:
-        optimized_window = config.jira.search_window_days
+        optimized_window = config.jira_search_window_days
     
     # Optimize max results based on similarity threshold
     # Higher thresholds need fewer results since we're looking for exact matches
-    if config.jira.similarity_threshold >= 0.9:
-        optimized_max_results = min(50, config.jira.search_max_results)
+    if config.jira_similarity_threshold >= 0.9:
+        optimized_max_results = min(50, config.jira_search_max_results)
         log_info("Optimized Jira search max results", 
-                original=config.jira.search_max_results, 
+                original=config.jira_search_max_results, 
                 optimized=optimized_max_results,
                 reason="High similarity threshold optimization")
-    elif config.jira.similarity_threshold >= 0.8:
-        optimized_max_results = min(100, config.jira.search_max_results)
+    elif config.jira_similarity_threshold >= 0.8:
+        optimized_max_results = min(100, config.jira_search_max_results)
         log_info("Optimized Jira search max results", 
-                original=config.jira.search_max_results, 
+                original=config.jira_search_max_results, 
                 optimized=optimized_max_results,
                 reason="Medium similarity threshold optimization")
     else:
-        optimized_max_results = config.jira.search_max_results
+        optimized_max_results = config.jira_search_max_results
     
     return {
         "search_window_days": optimized_window,
         "search_max_results": optimized_max_results,
-        "similarity_threshold": config.jira.similarity_threshold,
-        "direct_log_threshold": config.jira.direct_log_threshold,
-        "partial_log_threshold": config.jira.partial_log_threshold
+        "similarity_threshold": config.jira_similarity_threshold,
+        "direct_log_threshold": config.jira_direct_log_threshold,
+        "partial_log_threshold": config.jira_partial_log_threshold
     }
 
 
@@ -247,15 +247,15 @@ def log_configuration_performance() -> None:
     config = get_config()
     
     log_info("Performance configuration", 
-             jira_search_window_days=config.jira.search_window_days,
-             jira_search_max_results=config.jira.search_max_results,
-             jira_similarity_threshold=config.jira.similarity_threshold,
-             jira_direct_log_threshold=config.jira.direct_log_threshold,
-             jira_partial_log_threshold=config.jira.partial_log_threshold,
-             datadog_limit=config.datadog.limit,
-             datadog_max_pages=config.datadog.max_pages,
-             datadog_timeout=config.datadog.timeout,
-             max_tickets_per_run=config.agent.max_tickets_per_run)
+             jira_search_window_days=config.jira_search_window_days,
+             jira_search_max_results=config.jira_search_max_results,
+             jira_similarity_threshold=config.jira_similarity_threshold,
+             jira_direct_log_threshold=config.jira_direct_log_threshold,
+             jira_partial_log_threshold=config.jira_partial_log_threshold,
+             datadog_limit=config.datadog_limit,
+             datadog_max_pages=config.datadog_max_pages,
+             datadog_timeout=config.datadog_timeout,
+             max_tickets_per_run=config.max_tickets_per_run)
 
 
 @lru_cache(maxsize=128)
@@ -286,37 +286,37 @@ def get_performance_recommendations() -> list[str]:
     recommendations = []
     
     # Search window recommendations
-    if config.jira.search_window_days > 180:
+    if config.jira_search_window_days > 180:
         recommendations.append(
-            f"Consider reducing JIRA_SEARCH_WINDOW_DAYS from {config.jira.search_window_days} to 180 "
+            f"Consider reducing JIRA_SEARCH_WINDOW_DAYS from {config.jira_search_window_days} to 180 "
             "for better performance in high-volume projects"
         )
     
     # Max results recommendations
-    if config.jira.search_max_results > 200:
+    if config.jira_search_max_results > 200:
         recommendations.append(
-            f"Consider reducing JIRA_SEARCH_MAX_RESULTS from {config.jira.search_max_results} to 200 "
+            f"Consider reducing JIRA_SEARCH_MAX_RESULTS from {config.jira_search_max_results} to 200 "
             "for faster duplicate detection"
         )
     
     # Similarity threshold recommendations
-    if config.jira.similarity_threshold < 0.7:
+    if config.jira_similarity_threshold < 0.7:
         recommendations.append(
-            f"Consider increasing JIRA_SIMILARITY_THRESHOLD from {config.jira.similarity_threshold} to 0.8+ "
+            f"Consider increasing JIRA_SIMILARITY_THRESHOLD from {config.jira_similarity_threshold} to 0.8+ "
             "to reduce false positives and improve performance"
         )
     
     # Datadog limit recommendations
-    if config.datadog.limit < 20:
+    if config.datadog_limit < 20:
         recommendations.append(
-            f"Consider increasing DATADOG_LIMIT from {config.datadog.limit} to 50+ "
+            f"Consider increasing DATADOG_LIMIT from {config.datadog_limit} to 50+ "
             "to reduce API calls and improve efficiency"
         )
     
     # Timeout recommendations
-    if config.datadog.timeout < 15:
+    if config.datadog_timeout < 15:
         recommendations.append(
-            f"Consider increasing DATADOG_TIMEOUT from {config.datadog.timeout} to 20+ "
+            f"Consider increasing DATADOG_TIMEOUT from {config.datadog_timeout} to 20+ "
             "to avoid timeout issues"
         )
     

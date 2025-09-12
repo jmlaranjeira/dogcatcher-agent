@@ -17,25 +17,28 @@ from agent.performance import get_performance_metrics
 
 load_dotenv()
 
-# Get configuration
-config = get_config()
+# Configuration will be loaded lazily in functions
 
-HEADERS = {
-    "DD-API-KEY": config.datadog.api_key,
-    "DD-APPLICATION-KEY": config.datadog.app_key,
-    "Content-Type": "application/json",
-}
+def _get_headers():
+    """Get Datadog API headers."""
+    config = get_config()
+    return {
+        "DD-API-KEY": config.datadog_api_key,
+        "DD-APPLICATION-KEY": config.datadog_app_key,
+        "Content-Type": "application/json",
+    }
 
 MAX_LOG_DETAIL_LENGTH = 300
 
 
 def _missing_dd_config() -> list[str]:
+    config = get_config()
     missing = []
-    if not config.datadog.api_key:
+    if not config.datadog_api_key:
         missing.append("DATADOG_API_KEY")
-    if not config.datadog.app_key:
+    if not config.datadog_app_key:
         missing.append("DATADOG_APP_KEY")
-    if not config.datadog.site:
+    if not config.datadog_site:
         missing.append("DATADOG_SITE")
     return missing
 
@@ -87,17 +90,18 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
     metrics = get_performance_metrics()
     metrics.start_timer("get_logs")
     
-    service = config.datadog.service if service is None else service
-    env = config.datadog.env if env is None else env
-    hours_back = config.datadog.hours_back if hours_back is None else hours_back
-    limit = config.datadog.limit if limit is None else limit
+    config = get_config()
+    service = config.datadog_service if service is None else service
+    env = config.datadog_env if env is None else env
+    hours_back = config.datadog_hours_back if hours_back is None else hours_back
+    limit = config.datadog_limit if limit is None else limit
 
     log_info("Datadog query parameters", 
              service=service, 
              env=env, 
              hours_back=hours_back, 
              limit=limit, 
-             max_pages=config.datadog.max_pages)
+             max_pages=config.datadog_max_pages)
 
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
@@ -109,15 +113,15 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         return []
     # --- end validation ---
 
-    base_url = f"https://api.{config.datadog.site}/api/v2/logs/events/search"
+    base_url = f"https://api.{config.datadog_site}/api/v2/logs/events/search"
 
     # Build final query (and keep the extra clause for optional fallback)
     dd_query, extra_clause = _build_dd_query(
         service=service,
         env=env,
-        statuses_csv=config.datadog.statuses,
-        extra_csv=config.datadog.query_extra,
-        extra_mode=config.datadog.query_extra_mode,
+        statuses_csv=config.datadog_statuses,
+        extra_csv=config.datadog_query_extra,
+        extra_mode=config.datadog_query_extra_mode,
     )
     log_info("Datadog query built", query=dd_query)
 
@@ -133,7 +137,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         if cursor:
             payload["page"]["cursor"] = cursor
         try:
-            resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=config.datadog.timeout)
+            resp = requests.post(base_url, json=payload, headers=_get_headers(), timeout=config.datadog_timeout)
             resp.raise_for_status()
             data = resp.json()
             next_cursor = None
@@ -175,7 +179,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 "timestamp": attr.get("timestamp"),
                 "detail": detail,
             })
-        if not cursor or page >= config.datadog.max_pages:
+        if not cursor or page >= config.datadog_max_pages:
             break
 
     # If no results and we used an extra clause, retry once without it to aid diagnosis
@@ -193,7 +197,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
             if cursor:
                 payload["page"]["cursor"] = cursor
             try:
-                resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=config.datadog.timeout)
+                resp = requests.post(base_url, json=payload, headers=_get_headers(), timeout=config.datadog_timeout)
                 resp.raise_for_status()
                 data = resp.json()
                 next_cursor = None

@@ -4,16 +4,18 @@ Loads environment variables, builds the processing graph, fetches logs,
 and runs the LangGraph pipeline to analyze and create Jira tickets.
 All logging and comments are in English for consistency.
 """
-from agent.graph import build_graph
-from agent.utils.logger import log_info, log_error, log_agent_progress
-from agent.config import get_config, reload_config
-from agent.performance import log_performance_summary, log_configuration_performance, get_performance_recommendations
 from dotenv import load_dotenv
 import argparse
 import os
 import sys
 
+# Load environment variables first, before any other imports
 load_dotenv()
+
+from agent.graph import build_graph
+from agent.utils.logger import log_info, log_error, log_agent_progress
+from agent.config import get_config, reload_config
+from agent.performance import log_performance_summary, log_configuration_performance, get_performance_recommendations
 
 parser = argparse.ArgumentParser(description="Run the Datadog → Jira automation agent.")
 group = parser.add_mutually_exclusive_group()
@@ -68,7 +70,7 @@ if recommendations:
     for rec in recommendations:
         log_info(f"  💡 {rec}")
 
-log_agent_progress("Starting agent", jira_project=config.jira.project_key)
+log_agent_progress("Starting agent", jira_project=config.jira_project_key)
 
 graph = build_graph()
 logs = get_logs()
@@ -78,8 +80,8 @@ if not logs:
     raise SystemExit(0)
 
 # Use configuration values
-_auto = config.agent.auto_create_ticket
-_max = config.agent.max_tickets_per_run
+_auto = config.auto_create_ticket
+_max = config.max_tickets_per_run
 
 if _auto:
     if _max > 0:
