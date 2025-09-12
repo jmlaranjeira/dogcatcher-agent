@@ -11,40 +11,18 @@ from typing import List, Dict, Any, Optional, Tuple
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from agent.config import get_config
+from agent.utils.logger import log_info, log_error
+from agent.performance import get_performance_metrics
 
 load_dotenv()
 
-DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
-DATADOG_APP_KEY = os.getenv("DATADOG_APP_KEY")
-DATADOG_SITE = os.getenv("DATADOG_SITE", "datadoghq.eu")
-
-# Optional runtime configuration via environment
-DATADOG_SERVICE = os.getenv("DATADOG_SERVICE", "dehnproject")
-DATADOG_ENV = os.getenv("DATADOG_ENV", "dev")
-try:
-    DATADOG_HOURS_BACK = int(os.getenv("DATADOG_HOURS_BACK", "24"))
-except Exception:
-    DATADOG_HOURS_BACK = 24
-try:
-    DATADOG_LIMIT = int(os.getenv("DATADOG_LIMIT", "10"))
-except Exception:
-    DATADOG_LIMIT = 10
-try:
-    DATADOG_MAX_PAGES = int(os.getenv("DATADOG_MAX_PAGES", "1"))  # pagination safeguard
-except Exception:
-    DATADOG_MAX_PAGES = 1
-try:
-    DATADOG_TIMEOUT = int(os.getenv("DATADOG_TIMEOUT", "15"))  # seconds
-except Exception:
-    DATADOG_TIMEOUT = 15
-# Extra query terms appended to Datadog filter (e.g., status:error OR status:critical)
-DATADOG_QUERY_EXTRA = os.getenv("DATADOG_QUERY_EXTRA", "")
-# Default statuses; keep classic 'error' unless overridden via DATADOG_QUERY_EXTRA
-DATADOG_STATUSES = os.getenv("DATADOG_STATUSES", "error")
+# Get configuration
+config = get_config()
 
 HEADERS = {
-    "DD-API-KEY": DATADOG_API_KEY,
-    "DD-APPLICATION-KEY": DATADOG_APP_KEY,
+    "DD-API-KEY": config.datadog.api_key,
+    "DD-APPLICATION-KEY": config.datadog.app_key,
     "Content-Type": "application/json",
 }
 
@@ -53,11 +31,11 @@ MAX_LOG_DETAIL_LENGTH = 300
 
 def _missing_dd_config() -> list[str]:
     missing = []
-    if not DATADOG_API_KEY:
+    if not config.datadog.api_key:
         missing.append("DATADOG_API_KEY")
-    if not DATADOG_APP_KEY:
+    if not config.datadog.app_key:
         missing.append("DATADOG_APP_KEY")
-    if not DATADOG_SITE:
+    if not config.datadog.site:
         missing.append("DATADOG_SITE")
     return missing
 
@@ -105,15 +83,21 @@ def _build_dd_query(service: str, env: str, statuses_csv: str, extra_csv: str, e
 
 # Fetch error logs from Datadog based on service and environment parameters.
 def get_logs(service=None, env=None, hours_back=None, limit=None):
-    service = DATADOG_SERVICE if service is None else service
-    env = DATADOG_ENV if env is None else env
-    hours_back = DATADOG_HOURS_BACK if hours_back is None else hours_back
-    limit = DATADOG_LIMIT if limit is None else limit
+    # Start performance timing
+    metrics = get_performance_metrics()
+    metrics.start_timer("get_logs")
+    
+    service = config.datadog.service if service is None else service
+    env = config.datadog.env if env is None else env
+    hours_back = config.datadog.hours_back if hours_back is None else hours_back
+    limit = config.datadog.limit if limit is None else limit
 
-    print(
-        f"🔎 Datadog query → service={service}, env={env}, hours_back={hours_back}, limit={limit}, "
-        f"max_pages={DATADOG_MAX_PAGES}"
-    )
+    log_info("Datadog query parameters", 
+             service=service, 
+             env=env, 
+             hours_back=hours_back, 
+             limit=limit, 
+             max_pages=config.datadog.max_pages)
 
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
@@ -121,22 +105,21 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
     # --- config validation ---
     missing = _missing_dd_config()
     if missing:
-        print(f"❌ Missing Datadog configuration: {', '.join(missing)}. Returning no logs.")
+        log_error("Missing Datadog configuration", missing_fields=missing)
         return []
     # --- end validation ---
 
-    base_url = f"https://api.{DATADOG_SITE}/api/v2/logs/events/search"
+    base_url = f"https://api.{config.datadog.site}/api/v2/logs/events/search"
 
     # Build final query (and keep the extra clause for optional fallback)
-    extra_mode = os.getenv("DATADOG_QUERY_EXTRA_MODE", "AND")
     dd_query, extra_clause = _build_dd_query(
         service=service,
         env=env,
-        statuses_csv=DATADOG_STATUSES,
-        extra_csv=DATADOG_QUERY_EXTRA,
-        extra_mode=extra_mode,
+        statuses_csv=config.datadog.statuses,
+        extra_csv=config.datadog.query_extra,
+        extra_mode=config.datadog.query_extra_mode,
     )
-    print(f"🔎 dd_query = {dd_query}")
+    log_info("Datadog query built", query=dd_query)
 
     def _fetch_page(cursor: str | None = None):
         payload = {
@@ -150,7 +133,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         if cursor:
             payload["page"]["cursor"] = cursor
         try:
-            resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=DATADOG_TIMEOUT)
+            resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=config.datadog.timeout)
             resp.raise_for_status()
             data = resp.json()
             next_cursor = None
@@ -160,7 +143,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 next_cursor = None
             return data.get("data", []) or [], next_cursor
         except requests.RequestException as e:
-            print(f"❌ Datadog request failed: {e}")
+            log_error("Datadog request failed", error=str(e))
             return [], None
 
     # Pagination loop (bounded by DATADOG_MAX_PAGES)
@@ -192,12 +175,12 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 "timestamp": attr.get("timestamp"),
                 "detail": detail,
             })
-        if not cursor or page >= DATADOG_MAX_PAGES:
+        if not cursor or page >= config.datadog.max_pages:
             break
 
     # If no results and we used an extra clause, retry once without it to aid diagnosis
     if not results and extra_clause:
-        print("🧪 No results with extra clause; retrying once without DATADOG_QUERY_EXTRA…")
+        log_info("No results with extra clause; retrying once without DATADOG_QUERY_EXTRA")
         def _fetch_page_no_extra(cursor: str | None = None):
             payload = {
                 "filter": {
@@ -210,7 +193,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
             if cursor:
                 payload["page"]["cursor"] = cursor
             try:
-                resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=DATADOG_TIMEOUT)
+                resp = requests.post(base_url, json=payload, headers=HEADERS, timeout=config.datadog.timeout)
                 resp.raise_for_status()
                 data = resp.json()
                 next_cursor = None
@@ -220,16 +203,18 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                     next_cursor = None
                 return data.get("data", []) or [], next_cursor
             except requests.RequestException as e:
-                print(f"❌ Datadog fallback request failed: {e}")
+                log_error("Datadog fallback request failed", error=str(e))
                 return [], None
 
         # One-page probe (we only need to know if there are any logs without the extra)
         data_no_extra, _ = _fetch_page_no_extra(None)
-        print(f"🧪 Fallback (no extra) returned {len(data_no_extra)} logs on first page.")
-        if data_no_extra:
-            print("💡 Suggestion: relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate.")
+        log_info("Fallback query results", 
+                 logs_found=len(data_no_extra), 
+                 suggestion="relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate")
 
-    print(f"🪵 Collected {len(results)} logs from Datadog")
+    # End performance timing
+    duration = metrics.end_timer("get_logs")
+    log_info("Datadog logs collected", total_logs=len(results), duration_ms=round(duration * 1000, 2))
     return results
 
 

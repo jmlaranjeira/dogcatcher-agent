@@ -70,7 +70,7 @@ def git_commit_push(target_dir: Path, message: str) -> None:
     _git("add", "-A", cwd=target_dir)
     # Configure a generic bot identity if not set
     try:
-        _git("-c", "user.name=patchy-bot", "-c", "user.email=patchy@example.com", "commit", "-m", message, cwd=target_dir)
+        _git("-c", "user.name=patchy-bot", "-c", "user.email=patchy@company.com", "commit", "-m", message, cwd=target_dir)
     except subprocess.CalledProcessError:
         # Nothing to commit? Re-raise to signal to caller
         raise
