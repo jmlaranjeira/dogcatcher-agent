@@ -5,6 +5,7 @@ load_dotenv()
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from agent.utils.logger import log_info, log_error, log_debug
 
 import os
 import re
@@ -68,7 +69,8 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
 
     response = chain.invoke({"log_message": contextual_log})
     content = response.content
-    print("🧠 LLM raw content:", content)
+    log_debug("LLM analysis completed", content_preview=content[:200])
+    
     match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
     raw_json = match.group(1) if match else content
 
@@ -78,12 +80,14 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
         desc = parsed.get("ticket_description")
         if not title or not desc:
             raise ValueError("Missing title or description")
-        print(f"🧠 Log analyzed → Type: {parsed.get('error_type')}, Create ticket: {parsed.get('create_ticket')}")
-        import pprint
-        print("🚨 Returned state from analyze_log:")
-        pprint.pprint({**state, **parsed})
+        
+        log_info("Log analyzed successfully", 
+                error_type=parsed.get('error_type'), 
+                create_ticket=parsed.get('create_ticket'))
+        
         return {**state, **parsed, "severity": parsed.get("severity", "low")}
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as e:
+        log_error("LLM analysis failed", error=str(e), content_preview=content[:200])
         return {
             **state,
             "error_type": "unknown",

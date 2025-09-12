@@ -228,25 +228,27 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         else:
             touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
     elif mode == "fix":
-        # Minimal safe fix attempt (language-aware placeholder)
+        # Minimal safe fix attempt (language-aware v0)
         suffix = touch_path.suffix.lower()
         try:
-            if touch_path.exists():
-                content = touch_path.read_text(encoding="utf-8")
-            else:
-                content = ""
-            new_content = content
             if suffix == ".java":
-                # Insert a null-guard comment near the top as a placeholder for v0
-                new_content = "// Patchy: ensure null-safety here if needed\n" + content
+                from .utils.fix_java import apply_java_npe_guard  # type: ignore
+                changed, msg = apply_java_npe_guard(touch_path, int(state.get("fault_line") or 0))
+                if not changed:
+                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "message": msg})
             elif suffix in (".py",):
-                new_content = "# Patchy: ensure None checks here if needed\n" + content
+                # v0: prepend guidance comment
+                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
+                new_content = "# Patchy: add None checks/guard clauses as needed\n" + content
+                touch_path.write_text(new_content, encoding="utf-8")
             elif suffix in (".ts", ".tsx", ".js"):
-                new_content = "// Patchy: ensure guard clauses here if needed\n" + content
+                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
+                new_content = "// Patchy: add optional chaining/guard clauses as needed\n" + content
+                touch_path.write_text(new_content, encoding="utf-8")
             else:
-                # Fallback to note
-                new_content = (content + "\n# Patchy: low-risk change placeholder\n") if content else "# Patchy: low-risk change placeholder\n"
-            touch_path.write_text(new_content, encoding="utf-8")
+                # Fallback: append a note
+                with touch_path.open("a", encoding="utf-8") as f:
+                    f.write("\n# Patchy: low-risk placeholder change\n")
         except Exception as e:
             append_audit({"service": service, "status": "fix_apply_failed", "branch": branch, "message": str(e)})
             return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from agent.state import GraphState
+from agent.utils.logger import log_info, log_debug
 
 from langgraph.graph import END, StateGraph
 from agent.nodes import analyze_log, fetch_logs
@@ -28,7 +29,7 @@ def analyze_log_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
     logs = state.get("logs", [])
     idx = state.get("log_index", 0)
     if not logs or idx >= len(logs):
-        print("ℹ️ No logs to analyze; finishing.")
+        log_info("No logs to analyze; finishing.")
         return {**state, "finished": True, "create_ticket": False}
 
     log = logs[idx]
@@ -37,11 +38,11 @@ def analyze_log_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
         f"{log.get('thread', 'unknown')}|"
         f"{log.get('message', '<no message>')}"
     )
-    print(f"🔍 Analyzing log #{state.get('log_index')} with key: {log_key}")
+    log_debug("Analyzing log", log_index=state.get('log_index'), log_key=log_key)
 
     # Skip logs already analyzed in this run
     if log_key in state["seen_logs"]:
-        print(f"⏭️ Skipping duplicate log #{state.get('log_index')}: {log_key}")
+        log_debug("Skipping duplicate log", log_index=state.get('log_index'), log_key=log_key)
         return {**state, "skipped_duplicate": True, "create_ticket": False}
 
     state["seen_logs"].add(log_key)
