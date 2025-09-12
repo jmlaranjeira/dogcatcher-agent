@@ -13,6 +13,10 @@ from agent.jira import create_ticket as create_jira_ticket, find_similar_ticket,
 from agent.jira.utils import normalize_log_message, should_comment, update_comment_timestamp
 from agent.jira.utils import priority_name_from_severity
 from agent.utils.logger import log_info, log_error, log_warning, log_ticket_operation, log_duplicate_detection
+from agent.config import get_config
+
+# Get configuration
+config = get_config()
 
 
 @dataclass
@@ -180,7 +184,7 @@ def _build_jira_payload(state: Dict[str, Any], title: str, description: str) -> 
     # Build payload
     payload = {
         "fields": {
-            "project": {"key": os.getenv("JIRA_PROJECT_KEY")},
+            "project": {"key": config.jira.project_key},
             "summary": clean_title,
             "description": {
                 "type": "doc",
@@ -229,7 +233,7 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
     state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
     
     # Create or simulate based on configuration
-    auto_create = os.getenv("AUTO_CREATE_TICKET", "false").lower() == "true"
+    auto_create = config.agent.auto_create_ticket
     
     if auto_create:
         return _create_real_ticket(state, payload)
@@ -274,13 +278,10 @@ def _save_processed_fingerprints(fingerprints: set[str]) -> None:
 
 def _maybe_comment_duplicate(issue_key: str, score: float, state: Dict[str, Any]) -> None:
     """Add a comment to an existing duplicate ticket if configured."""
-    if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() not in ("1", "true", "yes"):
+    if not config.agent.comment_on_duplicate:
         return
     
-    try:
-        cooldown_min = int(os.getenv("COMMENT_COOLDOWN_MINUTES", "120") or "0")
-    except Exception:
-        cooldown_min = 120
+    cooldown_min = config.agent.comment_cooldown_minutes
     
     if should_comment(issue_key, cooldown_min):
         log_data = state.get("log_data", {})
@@ -334,10 +335,10 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
     # Add aggregation labels based on error type
     etype = (state.get("error_type") or "").strip().lower()
     
-    if os.getenv("AGGREGATE_EMAIL_NOT_FOUND", "false").lower() in ("1", "true", "yes") and etype == "email-not-found":
+    if config.agent.aggregate_email_not_found and etype == "email-not-found":
         labels.append("aggregate-email-not-found")
     
-    if os.getenv("AGGREGATE_KAFKA_CONSUMER", "false").lower() in ("1", "true", "yes") and etype == "kafka-consumer":
+    if config.agent.aggregate_kafka_consumer and etype == "kafka-consumer":
         labels.append("aggregate-kafka-consumer")
     
     return labels
@@ -348,13 +349,13 @@ def _clean_title(title: str, error_type: Optional[str]) -> str:
     base_title = title.replace("**", "").strip()
     
     # Handle aggregation cases
-    if error_type == "email-not-found" and os.getenv("AGGREGATE_EMAIL_NOT_FOUND", "false").lower() in ("1", "true", "yes"):
+    if error_type == "email-not-found" and config.agent.aggregate_email_not_found:
         base_title = "Investigate Email Not Found errors (aggregated)"
-    elif error_type == "kafka-consumer" and os.getenv("AGGREGATE_KAFKA_CONSUMER", "false").lower() in ("1", "true", "yes"):
+    elif error_type == "kafka-consumer" and config.agent.aggregate_kafka_consumer:
         base_title = "Investigate Kafka Consumer errors (aggregated)"
     
     # Truncate if too long
-    max_title = 120
+    max_title = config.ui.max_title_length
     if len(base_title) > max_title:
         base_title = base_title[:max_title - 1] + "…"
     
@@ -373,10 +374,7 @@ def _is_cap_reached(state: Dict[str, Any]) -> bool:
 
 def _get_max_tickets() -> int:
     """Get the maximum number of tickets per run."""
-    try:
-        return int(os.getenv("MAX_TICKETS_PER_RUN", "3") or "0")
-    except Exception:
-        return 3
+    return config.agent.max_tickets_per_run
 
 
 def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[str, Any]:
@@ -424,7 +422,7 @@ def _simulate_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> 
     state["jira_payload"] = payload.payload
     
     # Optionally persist fingerprint even in simulation
-    persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
+    persist_sim = config.agent.persist_sim_fp
     if persist_sim:
         processed = _load_processed_fingerprints()
         processed.add(payload.fingerprint)
