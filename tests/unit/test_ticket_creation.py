@@ -303,6 +303,138 @@ class TestCreateTicketIntegration:
         assert "duplicate" in result.get("message", "").lower()
 
 
+class TestDirectLogMatchPath:
+    """Test direct log match path (≥0.90 similarity)."""
+    
+    def test_direct_log_match_high_similarity(self, sample_state, mock_config, mock_jira_client):
+        """Test direct log match with high similarity."""
+        # Mock Jira search returning a very similar issue
+        mock_similar_issue = {
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Database Connection Error",
+                "labels": ["bug", "database"]
+            }
+        }
+        
+        with patch('agent.jira.match.find_similar_ticket') as mock_find:
+            mock_find.return_value = (mock_similar_issue, 0.95)  # High similarity
+            
+            result = create_ticket(sample_state)
+            
+            # Should detect as duplicate due to high similarity
+            assert result["ticket_created"] is False
+            assert "duplicate" in result.get("message", "").lower()
+    
+    def test_direct_log_match_exact_match(self, sample_state, mock_config, mock_jira_client):
+        """Test direct log match with exact match."""
+        mock_exact_issue = {
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Database Connection Error",
+                "labels": ["bug", "database"]
+            }
+        }
+        
+        with patch('agent.jira.match.find_similar_ticket') as mock_find:
+            mock_find.return_value = (mock_exact_issue, 1.0)  # Exact match
+            
+            result = create_ticket(sample_state)
+            
+            # Should detect as duplicate due to exact match
+            assert result["ticket_created"] is False
+            assert "duplicate" in result.get("message", "").lower()
+
+
+class TestLabelShortCircuitPath:
+    """Test label short-circuit path for existing issues."""
+    
+    def test_loghash_label_short_circuit(self, sample_state, mock_config, mock_jira_client):
+        """Test short-circuit when loghash label matches."""
+        # Create a fingerprint that matches the loghash label
+        fingerprint = "test-fingerprint-123"
+        sample_state["fingerprint"] = fingerprint
+        
+        mock_issue_with_loghash = {
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Database Connection Error",
+                "labels": [f"loghash-{fingerprint}", "bug", "database"]
+            }
+        }
+        
+        with patch('agent.jira.match.find_similar_ticket') as mock_find:
+            mock_find.return_value = (mock_issue_with_loghash, 0.85)
+            
+            result = create_ticket(sample_state)
+            
+            # Should detect as duplicate due to loghash label match
+            assert result["ticket_created"] is False
+            assert "duplicate" in result.get("message", "").lower()
+    
+    def test_no_loghash_label_continues_search(self, sample_state, mock_config, mock_jira_client):
+        """Test that search continues when no loghash label matches."""
+        fingerprint = "test-fingerprint-123"
+        sample_state["fingerprint"] = fingerprint
+        
+        mock_issue_without_loghash = {
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Database Connection Error",
+                "labels": ["bug", "database"]  # No loghash label
+            }
+        }
+        
+        with patch('agent.jira.match.find_similar_ticket') as mock_find:
+            mock_find.return_value = (mock_issue_without_loghash, 0.75)  # Below threshold
+            
+            result = create_ticket(sample_state)
+            
+            # Should continue with normal similarity check
+            # Result depends on similarity threshold
+            assert "ticket_created" in result
+
+
+class TestLLMNoCreateDecision:
+    """Test respect for LLM no-create decisions."""
+    
+    def test_llm_no_create_decision_respected(self, sample_state, mock_config, mock_jira_client):
+        """Test when LLM decides not to create a ticket."""
+        sample_state["llm_no_create"] = True
+        sample_state["llm_no_create_reason"] = "Not a real error, just a warning"
+        
+        result = create_ticket(sample_state)
+        
+        # Should respect LLM decision and not create ticket
+        assert result["ticket_created"] is False
+        assert "llm" in result.get("message", "").lower() or "not create" in result.get("message", "").lower()
+    
+    def test_llm_create_decision_allowed(self, sample_state, mock_config, mock_jira_client):
+        """Test when LLM decides to create a ticket."""
+        sample_state["llm_no_create"] = False
+        
+        with patch('agent.jira.client.create_issue') as mock_create:
+            mock_create.return_value = {"key": "TEST-123"}
+            
+            result = create_ticket(sample_state)
+            
+            # Should allow ticket creation
+            assert result["ticket_created"] is True
+    
+    def test_llm_no_create_missing_field_defaults_to_create(self, sample_state, mock_config, mock_jira_client):
+        """Test when llm_no_create field is missing (defaults to create)."""
+        # Remove llm_no_create field if it exists
+        sample_state.pop("llm_no_create", None)
+        
+        with patch('agent.jira.client.create_issue') as mock_create:
+            mock_create.return_value = {"key": "TEST-123"}
+            
+            result = create_ticket(sample_state)
+            
+            # Should default to allowing creation
+            assert result["ticket_created"] is True
+
+
 # Helper functions for testing
 def mock_open_file_with_fingerprint(fingerprint: str):
     """Mock file content with specific fingerprint."""
