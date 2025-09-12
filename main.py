@@ -5,6 +5,7 @@ and runs the LangGraph pipeline to analyze and create Jira tickets.
 All logging and comments are in English for consistency.
 """
 from agent.graph import build_graph
+from agent.utils.logger import log_info, log_error, log_agent_progress
 from dotenv import load_dotenv
 import argparse
 import os
@@ -40,13 +41,13 @@ if args.max_tickets is not None:
 
 from agent.datadog import get_logs
 
-print("🚀 Starting agent for Jira project:", os.getenv("JIRA_PROJECT_KEY"))
+log_agent_progress("Starting agent", jira_project=os.getenv("JIRA_PROJECT_KEY"))
 
 graph = build_graph()
 logs = get_logs()
-print(f"🪵 Loaded {len(logs)} logs for processing")
+log_agent_progress("Logs loaded", log_count=len(logs))
 if not logs:
-    print("ℹ️ No logs to process; exiting.")
+    log_info("No logs to process; exiting.")
     raise SystemExit(0)
 _auto = os.getenv('AUTO_CREATE_TICKET', 'false').lower() == 'true'
 try:
@@ -55,13 +56,13 @@ except Exception:
     _max = 3
 if _auto:
     if _max > 0:
-        print(f"🛡️ Safety guard: up to {_max} real Jira tickets will be created per run.")
+        log_info(f"Safety guard: up to {_max} real Jira tickets will be created per run.")
     else:
-        print("🛡️ Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful.")
+        log_info("Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful.")
 else:
-    print("🛡️ Dry-run mode: Jira ticket creation is disabled.")
+    log_info("Dry-run mode: Jira ticket creation is disabled.")
 graph.invoke(
     {"logs": logs, "log_index": 0, "seen_logs": set()},
     {"recursion_limit": 2000}
 )
-print("🏁 Agent execution finished")
+log_agent_progress("Agent execution finished")
