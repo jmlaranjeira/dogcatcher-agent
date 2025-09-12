@@ -15,6 +15,13 @@ from .utils import (
     extract_text_from_description,
 )
 from agent.config import get_config
+from agent.performance import (
+    get_similarity_cache, 
+    get_performance_metrics,
+    optimize_jira_search_params,
+    cached_normalize_text,
+    cached_normalize_log_message
+)
 
 # Get configuration
 config = get_config()
@@ -43,15 +50,28 @@ def find_similar_ticket(
     similarity_threshold: float = None,
 ):
     """Return (issue_key, score, issue_summary) if >= threshold, else (None, 0.0, None)."""
+    # Start performance timing
+    metrics = get_performance_metrics()
+    metrics.start_timer("find_similar_ticket")
+    
     if not client.is_configured():
         from agent.utils.logger import log_error
         log_error("Missing Jira configuration in .env")
+        metrics.end_timer("find_similar_ticket")
         return None, 0.0, None
     
     if similarity_threshold is None:
         similarity_threshold = config.jira.similarity_threshold
+    
+    # Check cache first
+    cache = get_similarity_cache()
+    cached_result = cache.get(summary, state)
+    if cached_result is not None:
+        metrics.end_timer("find_similar_ticket")
+        return cached_result
 
-    norm_summary = normalize_text(summary)
+    # Use cached normalization for better performance
+    norm_summary = cached_normalize_text(summary)
     tokens = [t for t in norm_summary.split() if len(t) >= 4]
     if "pre" in tokens and "persist" in tokens and "pre-persist" not in tokens:
         tokens.append("pre-persist")
@@ -59,7 +79,7 @@ def find_similar_ticket(
     # Phrase hints from either title or the current log message
     phrases = []
     current_log_msg = ((state or {}).get("log_data") or {}).get("message", "")
-    norm_current_log = normalize_log_message(current_log_msg)
+    norm_current_log = cached_normalize_log_message(current_log_msg)
     haystack = (norm_summary + " " + (norm_current_log or "")).strip()
     if "blob not found" in haystack:
         phrases.append("blob not found")
@@ -77,13 +97,16 @@ def find_similar_ticket(
     token_clauses.append('labels = datadog-log')
     token_filter = " OR ".join(token_clauses) if token_clauses else "labels = datadog-log"
 
+    # Use optimized search parameters
+    optimized_params = optimize_jira_search_params()
+    
     jql = (
-        f"project = {config.jira.project_key} AND statusCategory != Done AND created >= -{config.jira.search_window_days}d AND ("
+        f"project = {config.jira.project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
         + token_filter
         + ") ORDER BY created DESC"
     )
     from agent.utils.logger import log_info
-    log_info("JQL query built", jql=jql)
+    log_info("JQL query built", jql=jql, optimized_window=optimized_params['search_window_days'])
 
     # Fast path: exact label via loghash
     if norm_current_log:
@@ -100,8 +123,8 @@ def find_similar_ticket(
             log_info("Exact duplicate found by label", loghash=loghash, issue_key=first.get('key'))
             return first.get("key"), 1.00, first.get("fields", {}).get("summary", "")
 
-    # General search
-    resp = client.search(jql, fields="summary,description,labels,created,status")
+    # General search with optimized max results
+    resp = client.search(jql, fields="summary,description,labels,created,status", max_results=optimized_params['search_max_results'])
     issues = (resp or {}).get("issues", [])
 
     etype = (state or {}).get("error_type") if state else None
@@ -143,11 +166,21 @@ def find_similar_ticket(
         if score > best[1]:
             best = (issue.get("key"), score, fields.get("summary", ""))
 
+    # Cache the result
+    result = (None, 0.0, None)
     if best[0] and best[1] >= similarity_threshold:
         from agent.utils.logger import log_info
         log_info("Similar ticket found", similarity_score=best[1], issue_summary=best[2])
-        return best
-
-    from agent.utils.logger import log_info
-    log_info("No similar ticket found with advanced matching")
-    return None, 0.0, None
+        result = best
+    else:
+        from agent.utils.logger import log_info
+        log_info("No similar ticket found with advanced matching")
+    
+    # Cache the result for future use
+    cache.set(summary, state, result)
+    
+    # End performance timing
+    duration = metrics.end_timer("find_similar_ticket")
+    log_debug("find_similar_ticket completed", duration_ms=round(duration * 1000, 2))
+    
+    return result

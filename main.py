@@ -7,6 +7,7 @@ All logging and comments are in English for consistency.
 from agent.graph import build_graph
 from agent.utils.logger import log_info, log_error, log_agent_progress
 from agent.config import get_config, reload_config
+from agent.performance import log_performance_summary, log_configuration_performance, get_performance_recommendations
 from dotenv import load_dotenv
 import argparse
 import os
@@ -47,6 +48,9 @@ from agent.datadog import get_logs
 config = get_config()
 config.log_configuration()
 
+# Log performance configuration
+log_configuration_performance()
+
 # Validate configuration
 issues = config.validate_configuration()
 if issues:
@@ -56,6 +60,13 @@ if issues:
         print(f"  - {issue}")
     print("\nPlease fix these issues and try again.")
     sys.exit(1)
+
+# Log performance recommendations
+recommendations = get_performance_recommendations()
+if recommendations:
+    log_info("Performance optimization recommendations")
+    for rec in recommendations:
+        log_info(f"  💡 {rec}")
 
 log_agent_progress("Starting agent", jira_project=config.jira.project_key)
 
@@ -82,3 +93,6 @@ graph.invoke(
     {"recursion_limit": 2000}
 )
 log_agent_progress("Agent execution finished")
+
+# Log performance summary
+log_performance_summary()

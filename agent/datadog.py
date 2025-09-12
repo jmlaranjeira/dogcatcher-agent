@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from agent.config import get_config
 from agent.utils.logger import log_info, log_error
+from agent.performance import get_performance_metrics
 
 load_dotenv()
 
@@ -82,6 +83,10 @@ def _build_dd_query(service: str, env: str, statuses_csv: str, extra_csv: str, e
 
 # Fetch error logs from Datadog based on service and environment parameters.
 def get_logs(service=None, env=None, hours_back=None, limit=None):
+    # Start performance timing
+    metrics = get_performance_metrics()
+    metrics.start_timer("get_logs")
+    
     service = config.datadog.service if service is None else service
     env = config.datadog.env if env is None else env
     hours_back = config.datadog.hours_back if hours_back is None else hours_back
@@ -207,7 +212,9 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                  logs_found=len(data_no_extra), 
                  suggestion="relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate")
 
-    log_info("Datadog logs collected", total_logs=len(results))
+    # End performance timing
+    duration = metrics.end_timer("get_logs")
+    log_info("Datadog logs collected", total_logs=len(results), duration_ms=round(duration * 1000, 2))
     return results
 
 
