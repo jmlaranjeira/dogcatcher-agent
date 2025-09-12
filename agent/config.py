@@ -246,7 +246,7 @@ class Config(BaseSettings):
         if self.max_tickets_per_run == 0 and self.auto_create_ticket:
             issues.append("MAX_TICKETS_PER_RUN=0 with AUTO_CREATE_TICKET=true is dangerous")
         
-        if self.datadog_limit < 5:
+        if self.datadog_limit < 2:
             issues.append("DATADOG_LIMIT is very low, may miss important logs")
         
         if self.jira_similarity_threshold < 0.5:
