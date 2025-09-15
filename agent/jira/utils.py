@@ -46,6 +46,15 @@ def normalize_log_message(text: str) -> str:
     if not text:
         return ""
     t = text.lower()
+    # Normalize variable blob/file references commonly seen in messages
+    # Example: "failed to get file size by name <uuid>_<name>.dpplan, cause: status code 404, (blobnotfound)"
+    try:
+        # Collapse the variable segment after "by name" up to the next comma
+        t = re.sub(r"(failed to get file size by name)\s+[^,]+", r"\1 <blob>", t)
+        # Replace dpplan-like filenames with a placeholder
+        t = re.sub(r"\b[a-z0-9._-]+\.dpplan\b", " <file>", t)
+    except Exception:
+        pass
     t = re.sub(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", " <email> ", t)
     t = re.sub(r"\bhttps?://[^\s]+", " <url> ", t)
     t = re.sub(r"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", " <token> ", t)
