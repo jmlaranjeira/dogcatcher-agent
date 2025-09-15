@@ -91,7 +91,7 @@ if _auto:
 else:
     log_info("Dry-run mode: Jira ticket creation is disabled.")
 graph.invoke(
-    {"logs": logs, "log_index": 0, "seen_logs": set()},
+    {"logs": logs, "log_index": 0, "seen_logs": set(), "created_fingerprints": set()},
     {"recursion_limit": 2000}
 )
 log_agent_progress("Agent execution finished")
