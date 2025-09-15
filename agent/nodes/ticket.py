@@ -15,9 +15,46 @@ from agent.jira.utils import priority_name_from_severity
 from agent.utils.logger import log_info, log_error, log_warning, log_ticket_operation, log_duplicate_detection
 from agent.config import get_config
 from agent.performance import get_performance_metrics
+import pathlib
+import datetime
 
 # Configuration will be loaded lazily in functions
 
+
+_AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
+
+
+def _utcnow_iso() -> str:
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+
+def _append_audit_log(entry: dict) -> None:
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        # Best-effort; do not fail the workflow
+        log_warning("Failed to append audit log", error=str(e))
+
+
+def _append_audit(*, decision: str, state: Dict[str, Any], fingerprint: str, occ: int,
+                  jira_key: str | None = None, duplicate: bool = False, create: bool = False,
+                  message: str = "") -> None:
+    entry = {
+        "timestamp": _utcnow_iso(),
+        "fingerprint": fingerprint,
+        "error_type": state.get("error_type"),
+        "severity": state.get("severity"),
+        "create_ticket": bool(create),
+        "duplicate": bool(duplicate),
+        "decision": decision,
+        "existing_issue_key": jira_key,
+        "jira_key": jira_key,
+        "occurrences": occ,
+        "message": message,
+    }
+    _append_audit_log(entry)
 
 @dataclass
 class TicketValidationResult:
@@ -117,6 +154,22 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
     
     if fingerprint in created_in_run or fingerprint in processed:
         log_info("Duplicate found in fingerprint cache", fingerprint=fingerprint)
+        # Approximate occurrence lookup
+        log_data = state.get("log_data", {})
+        raw_msg = log_data.get('message','')
+        norm_msg = normalize_log_message(raw_msg)
+        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+        occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+        _append_audit(
+            decision="duplicate-fingerprint",
+            state=state,
+            fingerprint=fingerprint,
+            occ=occ,
+            jira_key=None,
+            duplicate=True,
+            create=False,
+            message="Duplicate log skipped (fingerprint cache)",
+        )
         return DuplicateCheckResult(
             is_duplicate=True,
             message="Log already processed previously (fingerprint match)"
@@ -142,6 +195,22 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
             # Update fingerprint cache
             processed.add(fingerprint)
             _save_processed_fingerprints(processed)
+            # Audit duplicate in Jira
+            log_data = state.get("log_data", {})
+            raw_msg = log_data.get('message','')
+            norm_msg = normalize_log_message(raw_msg)
+            fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+            occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+            _append_audit(
+                decision="duplicate-jira",
+                state=state,
+                fingerprint=fingerprint,
+                occ=occ,
+                jira_key=key,
+                duplicate=True,
+                create=False,
+                message=f"Duplicate in Jira: {key} — {existing_summary}",
+            )
             
             return DuplicateCheckResult(
                 is_duplicate=True,
@@ -240,6 +309,17 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
     if _is_cap_reached(state):
         cap_msg = f"Ticket creation limit reached for this run (max {_get_max_tickets()})"
         log_warning("Ticket creation cap reached", max_tickets=_get_max_tickets())
+        # Audit cap reached
+        _append_audit(
+            decision="cap-reached",
+            state=state,
+            fingerprint=payload.fingerprint,
+            occ=1,
+            jira_key=None,
+            duplicate=False,
+            create=False,
+            message=cap_msg,
+        )
         return {**state, "message": cap_msg, "ticket_created": True}
     
     # Create or simulate based on configuration
@@ -425,6 +505,17 @@ def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[s
             state.setdefault("created_fingerprints", set()).add(payload.fingerprint)
             # Increment counter only on success
             state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
+            # Audit created
+            _append_audit(
+                decision="created",
+                state=state,
+                fingerprint=payload.fingerprint,
+                occ=1,
+                jira_key=issue_key,
+                duplicate=False,
+                create=True,
+                message="Ticket created successfully",
+            )
             
             return {**result_state, "ticket_created": True}
         else:
@@ -456,7 +547,17 @@ def _simulate_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> 
     log_info("Ticket creation simulated", 
              title=payload.title, 
              persist_fingerprint=persist_sim)
-    
+    # Audit simulation
+    _append_audit(
+        decision="simulated",
+        state=state,
+        fingerprint=payload.fingerprint,
+        occ=1,
+        jira_key=None,
+        duplicate=False,
+        create=False,
+        message="Ticket creation simulated (dry run)",
+    )
     return {**state, "ticket_created": True, "message": "Ticket creation simulated (dry run)"}
 
 
