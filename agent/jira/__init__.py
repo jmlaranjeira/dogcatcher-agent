@@ -27,16 +27,21 @@ __all__ = [
 # --- Internal helpers to keep create_ticket() simple ---
 
 def _cap_reached(state: Dict[str, Any]) -> tuple[bool, str | None]:
-    """Check per-run cap set by MAX_TICKETS_PER_RUN (0 disables the cap)."""
-    max_cap = int(os.getenv("MAX_TICKETS_PER_RUN", "3") or "3")
-    if max_cap > 0 and state.get("_tickets_created_in_run", 0) >= max_cap:
-        return True, f"⚠️ Ticket creation limit reached for this run (max {max_cap})."
+    """Deprecated: cap is enforced upstream in agent.nodes.ticket."""
     return False, None
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> tuple[str, str]:
     log_data = state.get("log_data", {})
-    fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
+    try:
+        from .utils import normalize_log_message as _norm
+        raw_msg = log_data.get('message', '')
+        norm_msg = _norm(raw_msg)
+        base = norm_msg or raw_msg
+    except Exception:
+        base = log_data.get('message', '')
+    # Ignore thread to avoid per-thread duplicates
+    fp_source = f"{log_data.get('logger','')}|{base}"
     fingerprint = hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
     return fingerprint, fp_source
 
@@ -136,14 +141,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     print(f"🧾 Title to create: {title}")
     print(f"📝 Description to create: {description[:160]}{'...' if description and len(description) > 160 else ''}")
 
-    # Cap check
-    reached, msg = _cap_reached(state)
-    if reached:
-        print(f"🔔 {msg} Skipping.")
-        return {**state, "message": msg}
-
-    # Increment per-run counter (safety)
-    state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
+    # Cap is enforced in agent.nodes.ticket._execute_ticket_creation
 
     if title is None or description is None:
         return state
@@ -163,25 +161,34 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     if handled:
         return state
 
-    # Build payload
-    clean_title = (title or "").replace("**", "").strip()
-    labels = _base_labels(state)
-    priority_name = _priority_name(state.get("severity"))
-    payload = {
-        "fields": {
-            "project": {"key": get_jira_project_key()},
-            "summary": clean_title,
-            "description": {
-                "type": "doc",
-                "version": 1,
-                "content": [{"type": "paragraph", "content": [{"text": state.get("ticket_description"), "type": "text"}]}],
-            },
-            "issuetype": {"name": "Bug"},
-            "labels": labels,
-            "priority": {"name": priority_name},
-            "customfield_10767": [{"value": "Team Vega"}],
+    # Build payload: prefer pre-built payload from state (refactored path)
+    payload = state.get("jira_payload")
+    if not payload:
+        clean_title = (title or "").replace("**", "").strip()
+        labels = _base_labels(state)
+        priority_name = _priority_name(state.get("severity"))
+        payload = {
+            "fields": {
+                "project": {"key": get_jira_project_key()},
+                "summary": clean_title,
+                "description": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [{"type": "paragraph", "content": [{"text": state.get("ticket_description"), "type": "text"}]}],
+                },
+                "issuetype": {"name": "Bug"},
+                "labels": labels,
+                "priority": {"name": priority_name},
+            }
         }
-    }
+        # Optional: inject team custom field via env
+        try:
+            team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
+            team_field_value = os.getenv("JIRA_TEAM_VALUE")
+            if team_field_id and team_field_value:
+                payload["fields"][team_field_id] = [{"value": team_field_value}]
+        except Exception:
+            pass
 
     # Create or simulate
     return _create_or_simulate(state, payload, processed)

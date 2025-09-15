@@ -113,8 +113,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
     # 1. Check fingerprint cache (fastest)
     fingerprint = _compute_fingerprint(state)
     processed = _load_processed_fingerprints()
+    created_in_run: set[str] = state.get("created_fingerprints", set())
     
-    if fingerprint in processed:
+    if fingerprint in created_in_run or fingerprint in processed:
         log_info("Duplicate found in fingerprint cache", fingerprint=fingerprint)
         return DuplicateCheckResult(
             is_duplicate=True,
@@ -195,9 +196,19 @@ def _build_jira_payload(state: Dict[str, Any], title: str, description: str) -> 
             "issuetype": {"name": "Bug"},
             "labels": labels,
             "priority": {"name": priority_name_from_severity(state.get("severity"))},
-            "customfield_10767": [{"value": "Team Vega"}],
         }
     }
+
+    # Optional team custom field injection via env vars
+    # Set JIRA_TEAM_FIELD_ID and JIRA_TEAM_VALUE in .env to enable
+    try:
+        team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
+        team_field_value = os.getenv("JIRA_TEAM_VALUE")
+        if team_field_id and team_field_value:
+            payload["fields"][team_field_id] = [{"value": team_field_value}]
+    except Exception:
+        # Do not fail payload building if optional field injection fails
+        pass
     
     log_info("Jira payload built successfully", 
              title=clean_title, 
@@ -225,14 +236,11 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
     config = get_config()
     log_info("Executing ticket creation")
     
-    # Check per-run cap
+    # Check per-run cap (strict enforcement)
     if _is_cap_reached(state):
         cap_msg = f"Ticket creation limit reached for this run (max {_get_max_tickets()})"
         log_warning("Ticket creation cap reached", max_tickets=_get_max_tickets())
         return {**state, "message": cap_msg, "ticket_created": True}
-    
-    # Increment counter
-    state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
     
     # Create or simulate based on configuration
     auto_create = config.auto_create_ticket
@@ -244,9 +252,12 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> str:
-    """Compute a stable fingerprint for the log entry."""
+    """Compute a stable fingerprint for the log entry using normalized message."""
     log_data = state.get("log_data", {})
-    fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
+    raw_msg = log_data.get('message', '')
+    norm_msg = normalize_log_message(raw_msg)
+    # Ignore thread to avoid per-thread duplicates
+    fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
     return hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
 
 
@@ -289,7 +300,9 @@ def _maybe_comment_duplicate(issue_key: str, score: float, state: Dict[str, Any]
     if should_comment(issue_key, cooldown_min):
         log_data = state.get("log_data", {})
         win = state.get("window_hours", 48)
-        fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
+        raw_msg = log_data.get('message','')
+        norm_msg = normalize_log_message(raw_msg)
+        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
         
         comment = (
@@ -306,7 +319,9 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
     """Build enhanced description with additional context."""
     log_data = state.get("log_data", {})
     win = state.get("window_hours", 48)
-    fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
+    raw_msg = log_data.get('message','')
+    norm_msg = normalize_log_message(raw_msg)
+    fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
     
     extra_info = f"""
@@ -403,10 +418,13 @@ def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[s
                                ticket_key=issue_key, 
                                title=payload.title)
             
-            # Update fingerprint cache
+            # Update fingerprint caches (in-run and persisted)
             processed = _load_processed_fingerprints()
             processed.add(payload.fingerprint)
             _save_processed_fingerprints(processed)
+            state.setdefault("created_fingerprints", set()).add(payload.fingerprint)
+            # Increment counter only on success
+            state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
             
             return {**result_state, "ticket_created": True}
         else:
