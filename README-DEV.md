@@ -14,6 +14,7 @@ Welcome to the **Dogcatcher Agent** development environment! This guide will hel
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [FAQ](#faq)
+- [LangGraph Studio](#langgraph-studio)
 
 ## 🛠️ Prerequisites
 
@@ -542,6 +543,31 @@ A: Production deployment checklist:
 3. Set up monitoring and alerting
 4. Test with production-like data
 5. Configure proper logging levels
+
+## LangGraph Studio
+
+### Instalación rápida
+- Crea un entorno dedicado: `python -m venv .venv-studio`
+- Activa y actualiza pip: `source .venv-studio/bin/activate && pip install --upgrade pip`
+- Instala la UI: `pip install langgraph-studio`
+- El repo ya ignora `.venv-studio/` en Git y Docker, no necesitas pasos extra.
+
+### Levantar la interfaz
+1. Activa el entorno dedicado: `source .venv-studio/bin/activate`
+2. Arranca la UI local: `langgraph-studio start --host 127.0.0.1 --port 8123`
+3. Abre tu navegador en <http://127.0.0.1:8123>
+
+### Conectar el grafo del agente
+- En otra terminal dentro del repo:
+  - Si los shims de `pyenv` están actualizados: `langgraph dev --studio-url http://127.0.0.1:8123`
+  - Si necesitas la ruta explícita: `/Users/jlaranjeira/.pyenv/versions/3.11.9/bin/langgraph dev --studio-url http://127.0.0.1:8123`
+- El servidor expone el grafo a Studio y podrás ejecutar y depurar runs desde la UI.
+
+### Apagar y limpiar
+- Termina cada proceso con `Ctrl+C`
+- Desactiva el entorno cuando acabes: `deactivate`
+
+> Consulta `langgraph --help` para ver otros subcomandos útiles (`build`, `up`, etc.).
 
 ## 📚 Additional Resources
 
