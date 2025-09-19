@@ -1,0 +1,8 @@
+{
+  "python_version": "3.11",
+  "dependencies": ["."],
+  "graphs": {
+    "dogcatcher": "agent.graph:build_graph"
+  },
+  "env": ".env"
+}
