@@ -214,6 +214,15 @@ class Config(BaseSettings):
     max_title_length: int = Field(120, env="MAX_TITLE_LENGTH", ge=10, le=255, description="Maximum ticket title length")
     max_description_preview: int = Field(160, env="MAX_DESCRIPTION_PREVIEW", ge=50, le=500, description="Max description preview length")
     max_json_output_length: int = Field(1000, env="MAX_JSON_OUTPUT_LENGTH", ge=100, le=10000, description="Max JSON output length")
+
+    # Cache Configuration (Phase 1.1 - Persistent Caching)
+    cache_backend: str = Field("memory", env="CACHE_BACKEND", description="Cache backend type: redis, file, memory")
+    cache_redis_url: str = Field("redis://localhost:6379", env="CACHE_REDIS_URL", description="Redis connection URL")
+    cache_file_dir: str = Field(".agent_cache/persistent", env="CACHE_FILE_DIR", description="File cache directory")
+    cache_ttl_seconds: int = Field(3600, env="CACHE_TTL_SECONDS", ge=60, le=86400, description="Cache TTL in seconds")
+    cache_max_memory_size: int = Field(1000, env="CACHE_MAX_MEMORY_SIZE", ge=100, le=10000, description="Max memory cache entries")
+    cache_similarity_ttl_seconds: int = Field(3600, env="CACHE_SIMILARITY_TTL_SECONDS", ge=300, le=86400, description="Similarity cache TTL")
+    cache_max_file_size_mb: int = Field(100, env="CACHE_MAX_FILE_SIZE_MB", ge=10, le=1000, description="Max file cache size in MB")
     
     model_config = {
         "env_file": ".env",
@@ -251,14 +260,24 @@ class Config(BaseSettings):
         
         if self.jira_similarity_threshold < 0.5:
             issues.append("JIRA_SIMILARITY_THRESHOLD is very low, may create many false duplicates")
-        
+
+        # Cache configuration validation
+        if self.cache_backend not in ["redis", "file", "memory"]:
+            issues.append("CACHE_BACKEND must be one of: redis, file, memory")
+
+        if self.cache_backend == "redis" and not self.cache_redis_url.startswith("redis://"):
+            issues.append("CACHE_REDIS_URL must be a valid Redis URL (redis://...)")
+
+        if self.cache_ttl_seconds < 60:
+            issues.append("CACHE_TTL_SECONDS is too low, may cause frequent cache misses")
+
         return issues
     
     def log_configuration(self) -> None:
         """Log the current configuration (sanitized)."""
         from agent.utils.logger import log_info
         
-        log_info("Configuration loaded", 
+        log_info("Configuration loaded",
                 openai_model=self.openai_model,
                 datadog_site=self.datadog_site,
                 datadog_service=self.datadog_service,
@@ -267,6 +286,8 @@ class Config(BaseSettings):
                 auto_create=self.auto_create_ticket,
                 max_tickets=self.max_tickets_per_run,
                 similarity_threshold=self.jira_similarity_threshold,
+                cache_backend=self.cache_backend,
+                cache_ttl_seconds=self.cache_ttl_seconds,
                 log_level=self.log_level)
 
 
