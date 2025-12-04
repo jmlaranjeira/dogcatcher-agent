@@ -1,4 +1,6 @@
 .venv
+.venv-studio
+.langgraph_api
 __pycache__/
 *.pyc
 .idea/

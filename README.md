@@ -63,7 +63,7 @@ OPENAI_TEMPERATURE=0                 # Controls randomness (0 = deterministic)
 DATADOG_API_KEY=...                  # Datadog API key
 DATADOG_APP_KEY=...                  # Datadog application key
 DATADOG_SITE=datadoghq.eu            # Datadog site to query (e.g., datadoghq.com or datadoghq.eu)
-DATADOG_SERVICE=dehnproject          # Datadog service name filter
+DATADOG_SERVICE=dehnlicense          # Datadog service name filter
 DATADOG_ENV=dev                      # Datadog environment filter (e.g., dev or prod)
 DATADOG_HOURS_BACK=48                # Time window in hours to fetch logs from
 DATADOG_LIMIT=50                     # Number of logs per page to fetch
@@ -111,10 +111,10 @@ python main.py
 
 You can also run with CLI arguments:
 ```bash
-python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 ```
 ```bash
-python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --max-tickets 5
+python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
 ```
 
 - `--dry-run`: run in simulation mode without creating Jira tickets.
@@ -138,7 +138,7 @@ export GITHUB_TOKEN=ghp_xxx
 export PATCHY_WORKSPACE=/tmp/patchy-workspace
 
 python -m patchy.patchy_graph \
-  --service dehnproject \
+  --service dehnlicense \
   --error-type npe \
   --loghash 4c452e2d1c49 \
   --draft true
@@ -172,7 +172,7 @@ Add a service to `docker-compose.yml` (example):
       - PATCHY_WORKSPACE=/workspace
     volumes:
       - ./_patchy_workspace:/workspace
-    command: ["python","-m","patchy.patchy_graph","--service","dehnproject","--error-type","npe","--loghash","4c452e2d1c49"]
+    command: ["python","-m","patchy.patchy_graph","--service","dehnlicense","--error-type","npe","--loghash","4c452e2d1c49"]
 ```
 
 ## 📈 Reporting (tools/report.py)
@@ -227,7 +227,7 @@ docker run --rm \
   -e AUTO_CREATE_TICKET=false \
   -v $(pwd)/.agent_cache:/app/.agent_cache \
   dd-jira-agent:latest \
-  python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+  python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 ```
 
 ### Real mode (creates Jira tickets — be cautious)
@@ -237,7 +237,7 @@ docker run --rm \
   -e AUTO_CREATE_TICKET=true \
   -v $(pwd)/.agent_cache:/app/.agent_cache \
   dd-jira-agent:latest \
-  python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --max-tickets 5
+  python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
 ```
 
 ### docker‑compose (optional)

@@ -102,7 +102,7 @@ Propose optimized default values for:
 
 ```bash
 # Test dry-run mode with sample data
-python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 ```
 
 **Expected Output:**
@@ -194,14 +194,14 @@ python tools/report.py --since-hours 24
 ### Validation Commands
 ```bash
 # Dry-run validation
-python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 
 # Test execution
 python run_tests.py
 pytest -q
 
 # Performance testing
-python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 python tools/report.py --since-hours 24
 ```
 
