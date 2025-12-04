@@ -242,7 +242,7 @@ class AsyncLogProcessor:
         log: Dict[str, Any],
         analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle ticket creation/duplication check.
+        """Handle ticket creation/duplication check with async Jira searches.
 
         Args:
             log: Original log data
@@ -254,9 +254,8 @@ class AsyncLogProcessor:
         # Import here to avoid circular dependency
         from agent.jira.async_client import AsyncJiraClient
         from agent.jira.async_match import find_similar_ticket_async, check_fingerprint_duplicate_async
-        from agent.jira.ticket import build_ticket_payload
 
-        # Use async Jira client
+        # Use async Jira client for duplicate detection (the bottleneck)
         async with AsyncJiraClient() as jira_client:
             # Check for duplicates using async matching
             summary = analysis.get("summary", "")
@@ -270,6 +269,7 @@ class AsyncLogProcessor:
             if fingerprint:
                 is_dup, existing_key = await check_fingerprint_duplicate_async(fingerprint, jira_client)
                 if is_dup:
+                    await self.stats.record_duplicate()
                     return {
                         "action": "duplicate",
                         "ticket_key": existing_key,
@@ -277,9 +277,10 @@ class AsyncLogProcessor:
                         "reason": f"Fingerprint duplicate: {existing_key}"
                     }
 
-            # Check similarity
+            # Check similarity (this is the expensive Jira search operation)
             similar_key, score, _ = await find_similar_ticket_async(summary, jira_client, state)
             if similar_key:
+                await self.stats.record_duplicate()
                 return {
                     "action": "duplicate",
                     "ticket_key": similar_key,
@@ -287,33 +288,19 @@ class AsyncLogProcessor:
                     "reason": f"Similar ticket found (score: {score:.2f}): {similar_key}"
                 }
 
-            # Create new ticket if enabled
-            if not self.config.auto_create_ticket:
-                return {
-                    "action": "simulated",
-                    "ticket_key": None,
-                    "decision": "dry_run",
-                    "reason": "Dry-run mode enabled"
-                }
+        # No duplicate found - use sync ticket creation
+        # (Ticket creation is one API call, not the bottleneck)
+        from agent.nodes.ticket import create_ticket
 
-            # Build and create ticket
-            payload = build_ticket_payload(analysis, log)
-            result = await jira_client.create_issue(payload)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, create_ticket, state)
 
-            if result and result.get("key"):
-                return {
-                    "action": "created",
-                    "ticket_key": result.get("key"),
-                    "decision": "created",
-                    "reason": "New ticket created"
-                }
-            else:
-                return {
-                    "action": "failed",
-                    "ticket_key": None,
-                    "decision": "creation_failed",
-                    "reason": "Jira API returned no key"
-                }
+        return {
+            "action": "created" if result.get("ticket_key") else "simulated",
+            "ticket_key": result.get("ticket_key"),
+            "decision": result.get("decision"),
+            "reason": result.get("reason")
+        }
 
     async def get_summary(self) -> Dict[str, Any]:
         """Get processing statistics summary.
