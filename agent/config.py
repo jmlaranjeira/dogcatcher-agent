@@ -223,6 +223,13 @@ class Config(BaseSettings):
     cache_max_memory_size: int = Field(1000, env="CACHE_MAX_MEMORY_SIZE", ge=100, le=10000, description="Max memory cache entries")
     cache_similarity_ttl_seconds: int = Field(3600, env="CACHE_SIMILARITY_TTL_SECONDS", ge=300, le=86400, description="Similarity cache TTL")
     cache_max_file_size_mb: int = Field(100, env="CACHE_MAX_FILE_SIZE_MB", ge=10, le=1000, description="Max file cache size in MB")
+
+    # Circuit Breaker Configuration (Phase 1.2 - Resilience)
+    circuit_breaker_enabled: bool = Field(True, env="CIRCUIT_BREAKER_ENABLED", description="Enable circuit breaker for LLM calls")
+    circuit_breaker_failure_threshold: int = Field(3, env="CIRCUIT_BREAKER_FAILURE_THRESHOLD", ge=1, le=10, description="Failures before opening circuit")
+    circuit_breaker_timeout_seconds: int = Field(30, env="CIRCUIT_BREAKER_TIMEOUT_SECONDS", ge=10, le=300, description="Seconds before retry in open state")
+    circuit_breaker_half_open_calls: int = Field(2, env="CIRCUIT_BREAKER_HALF_OPEN_CALLS", ge=1, le=5, description="Test calls in half-open state")
+    fallback_analysis_enabled: bool = Field(True, env="FALLBACK_ANALYSIS_ENABLED", description="Enable rule-based fallback analysis")
     
     model_config = {
         "env_file": ".env",
@@ -271,6 +278,13 @@ class Config(BaseSettings):
         if self.cache_ttl_seconds < 60:
             issues.append("CACHE_TTL_SECONDS is too low, may cause frequent cache misses")
 
+        # Circuit breaker validation
+        if self.circuit_breaker_failure_threshold < 2:
+            issues.append("CIRCUIT_BREAKER_FAILURE_THRESHOLD should be at least 2 to avoid false positives")
+
+        if self.circuit_breaker_timeout_seconds < 15:
+            issues.append("CIRCUIT_BREAKER_TIMEOUT_SECONDS is very low, may not allow service recovery")
+
         return issues
     
     def log_configuration(self) -> None:
@@ -288,6 +302,8 @@ class Config(BaseSettings):
                 similarity_threshold=self.jira_similarity_threshold,
                 cache_backend=self.cache_backend,
                 cache_ttl_seconds=self.cache_ttl_seconds,
+                circuit_breaker_enabled=self.circuit_breaker_enabled,
+                fallback_analysis_enabled=self.fallback_analysis_enabled,
                 log_level=self.log_level)
 
 
