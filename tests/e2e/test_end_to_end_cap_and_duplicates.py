@@ -14,7 +14,7 @@ def make_logs(n=10):
     logs = []
     for i in range(n):
         logs.append({
-            "logger": "org.devpoint.dehnproject.converter.DpItemConverter",
+            "logger": "org.devpoint.dehnlicense.converter.DpItemConverter",
             "thread": f"http-nio-1025-exec-{i}",
             "message": f"Failed to get file size by name {i:04d}_BlobX.DPplan, Cause: Status code 404, (BlobNotFound)",
             "timestamp": f"2025-09-15T10:{i:02d}:00Z",
