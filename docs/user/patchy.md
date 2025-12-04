@@ -18,7 +18,7 @@ Patchy clones the target repo for a service, creates a small, safe change, and o
 Per service:
 ```json
 {
-  "dehnproject": {
+  "dehnlicense": {
     "owner": "dehn",
     "name": "dehn-project-service",
     "default_branch": "develop",
@@ -36,7 +36,7 @@ Per service:
 # Load .env automatically
 python -m dotenv -f .env run -- \
 python -m patchy.patchy_graph \
-  --service dehnproject \
+  --service dehnlicense \
   --error-type npe \
   --loghash 4c452e2d1c49 \
   --jira DPRO-1234 \
@@ -79,7 +79,7 @@ Flags relevant to editing mode:
 ```bash
 # env file is used for secrets/config
 docker compose run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN patchy \
-  python -m patchy.patchy_graph --service dehnproject --error-type npe --loghash 4c452e2d1c49 --draft true
+  python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49 --draft true
 ```
 
 ## Troubleshooting

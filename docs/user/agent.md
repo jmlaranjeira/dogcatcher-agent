@@ -14,10 +14,10 @@ Reads Datadog error logs, analyzes them with an LLM, de-duplicates, and creates 
 ## Run
 ```bash
 # Dry run
-python main.py --dry-run --env dev --service dehnproject --hours 24 --limit 50
+python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 
 # Real (creates tickets; cap applies)
-python main.py --real --env prod --service dehnproject --hours 48 --limit 100 --max-tickets 5
+python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
 ```
 
 ## Priority mapping
