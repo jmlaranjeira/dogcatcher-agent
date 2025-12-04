@@ -19,9 +19,9 @@ services:
 
     # Command by default: you can override it for real/dry-run
     # Example commands:
-    command: ["python","main.py","--real","--env","prod","--service","dehnproject","--hours","48","--limit","100","--max-tickets","5"]
-    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
-    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnproject","--hours","24","--limit","50"]
+    command: ["python","main.py","--real","--env","prod","--service","dehnlicense","--hours","48","--limit","100","--max-tickets","5"]
+    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnlicense","--hours","24","--limit","50"]
+    # command: ["python","main.py","--dry-run","--env","dev","--service","dehnlicense","--hours","24","--limit","50"]
 
     # Resources (Optional)
     deploy:
@@ -44,4 +44,4 @@ services:
     volumes:
       - ./_patchy_workspace:/workspace
       - ./_agent_cache:/app/.agent_cache
-    command: ["python","-m","patchy.patchy_graph","--service","dehnproject","--error-type","npe","--loghash","4c452e2d1c49","--draft","true"]
+    command: ["python","-m","patchy.patchy_graph","--service","dehnlicense","--error-type","npe","--loghash","4c452e2d1c49","--draft","true"]
