@@ -396,14 +396,22 @@ def _maybe_comment_duplicate(issue_key: str, score: float, state: Dict[str, Any]
 
 
 def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
-    """Build enhanced description with additional context."""
+    """Build enhanced description with additional context including MDC fields and Datadog links."""
+    config = get_config()
     log_data = state.get("log_data", {})
     win = state.get("window_hours", 48)
     raw_msg = log_data.get('message','')
     norm_msg = normalize_log_message(raw_msg)
     fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
-    
+
+    # Extract MDC fields from log attributes (if available)
+    attributes = log_data.get('attributes', {})
+    request_id = attributes.get('requestId') or attributes.get('request_id') or log_data.get('requestId', '')
+    user_id = attributes.get('userId') or attributes.get('user_id') or log_data.get('userId', '')
+    error_type = attributes.get('errorType') or attributes.get('error_type') or log_data.get('errorType', '')
+
+    # Build basic context info
     extra_info = f"""
 ---
 🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
@@ -411,10 +419,54 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
 🧵 Thread: {log_data.get('thread', 'N/A')}
 📝 Original Log: {log_data.get('message', 'N/A')}
 🔍 Detail: {log_data.get('detail', 'N/A')}
-📈 Occurrences in last {win}h: {occ}
-""".strip()
-    
+📈 Occurrences in last {win}h: {occ}"""
+
+    # Add MDC context if available
+    mdc_context = []
+    if request_id:
+        mdc_context.append(f"📋 Request ID: {request_id}")
+    if user_id:
+        mdc_context.append(f"👤 User ID: {user_id}")
+    if error_type:
+        mdc_context.append(f"🏷️ Error Type: {error_type}")
+
+    if mdc_context:
+        extra_info += "\n---\n" + "\n".join(mdc_context)
+
+    # Build Datadog trace links
+    datadog_links = _build_datadog_links(config, log_data, request_id, user_id)
+    if datadog_links:
+        extra_info += f"\n---\n🔗 Datadog Links:\n{datadog_links}"
+
     return f"{description.strip()}\n{extra_info}"
+
+
+def _build_datadog_links(config, log_data: Dict[str, Any], request_id: str, user_id: str) -> str:
+    """Build Datadog query links for tracing."""
+    links = []
+    base_url = config.datadog_logs_url
+    service = config.datadog_service
+
+    # Link to full request trace (if requestId available)
+    if request_id:
+        query = f"service:{service} @requestId:{request_id}"
+        encoded_query = query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
+        links.append(f"• Request Trace: {base_url}?query={encoded_query}")
+
+    # Link to user activity (if userId available)
+    if user_id:
+        query = f"service:{service} @userId:{user_id}"
+        encoded_query = query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
+        links.append(f"• User Activity: {base_url}?query={encoded_query}")
+
+    # Link to similar errors (by logger)
+    logger = log_data.get('logger', '')
+    if logger:
+        query = f"service:{service} @logger_name:{logger} status:error"
+        encoded_query = query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
+        links.append(f"• Similar Errors: {base_url}?query={encoded_query}")
+
+    return "\n".join(links)
 
 
 def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
