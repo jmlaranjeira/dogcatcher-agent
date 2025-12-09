@@ -26,6 +26,9 @@ parser.add_argument('--service', type=str, help='Service filter for logs.')
 parser.add_argument('--hours', type=int, help='Number of hours to look back for logs.')
 parser.add_argument('--limit', type=int, help='Limit the number of logs fetched.')
 parser.add_argument('--max-tickets', type=int, help='Per-run cap on real Jira ticket creation (0 = no limit).')
+parser.add_argument('--async', dest='async_enabled', action='store_true', help='Enable async parallel processing.')
+parser.add_argument('--workers', type=int, help='Number of parallel workers for async mode (default: 5).')
+parser.add_argument('--batch-size', type=int, help='Batch size for async processing (default: 10).')
 
 parser.set_defaults(auto_create_ticket=os.getenv('AUTO_CREATE_TICKET', 'true').lower() == 'true')
 
@@ -43,6 +46,12 @@ if args.limit is not None:
     os.environ['DATADOG_LIMIT'] = str(args.limit)
 if args.max_tickets is not None:
     os.environ['MAX_TICKETS_PER_RUN'] = str(args.max_tickets)
+if args.async_enabled:
+    os.environ['ASYNC_ENABLED'] = 'true'
+if args.workers is not None:
+    os.environ['ASYNC_MAX_WORKERS'] = str(args.workers)
+if args.batch_size is not None:
+    os.environ['ASYNC_BATCH_SIZE'] = str(args.batch_size)
 
 from agent.datadog import get_logs
 
@@ -90,10 +99,42 @@ if _auto:
         log_info("Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful.")
 else:
     log_info("Dry-run mode: Jira ticket creation is disabled.")
-graph.invoke(
-    {"logs": logs, "log_index": 0, "seen_logs": set(), "created_fingerprints": set()},
-    {"recursion_limit": 2000}
-)
+
+# Choose processing mode based on configuration
+if config.async_enabled:
+    log_info("Running in ASYNC mode", max_workers=config.async_max_workers)
+
+    import asyncio
+    from agent.async_processor import process_logs_parallel
+
+    # Run async processing
+    async def run_async():
+        return await process_logs_parallel(
+            logs=logs,
+            max_workers=config.async_max_workers,
+            enable_rate_limiting=config.async_rate_limiting
+        )
+
+    result = asyncio.run(run_async())
+
+    # Log async processing results
+    log_info(
+        "Async processing completed",
+        processed=result.get("processed", 0),
+        successful=result.get("successful", 0),
+        errors=result.get("errors", 0),
+        duration_seconds=result.get("stats", {}).get("duration_seconds", 0)
+    )
+
+else:
+    log_info("Running in SYNC mode (sequential processing)")
+
+    # Use traditional sync processing
+    graph.invoke(
+        {"logs": logs, "log_index": 0, "seen_logs": set(), "created_fingerprints": set()},
+        {"recursion_limit": 2000}
+    )
+
 log_agent_progress("Agent execution finished")
 
 # Log performance summary

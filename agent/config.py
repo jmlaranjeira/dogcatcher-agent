@@ -230,7 +230,14 @@ class Config(BaseSettings):
     circuit_breaker_timeout_seconds: int = Field(30, env="CIRCUIT_BREAKER_TIMEOUT_SECONDS", ge=10, le=300, description="Seconds before retry in open state")
     circuit_breaker_half_open_calls: int = Field(2, env="CIRCUIT_BREAKER_HALF_OPEN_CALLS", ge=1, le=5, description="Test calls in half-open state")
     fallback_analysis_enabled: bool = Field(True, env="FALLBACK_ANALYSIS_ENABLED", description="Enable rule-based fallback analysis")
-    
+
+    # Async Processing Configuration (Phase 2.1 - Performance)
+    async_enabled: bool = Field(False, env="ASYNC_ENABLED", description="Enable async parallel processing")
+    async_max_workers: int = Field(5, env="ASYNC_MAX_WORKERS", ge=1, le=20, description="Maximum concurrent workers for async processing")
+    async_batch_size: int = Field(10, env="ASYNC_BATCH_SIZE", ge=1, le=100, description="Batch size for async processing")
+    async_timeout_seconds: int = Field(60, env="ASYNC_TIMEOUT_SECONDS", ge=10, le=300, description="Timeout per log in async mode")
+    async_rate_limiting: bool = Field(True, env="ASYNC_RATE_LIMITING", description="Enable rate limiting for API calls")
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
@@ -285,6 +292,16 @@ class Config(BaseSettings):
         if self.circuit_breaker_timeout_seconds < 15:
             issues.append("CIRCUIT_BREAKER_TIMEOUT_SECONDS is very low, may not allow service recovery")
 
+        # Async processing validation
+        if self.async_enabled and self.async_max_workers > 20:
+            issues.append("ASYNC_MAX_WORKERS > 20 may cause resource exhaustion")
+
+        if self.async_enabled and self.async_max_workers < 2:
+            issues.append("ASYNC_MAX_WORKERS should be at least 2 for meaningful parallelization")
+
+        if self.async_timeout_seconds < 30:
+            issues.append("ASYNC_TIMEOUT_SECONDS is very low, may cause premature timeouts")
+
         return issues
     
     def log_configuration(self) -> None:
@@ -304,6 +321,8 @@ class Config(BaseSettings):
                 cache_ttl_seconds=self.cache_ttl_seconds,
                 circuit_breaker_enabled=self.circuit_breaker_enabled,
                 fallback_analysis_enabled=self.fallback_analysis_enabled,
+                async_enabled=self.async_enabled,
+                async_max_workers=self.async_max_workers if self.async_enabled else None,
                 log_level=self.log_level)
 
 
