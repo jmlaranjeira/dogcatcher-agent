@@ -1,0 +1,73 @@
+{
+  "timestamp": "2025-12-09T11:48:04.589823",
+  "results": [
+    {
+      "mode": "sync",
+      "workers": 1,
+      "duration_seconds": 14.064791202545166,
+      "duration_formatted": "14.1s",
+      "return_code": 0,
+      "success": true,
+      "stats": {
+        "logs_processed": 0,
+        "logs_successful": 0,
+        "logs_errors": 0,
+        "tickets_created": 0,
+        "duplicates_found": 0
+      },
+      "output_sample": "2025-12-09 11:47:24 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": false,\n  \"async_max_workers\": null,\n  ",
+      "run": 1
+    },
+    {
+      "mode": "async",
+      "workers": 3,
+      "duration_seconds": 3.1368181705474854,
+      "duration_formatted": "3.1s",
+      "return_code": 0,
+      "success": true,
+      "stats": {
+        "logs_processed": 0,
+        "logs_successful": 0,
+        "logs_errors": 0,
+        "tickets_created": 0,
+        "duplicates_found": 0
+      },
+      "output_sample": "2025-12-09 11:47:38 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 3,\n  \"log",
+      "run": 1
+    },
+    {
+      "mode": "async",
+      "workers": 5,
+      "duration_seconds": 11.750396013259888,
+      "duration_formatted": "11.8s",
+      "return_code": 0,
+      "success": true,
+      "stats": {
+        "logs_processed": 0,
+        "logs_successful": 0,
+        "logs_errors": 0,
+        "tickets_created": 0,
+        "duplicates_found": 0
+      },
+      "output_sample": "2025-12-09 11:47:41 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 5,\n  \"log",
+      "run": 1
+    },
+    {
+      "mode": "async",
+      "workers": 10,
+      "duration_seconds": 11.586434125900269,
+      "duration_formatted": "11.6s",
+      "return_code": 0,
+      "success": true,
+      "stats": {
+        "logs_processed": 0,
+        "logs_successful": 0,
+        "logs_errors": 0,
+        "tickets_created": 0,
+        "duplicates_found": 0
+      },
+      "output_sample": "2025-12-09 11:47:53 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 10,\n  \"lo",
+      "run": 1
+    }
+  ]
+}
