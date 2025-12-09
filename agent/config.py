@@ -181,6 +181,7 @@ class Config(BaseSettings):
     datadog_statuses: str = Field("error", env="DATADOG_STATUSES", description="Comma-separated log statuses")
     datadog_query_extra: str = Field("", env="DATADOG_QUERY_EXTRA", description="Extra query terms")
     datadog_query_extra_mode: str = Field("AND", env="DATADOG_QUERY_EXTRA_MODE", description="Extra query mode")
+    datadog_logs_url: str = Field("https://app.datadoghq.eu/logs", env="DATADOG_LOGS_URL", description="Datadog logs URL for trace links")
     
     # Jira Configuration
     jira_domain: str = Field("", env="JIRA_DOMAIN", description="Jira instance domain")
