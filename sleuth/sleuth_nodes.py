@@ -29,6 +29,7 @@ class SleuthState(TypedDict, total=False):
     env: str                # Environment (default: prod)
     hours_back: int         # Time window (default: 24)
     no_patchy: bool         # Disable Patchy suggestions
+    all_status: bool        # Search all statuses, not just errors
 
     # Generated
     dd_query: str           # Query built for Datadog
@@ -92,12 +93,14 @@ def build_dd_query(state: Dict[str, Any]) -> Dict[str, Any]:
     service = state.get("service")
     config = get_config()
     env = state.get("env") or config.datadog_env
+    all_status = state.get("all_status", False)
 
     dd_query = build_datadog_query(
         user_query=query,
         service=service,
         env=env,
-        use_llm=True
+        use_llm=True,
+        all_status=all_status,
     )
 
     log_info("Datadog query built", dd_query=dd_query)

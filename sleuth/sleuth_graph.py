@@ -173,6 +173,11 @@ Examples:
         action="store_true",
         help="Output raw JSON result instead of formatted text"
     )
+    parser.add_argument(
+        "--all-status",
+        action="store_true",
+        help="Search all log statuses, not just errors"
+    )
 
     args = parser.parse_args()
 
@@ -186,6 +191,7 @@ Examples:
         "env": args.env,
         "hours_back": args.hours,
         "no_patchy": args.no_patchy,
+        "all_status": args.all_status,
     }
 
     # Run the graph
