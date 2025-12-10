@@ -71,7 +71,8 @@ def build_datadog_query(
     user_query: str,
     service: Optional[str] = None,
     env: Optional[str] = None,
-    use_llm: bool = True
+    use_llm: bool = True,
+    all_status: bool = False,
 ) -> str:
     """Build an optimized Datadog query from natural language.
 
@@ -83,6 +84,7 @@ def build_datadog_query(
         service: Optional service name filter
         env: Optional environment filter (default: prod)
         use_llm: Whether to use LLM for query generation
+        all_status: If True, don't filter by status:error
 
     Returns:
         Datadog query string
@@ -92,21 +94,28 @@ def build_datadog_query(
 
     if use_llm and config.openai_api_key:
         try:
-            return _build_query_with_llm(user_query, service, env)
+            return _build_query_with_llm(user_query, service, env, all_status)
         except Exception as e:
             log_error("LLM query building failed, falling back to rules", error=str(e))
 
-    return _build_query_rules(user_query, service, env)
+    return _build_query_rules(user_query, service, env, all_status)
 
 
 def _build_query_with_llm(
     user_query: str,
     service: Optional[str],
-    env: str
+    env: str,
+    all_status: bool = False,
 ) -> str:
     """Build query using LLM."""
     config = get_config()
     client = OpenAI(api_key=config.openai_api_key)
+
+    status_instruction = (
+        "Do NOT include any status filter - search all log levels"
+        if all_status
+        else "Include status:error unless looking for other log levels"
+    )
 
     prompt = f"""Build a Datadog Logs query to investigate:
 "{user_query}"
@@ -118,14 +127,16 @@ Context:
 Rules:
 1. Generate ONLY the query string, nothing else
 2. Use standard Datadog query syntax
-3. Include status:error unless looking for other log levels
-4. Quote multi-word phrases
-5. Use AND for required terms, OR for alternatives
+3. {status_instruction}
+4. Quote each search term separately with spaces between them
+5. IMPORTANT: Ensure proper spacing - each quoted term must be separated by a space
+6. For emails, quote them separately: "user@example.com" "other term"
+7. Use AND for required terms, OR for alternatives
 
 Example output formats:
 - service:myservice env:prod status:error "user registration" "role"
-- service:api-gateway env:prod status:error @http.status_code:500
-- env:prod status:(error OR warn) "timeout" "connection refused"
+- service:api-gateway env:prod "user@example.com" "login"
+- env:prod "timeout" "connection refused"
 
 Query:"""
 
@@ -139,15 +150,61 @@ Query:"""
     query = response.choices[0].message.content.strip()
     # Clean up any markdown or quotes
     query = query.strip('`"\'')
+    # Validate and fix query syntax
+    query = _validate_and_fix_query(query)
 
     log_info("LLM generated Datadog query", query=query)
+    return query
+
+
+def _validate_and_fix_query(query: str) -> str:
+    """Validate and fix common query syntax issues.
+
+    Fixes:
+    - Unbalanced quotes
+    - Removes empty quoted strings
+    - Trims excess whitespace
+    - Fixes missing spaces after emails
+    - Fixes adjacent quoted strings
+    """
+    # Fix adjacent quoted strings: "foo""bar" -> "foo" "bar"
+    query = re.sub(r'"\s*"', '" "', query)
+
+    # Fix email followed directly by a word (no space)
+    # e.g., "user@example.comaccedido" -> "user@example.com" "accedido"
+    query = re.sub(
+        r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})([a-zA-Z])',
+        r'\1" "\2',
+        query
+    )
+
+    # Count quotes - if unbalanced, close or remove the last one
+    quote_count = query.count('"')
+    if quote_count % 2 != 0:
+        # Find the last quote and check if it should be closed or removed
+        last_quote_idx = query.rfind('"')
+        after_quote = query[last_quote_idx + 1:].strip()
+        if after_quote:
+            # There's content after the unclosed quote, close it
+            query = query + '"'
+        else:
+            # Trailing unclosed quote, likely incomplete - close it
+            query = query + '"'
+
+    # Remove truly empty quoted strings (just "")
+    query = re.sub(r'""', '', query)
+
+    # Clean up excess whitespace
+    query = re.sub(r'\s+', ' ', query).strip()
+
     return query
 
 
 def _build_query_rules(
     user_query: str,
     service: Optional[str],
-    env: str
+    env: str,
+    all_status: bool = False,
 ) -> str:
     """Build query using rule-based approach."""
     entities = extract_entities(user_query)
@@ -163,8 +220,9 @@ def _build_query_rules(
     # Environment filter
     parts.append(f"env:{env}")
 
-    # Default to error status
-    parts.append("status:error")
+    # Status filter (only if not searching all statuses)
+    if not all_status:
+        parts.append("status:error")
 
     # Add UUIDs if found
     for uuid in entities["uuids"][:2]:  # Limit to 2 UUIDs
