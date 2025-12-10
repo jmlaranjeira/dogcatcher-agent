@@ -26,6 +26,12 @@ python main.py --dry-run              # Safe simulation mode
 python main.py --real                 # Real mode (creates tickets)
 python main.py --dry-run --env dev --service myservice --hours 24
 
+# Run with configuration profiles (recommended)
+python main.py --profile development  # Dev environment (safe, no tickets)
+python main.py --profile staging      # Staging environment
+python main.py --profile production   # Production (Redis cache, auto-create)
+python main.py --profile testing      # Test environment
+
 # LangGraph Studio (for debugging workflows)
 source .venv-studio/bin/activate
 langgraph-studio start --host 127.0.0.1 --port 8123
@@ -124,6 +130,32 @@ The project uses environment variables loaded from `.env`:
 - `MAX_TICKETS_PER_RUN`: Per-run ticket creation cap (default: 3)
 - `COMMENT_ON_DUPLICATE`: Auto-comment on duplicate tickets
 - `JIRA_SIMILARITY_THRESHOLD`: Duplicate detection sensitivity (default: 0.82)
+
+### Configuration Profiles (Recommended)
+
+The project supports YAML-based configuration profiles for easy environment management:
+
+**Available Profiles:**
+- `development` - Safe defaults for local dev (no ticket creation, file cache, DEBUG logging)
+- `staging` - Pre-production settings (limited tickets, file cache, INFO logging)
+- `production` - Full capabilities (Redis cache, auto-create tickets, WARNING logging)
+- `testing` - Automated test environment (minimal limits, memory cache)
+
+**Profile Locations:** `config/profiles/*.yaml`
+
+**Configuration Precedence:** `.env` → Profile YAML → Environment Variables → CLI Arguments
+
+**Usage Examples:**
+```bash
+# Development (safe, no tickets created)
+python main.py --profile development --service myservice
+
+# Staging with custom filters
+python main.py --profile staging --env staging --hours 12
+
+# Production mode
+python main.py --profile production
+```
 
 ## Development Guidelines
 

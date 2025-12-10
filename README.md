@@ -51,7 +51,15 @@ pip install -r requirements.txt
 
 ---
 
-## ⚙️ Configuration (.env)
+## ⚙️ Configuration
+
+### Environment Variables (.env)
+
+The project uses environment variables for configuration. You can override these with:
+- **Configuration profiles** (YAML files in `config/profiles/`) - **Recommended**
+- **Environment variables** (system-level overrides)
+- **CLI arguments** (runtime overrides)
+
 ```ini
 # OpenAI
 OPENAI_API_KEY=sk-...                # API key for OpenAI access
@@ -102,6 +110,8 @@ Notes:
 ---
 
 ## ▶️ Run
+
+### Basic Usage
 ```bash
 python main.py
 ```
@@ -109,7 +119,31 @@ python main.py
 - **Simulation** (`AUTO_CREATE_TICKET=false`): analyzes logs and simulates ticket creation.
 - **Real** (`AUTO_CREATE_TICKET=true`): creates **up to 3** real tickets per run; on duplicates it comments and does not create.
 
-You can also run with CLI arguments:
+### With Configuration Profiles (Recommended)
+
+Use pre-configured environment profiles for easier management:
+
+```bash
+# Development (safe, no tickets, file cache, DEBUG)
+python main.py --profile development
+
+# Staging (limited tickets, file cache, INFO)
+python main.py --profile staging --service myservice
+
+# Production (auto-create, Redis cache, WARNING)
+python main.py --profile production
+
+# Testing (minimal, memory cache)
+python main.py --profile testing
+```
+
+**Available profiles:** `development` | `staging` | `production` | `testing`
+**Profile files:** `config/profiles/*.yaml`
+**Precedence:** `.env` → Profile YAML → Environment Variables → CLI Arguments
+
+### With CLI Arguments
+
+You can also run with direct CLI arguments:
 ```bash
 python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 ```
@@ -117,13 +151,15 @@ python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
 python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
 ```
 
-- `--dry-run`: run in simulation mode without creating Jira tickets.
-- `--real`: (alternative to --dry-run) run in real mode and create tickets.
-- `--env`: Datadog environment to query (`dev` or `prod`).
-- `--service`: Datadog service name to filter logs.
-- `--hours`: time window in hours for logs to fetch.
-- `--limit`: maximum logs per page from Datadog.
-- `--max-tickets`: per-run cap on real ticket creation (0 = no cap).
+**CLI Arguments:**
+- `--profile`: configuration profile (`development|staging|production|testing`)
+- `--dry-run`: run in simulation mode without creating Jira tickets
+- `--real`: (alternative to --dry-run) run in real mode and create tickets
+- `--env`: Datadog environment to query (`dev` or `prod`)
+- `--service`: Datadog service name to filter logs
+- `--hours`: time window in hours for logs to fetch
+- `--limit`: maximum logs per page from Datadog
+- `--max-tickets`: per-run cap on real ticket creation (0 = no cap)
 
 ---
 
