@@ -29,6 +29,8 @@ parser.add_argument('--max-tickets', type=int, help='Per-run cap on real Jira ti
 parser.add_argument('--async', dest='async_enabled', action='store_true', help='Enable async parallel processing.')
 parser.add_argument('--workers', type=int, help='Number of parallel workers for async mode (default: 5).')
 parser.add_argument('--batch-size', type=int, help='Batch size for async processing (default: 10).')
+parser.add_argument('--profile', type=str, choices=['development', 'staging', 'production', 'testing'],
+                    help='Configuration profile to use (overrides .env defaults)')
 
 parser.set_defaults(auto_create_ticket=os.getenv('AUTO_CREATE_TICKET', 'true').lower() == 'true')
 
@@ -57,6 +59,17 @@ from agent.datadog import get_logs
 
 # Load and validate configuration
 config = get_config()
+
+# Apply profile overrides if specified
+if args.profile:
+    try:
+        config.load_profile_overrides(args.profile)
+        print(f"✓ Using configuration profile: {args.profile}")
+    except (ValueError, FileNotFoundError) as e:
+        log_error("Failed to load configuration profile", profile=args.profile, error=str(e))
+        print(f"❌ Failed to load profile '{args.profile}': {e}")
+        sys.exit(1)
+
 config.log_configuration()
 
 # Log performance configuration
