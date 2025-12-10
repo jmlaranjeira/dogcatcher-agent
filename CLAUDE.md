@@ -37,6 +37,13 @@ python tools/report.py --since-hours 24
 
 # Run Patchy (self-healing PR bot)
 python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49
+
+# Run Sleuth (error investigator)
+python -m sleuth "user without role after registration"
+python -m sleuth "timeout errors in payment service" --service payment-api
+python -m sleuth "database connection errors" --hours 48 --env prod
+python -m sleuth "authentication failures" --no-patchy
+python -m sleuth "NullPointerException in UserService" --invoke-patchy
 ```
 
 ### Code Quality
@@ -88,6 +95,7 @@ docker compose up --build
 - **`agent/jira/`**: Complete Jira integration (client, matching, utilities)
 - **`agent/nodes/`**: LangGraph processing nodes (analysis, ticket creation, audit)
 - **`patchy/`**: Self-healing PR bot for automated fixes
+- **`sleuth/`**: Error investigator with natural language queries
 - **`tools/report.py`**: Audit trail analysis and reporting
 
 ### Data Flow
@@ -163,6 +171,36 @@ The system provides automatic recommendations. Monitor logs for:
 - State management via `agent/state.py`
 - Node implementations in `agent/nodes/`
 - Studio integration for visual debugging
+
+### Sleuth Agent (Error Investigator)
+Sleuth is an interactive CLI tool for investigating errors through natural language:
+
+```bash
+python -m sleuth "describe the error you want to investigate"
+```
+
+**Features:**
+- Natural language queries for error investigation
+- LLM-powered Datadog query generation
+- Correlation with existing Jira tickets
+- Root cause analysis and fix suggestions
+- Optional Patchy integration for automatic fixes
+
+**Workflow:**
+1. `parse_query`: Extract entities from natural language
+2. `build_dd_query`: LLM generates optimal Datadog query
+3. `search_logs`: Execute Datadog search
+4. `correlate_jira`: Find related Jira tickets
+5. `analyze_results`: LLM analyzes and summarizes findings
+6. `suggest_action`: Offer Patchy fix if applicable
+
+**CLI Options:**
+- `--service`: Filter by service name
+- `--env`: Filter by environment (default: from config)
+- `--hours`: Time window in hours (default: 24)
+- `--no-patchy`: Disable automatic fix suggestions
+- `--invoke-patchy`: Auto-invoke Patchy if fix is suggested
+- `--json`: Output raw JSON instead of formatted text
 
 ### Performance Considerations
 - Similarity cache reduces API calls by 50-80%
