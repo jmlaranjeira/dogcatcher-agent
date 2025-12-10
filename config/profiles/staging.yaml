@@ -1,0 +1,26 @@
+# Staging environment - closer to production but still safe
+datadog:
+  limit: 50
+  hours_back: 24
+  timeout: 20
+
+jira:
+  similarity_threshold: 0.80
+  search_window_days: 90
+  search_max_results: 100
+
+agent:
+  max_tickets_per_run: 3
+  auto_create_ticket: true
+
+cache:
+  backend: "file"
+  ttl_seconds: 1800
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  timeout_seconds: 60
+
+logging:
+  level: "INFO"

@@ -1,0 +1,26 @@
+# Testing environment - for automated tests
+datadog:
+  limit: 5
+  hours_back: 1
+  timeout: 5
+
+jira:
+  similarity_threshold: 0.70
+  search_window_days: 7
+  search_max_results: 10
+
+agent:
+  max_tickets_per_run: 1
+  auto_create_ticket: false
+
+cache:
+  backend: "memory"
+  ttl_seconds: 60
+
+circuit_breaker:
+  enabled: false
+  failure_threshold: 1
+  timeout_seconds: 5
+
+logging:
+  level: "DEBUG"

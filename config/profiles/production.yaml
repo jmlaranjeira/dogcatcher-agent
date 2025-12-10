@@ -1,0 +1,26 @@
+# Production environment - full capabilities
+datadog:
+  limit: 100
+  hours_back: 48
+  timeout: 30
+
+jira:
+  similarity_threshold: 0.85
+  search_window_days: 365
+  search_max_results: 200
+
+agent:
+  max_tickets_per_run: 5
+  auto_create_ticket: true
+
+cache:
+  backend: "redis"
+  ttl_seconds: 3600
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  timeout_seconds: 120
+
+logging:
+  level: "WARNING"
