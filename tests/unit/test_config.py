@@ -25,13 +25,13 @@ class TestOpenAIConfig:
         """Test valid OpenAI configuration."""
         config = OpenAIConfig(
             api_key="test-key",
-            model="gpt-4o-mini",
+            model="gpt-4.1-nano",
             temperature=0.0,
             response_format="json_object"
         )
         
         assert config.api_key == "test-key"
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-4.1-nano"
         assert config.temperature == 0.0
         assert config.response_format == "json_object"
     
@@ -39,7 +39,7 @@ class TestOpenAIConfig:
         """Test OpenAI configuration defaults."""
         config = OpenAIConfig(api_key="test-key")
         
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-4.1-nano"
         assert config.temperature == 0.0
         assert config.response_format == "json_object"
     

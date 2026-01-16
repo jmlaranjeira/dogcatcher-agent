@@ -12,7 +12,7 @@ import json
 class OpenAIConfig(BaseSettings):
     """OpenAI API configuration."""
     api_key: str = Field("", env="OPENAI_API_KEY", description="OpenAI API key")
-    model: str = Field("gpt-4o-mini", env="OPENAI_MODEL", description="OpenAI model to use")
+    model: str = Field("gpt-4.1-nano", env="OPENAI_MODEL", description="OpenAI model to use")
     temperature: float = Field(0.0, env="OPENAI_TEMPERATURE", ge=0.0, le=2.0, description="Model temperature")
     response_format: str = Field("json_object", env="OPENAI_RESPONSE_FORMAT", description="Response format")
     
@@ -164,7 +164,7 @@ class Config(BaseSettings):
     
     # OpenAI Configuration
     openai_api_key: str = Field("", env="OPENAI_API_KEY", description="OpenAI API key")
-    openai_model: str = Field("gpt-4o-mini", env="OPENAI_MODEL", description="OpenAI model to use")
+    openai_model: str = Field("gpt-4.1-nano", env="OPENAI_MODEL", description="OpenAI model to use")
     openai_temperature: float = Field(0.0, env="OPENAI_TEMPERATURE", ge=0.0, le=2.0, description="Model temperature")
     openai_response_format: str = Field("json_object", env="OPENAI_RESPONSE_FORMAT", description="Response format")
     

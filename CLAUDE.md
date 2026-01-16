@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the **Dogcatcher Agent**, an automated LangGraph-powered agent that:
 - Fetches error logs from Datadog
-- Analyzes them with LLM (OpenAI GPT-4o-mini)
+- Analyzes them with LLM (OpenAI gpt-4.1-nano)
 - Performs intelligent duplicate detection against Jira
 - Creates Jira tickets with configurable per-run caps
 - Includes a self-healing PR bot (Patchy)

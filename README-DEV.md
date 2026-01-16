@@ -148,7 +148,7 @@ Create a `.env` file with the following variables:
 ```bash
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-openai-key-here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-4.1-nano
 OPENAI_TEMPERATURE=0.0
 
 # Datadog Configuration

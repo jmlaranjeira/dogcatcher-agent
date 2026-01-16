@@ -19,10 +19,10 @@ import re
 import json
 
 # LLM configuration via environment variables
-# OPENAI_MODEL: model name (default: gpt-4o-mini)
+# OPENAI_MODEL: model name (default: gpt-4.1-nano)
 # OPENAI_TEMPERATURE: float (default: 0)
 # OPENAI_RESPONSE_FORMAT: "json_object" or "text" (default: json_object)
-_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+_model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 _temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
 _resp_fmt = (os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object").lower()
 try:

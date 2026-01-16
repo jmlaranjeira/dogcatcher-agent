@@ -22,7 +22,7 @@ from agent.utils.fallback_analysis import get_fallback_analyzer
 from agent.config import get_config
 
 # LLM configuration via environment variables
-_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+_model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 _temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
 _resp_fmt = (os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object").lower()
 

@@ -63,7 +63,7 @@ The project uses environment variables for configuration. You can override these
 ```ini
 # OpenAI
 OPENAI_API_KEY=sk-...                # API key for OpenAI access
-OPENAI_MODEL=gpt-4o-mini             # OpenAI model to use for analysis
+OPENAI_MODEL=gpt-4.1-nano             # OpenAI model to use for analysis
 OPENAI_RESPONSE_FORMAT=json_object   # Response format: json_object (default) or text
 OPENAI_TEMPERATURE=0                 # Controls randomness (0 = deterministic)
 

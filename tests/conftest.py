@@ -19,7 +19,7 @@ def mock_config():
         
         # OpenAI config
         config.openai.api_key = "test-openai-key"
-        config.openai.model = "gpt-4o-mini"
+        config.openai.model = "gpt-4.1-nano"
         config.openai.temperature = 0.0
         config.openai.response_format = "json_object"
         
