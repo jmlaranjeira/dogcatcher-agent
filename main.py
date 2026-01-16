@@ -33,6 +33,8 @@ parser.add_argument('--profile', type=str, choices=['development', 'staging', 'p
                     help='Configuration profile to use (overrides .env defaults)')
 parser.add_argument('--check', action='store_true',
                     help='Run health checks to verify OpenAI, Datadog, and Jira connections, then exit.')
+parser.add_argument('--patchy', action='store_true',
+                    help='Invoke Patchy to create draft PRs for tickets created (requires GITHUB_TOKEN).')
 
 parser.set_defaults(auto_create_ticket=os.getenv('AUTO_CREATE_TICKET', 'true').lower() == 'true')
 
@@ -56,6 +58,8 @@ if args.workers is not None:
     os.environ['ASYNC_MAX_WORKERS'] = str(args.workers)
 if args.batch_size is not None:
     os.environ['ASYNC_BATCH_SIZE'] = str(args.batch_size)
+if args.patchy:
+    os.environ['INVOKE_PATCHY'] = 'true'
 
 # Handle --check flag: run health checks and exit
 if args.check:

@@ -583,26 +583,79 @@ def _get_max_tickets() -> int:
     return config.max_tickets_per_run
 
 
+def _invoke_patchy(state: Dict[str, Any], issue_key: str) -> None:
+    """Invoke Patchy to create a draft PR for the ticket.
+
+    Args:
+        state: Current agent state with log_data
+        issue_key: Jira issue key for the created ticket
+    """
+    if os.getenv("INVOKE_PATCHY", "").lower() != "true":
+        return
+
+    if not os.getenv("GITHUB_TOKEN"):
+        log_warning("Patchy requested but GITHUB_TOKEN not set, skipping")
+        return
+
+    try:
+        log_data = state.get("log_data", {})
+        logger_name = log_data.get("logger", "")
+        error_type = state.get("error_type", "unknown")
+        service = state.get("service") or get_config().datadog_service
+
+        if not logger_name:
+            log_info("No logger name in log data, skipping Patchy")
+            return
+
+        log_info("Invoking Patchy", service=service, logger=logger_name, jira=issue_key)
+
+        from patchy.patchy_graph import build_graph as build_patchy_graph
+
+        patchy_state = {
+            "service": service,
+            "error_type": error_type,
+            "loghash": state.get("log_fingerprint", ""),
+            "jira": issue_key,
+            "logger": logger_name,
+            "hint": "",
+            "stacktrace": log_data.get("detail", ""),
+            "mode": "note",
+            "draft": True,
+        }
+
+        patchy_graph = build_patchy_graph()
+        result = patchy_graph.invoke(patchy_state, config={"recursion_limit": 2000})
+
+        pr_url = result.get("pr_url")
+        if pr_url:
+            log_info("Patchy created PR", pr_url=pr_url, jira=issue_key)
+        else:
+            log_info("Patchy completed", message=result.get("message", "no PR created"))
+
+    except Exception as e:
+        log_error("Patchy invocation failed", error=str(e), jira=issue_key)
+
+
 def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[str, Any]:
     """Create a real Jira ticket."""
     log_ticket_operation("Creating real ticket", title=payload.title)
-    
+
     try:
         # Update state with payload info
         state["ticket_description"] = payload.description
         state["ticket_title"] = payload.title
         state["jira_payload"] = payload.payload
         state["log_fingerprint"] = payload.fingerprint
-        
+
         # Create the ticket
         result_state = create_jira_ticket(state)
-        
+
         issue_key = result_state.get("jira_response_key")
         if issue_key:
-            log_ticket_operation("Ticket created successfully", 
-                               ticket_key=issue_key, 
+            log_ticket_operation("Ticket created successfully",
+                               ticket_key=issue_key,
                                title=payload.title)
-            
+
             # Update fingerprint caches (in-run and persisted)
             processed = _load_processed_fingerprints()
             processed.add(payload.fingerprint)
@@ -621,12 +674,15 @@ def _create_real_ticket(state: Dict[str, Any], payload: TicketPayload) -> Dict[s
                 create=True,
                 message="Ticket created successfully",
             )
-            
+
+            # Invoke Patchy if enabled
+            _invoke_patchy(result_state, issue_key)
+
             return {**result_state, "ticket_created": True}
         else:
             log_error("No Jira issue key found after ticket creation")
             return {**state, "ticket_created": True, "message": "Failed to create ticket"}
-            
+
     except Exception as e:
         log_error("Failed to create Jira ticket", error=str(e))
         return {**state, "ticket_created": True, "message": f"Failed to create ticket: {e}"}

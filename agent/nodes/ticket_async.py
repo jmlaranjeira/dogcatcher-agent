@@ -499,6 +499,59 @@ async def _execute_ticket_creation_async(
         return _simulate_ticket_creation(state, payload)
 
 
+def _invoke_patchy_sync(state: Dict[str, Any], issue_key: str) -> None:
+    """Invoke Patchy synchronously to create a draft PR for the ticket.
+
+    Args:
+        state: Current agent state with log_data
+        issue_key: Jira issue key for the created ticket
+    """
+    if os.getenv("INVOKE_PATCHY", "").lower() != "true":
+        return
+
+    if not os.getenv("GITHUB_TOKEN"):
+        log_warning("Patchy requested but GITHUB_TOKEN not set, skipping")
+        return
+
+    try:
+        log_data = state.get("log_data", {})
+        logger_name = log_data.get("logger", "")
+        error_type = state.get("error_type", "unknown")
+        service = state.get("service") or get_config().datadog_service
+
+        if not logger_name:
+            log_info("No logger name in log data, skipping Patchy")
+            return
+
+        log_info("Invoking Patchy (from async)", service=service, logger=logger_name, jira=issue_key)
+
+        from patchy.patchy_graph import build_graph as build_patchy_graph
+
+        patchy_state = {
+            "service": service,
+            "error_type": error_type,
+            "loghash": state.get("log_fingerprint", ""),
+            "jira": issue_key,
+            "logger": logger_name,
+            "hint": "",
+            "stacktrace": log_data.get("detail", ""),
+            "mode": "note",
+            "draft": True,
+        }
+
+        patchy_graph = build_patchy_graph()
+        result = patchy_graph.invoke(patchy_state, config={"recursion_limit": 2000})
+
+        pr_url = result.get("pr_url")
+        if pr_url:
+            log_info("Patchy created PR", pr_url=pr_url, jira=issue_key)
+        else:
+            log_info("Patchy completed", message=result.get("message", "no PR created"))
+
+    except Exception as e:
+        log_error("Patchy invocation failed", error=str(e), jira=issue_key)
+
+
 async def _create_real_ticket_async(
     state: Dict[str, Any],
     payload: TicketPayload,
@@ -539,6 +592,9 @@ async def _create_real_ticket_async(
                     create=True,
                     message="Ticket created successfully (async)",
                 )
+
+                # Invoke Patchy if enabled (runs sync, not blocking critical path)
+                _invoke_patchy_sync(state, issue_key)
 
                 return {
                     **state,
