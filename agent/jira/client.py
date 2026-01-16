@@ -4,7 +4,7 @@
 from __future__ import annotations
 import base64
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import requests
 from dotenv import load_dotenv
@@ -126,12 +126,44 @@ def add_labels(issue_key: str, labels_to_add: list[str]) -> bool:
         return False
 
 
-def transition_issue(issue_key: str, transition_id: str) -> bool:
+def get_transitions(issue_key: str) -> Optional[List[Dict[str, Any]]]:
+    """Get available transitions for a Jira issue.
+
+    Args:
+        issue_key: Issue key (e.g., DDSIT-123)
+
+    Returns:
+        List of available transitions with id, name, and target status
+    """
+    if not is_configured():
+        return None
+    config = get_config()
+    url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}/transitions"
+    try:
+        resp = requests.get(url, headers=_headers())
+        resp.raise_for_status()
+        data = resp.json()
+        transitions = []
+        for t in data.get("transitions", []):
+            transitions.append({
+                "id": t.get("id"),
+                "name": t.get("name", ""),
+                "to_status": t.get("to", {}).get("name", ""),
+            })
+        log_api_response("Jira get transitions", resp.status_code)
+        return transitions
+    except requests.RequestException as e:
+        log_error("Failed to get transitions", error=str(e), issue_key=issue_key)
+        return None
+
+
+def transition_issue(issue_key: str, transition_id: str, resolution: Optional[str] = None) -> bool:
     """Transition a Jira issue to a new status.
 
     Args:
         issue_key: Issue key (e.g., DDSIT-123)
         transition_id: Transition ID (varies by project workflow)
+        resolution: Optional resolution name (e.g., "Duplicate", "Done", "Won't Do")
 
     Returns:
         True if transition successful
@@ -140,7 +172,12 @@ def transition_issue(issue_key: str, transition_id: str) -> bool:
         return False
     config = get_config()
     url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}/transitions"
-    body = {"transition": {"id": transition_id}}
+    body: Dict[str, Any] = {"transition": {"id": transition_id}}
+
+    # Add resolution field if provided (required for some transitions like Done)
+    if resolution:
+        body["fields"] = {"resolution": {"name": resolution}}
+
     try:
         resp = requests.post(url, headers=_headers(), json=body)
         log_api_response("Jira transition", resp.status_code)

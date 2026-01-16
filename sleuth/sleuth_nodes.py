@@ -457,6 +457,110 @@ def invoke_patchy(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+def search_jira_direct(state: Dict[str, Any], status_filter: Optional[str] = None) -> Dict[str, Any]:
+    """Search Jira directly for tickets matching the query.
+
+    Used with --jira flag to skip Datadog and find duplicate tickets directly.
+
+    Args:
+        state: State containing query string
+        status_filter: Optional status filter (e.g., "open", "done", "tested")
+
+    Returns:
+        State with related_tickets populated from Jira search
+    """
+    if not jira_is_configured():
+        log_error("Jira not configured")
+        return {**state, "related_tickets": [], "error": "Jira not configured"}
+
+    config = get_config()
+    query = state.get("query", "")
+
+    # Build JQL from query keywords
+    keywords = [kw for kw in query.split() if len(kw) >= 3]
+    if not keywords:
+        return {**state, "related_tickets": [], "error": "Query too short"}
+
+    # Search by summary OR description containing keywords
+    keyword_clauses = " OR ".join([f'(summary ~ "{kw}" OR description ~ "{kw}")' for kw in keywords[:5]])
+    jql = f"project = {config.jira_project_key} AND ({keyword_clauses})"
+
+    # Add status filter if provided
+    if status_filter:
+        # Handle common status aliases
+        status_lower = status_filter.lower()
+        if status_lower == "open":
+            jql += ' AND status NOT IN (Done, Closed, Resolved, Tested, "Won\'t Do")'
+        elif status_lower in ("closed", "done", "resolved"):
+            jql += f' AND status IN (Done, Closed, Resolved, Tested, "Won\'t Do")'
+        else:
+            # Use exact status name
+            jql += f' AND status = "{status_filter}"'
+
+    jql += " ORDER BY created DESC"
+
+    log_info("Searching Jira directly", jql=jql)
+
+    try:
+        resp = jira_search(jql, fields="summary,status,created,labels", max_results=20)
+        tickets = []
+        for issue in (resp or {}).get("issues", []):
+            fields = issue.get("fields", {})
+            tickets.append({
+                "key": issue.get("key"),
+                "summary": fields.get("summary", ""),
+                "status": fields.get("status", {}).get("name", ""),
+                "created": fields.get("created", "")[:10],
+                "labels": fields.get("labels", []),
+                "score": 0.0,  # JQL match, no similarity score
+            })
+
+        log_info("Jira direct search completed", tickets_found=len(tickets))
+        return {
+            **state,
+            "related_tickets": tickets,
+            "logs": [],  # No logs in Jira-only mode
+            "dd_query": f"[Jira search] {jql}",
+        }
+
+    except Exception as e:
+        log_error("Jira direct search failed", error=str(e))
+        return {**state, "related_tickets": [], "error": f"Jira search failed: {e}"}
+
+
+def _find_close_transition(transitions: List[Dict]) -> Optional[str]:
+    """Find a transition that closes/resolves/completes a ticket.
+
+    Args:
+        transitions: List of available transitions from get_transitions
+
+    Returns:
+        Transition ID if found, None otherwise
+    """
+    # Priority order: look for transitions to these target statuses (case-insensitive)
+    close_statuses = ["done", "closed", "resolved", "complete", "completed", "fixed", "won't do", "won't fix"]
+
+    if not transitions:
+        return None
+
+    # First pass: match target status name
+    for status_name in close_statuses:
+        for t in transitions:
+            to_status = t.get("to_status", "").lower()
+            if status_name in to_status:
+                return t.get("id")
+
+    # Second pass: match transition name (e.g., "Close", "Done", "Resolve")
+    close_names = ["close", "done", "resolve", "complete", "finish", "won't do", "won't fix"]
+    for name in close_names:
+        for t in transitions:
+            t_name = t.get("name", "").lower()
+            if name in t_name:
+                return t.get("id")
+
+    return None
+
+
 def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
     """Consolidate duplicate tickets by closing them and linking to primary.
 
@@ -469,7 +573,7 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Updated state with consolidation results
     """
-    from agent.jira.client import add_comment, transition_issue, link_issues
+    from agent.jira.client import add_comment, transition_issue, link_issues, get_transitions
 
     tickets = state.get("related_tickets", [])
 
@@ -494,16 +598,41 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
     primary = sorted_tickets[0]
     duplicates = sorted_tickets[1:]
 
+    # Filter out already-closed tickets
+    closed_statuses = {"done", "closed", "resolved", "tested", "won't do", "won't fix", "cancelled"}
+    open_duplicates = []
+    already_closed = []
+    for dup in duplicates:
+        status = dup.get("status", "").lower()
+        if status in closed_statuses:
+            already_closed.append(dup.get("key"))
+        else:
+            open_duplicates.append(dup)
+
+    if already_closed:
+        log_info(f"Skipping {len(already_closed)} already-closed tickets", tickets=already_closed)
+
+    if not open_duplicates:
+        log_info("No open duplicates to consolidate")
+        return {
+            **state,
+            "consolidation_result": f"No open duplicates to consolidate ({len(already_closed)} already closed)",
+            "consolidated_count": 0,
+            "primary_ticket": primary["key"],
+            "skipped_closed": already_closed,
+        }
+
     log_info(
         "Consolidating tickets",
         primary=primary.get("key"),
-        duplicates=[d.get("key") for d in duplicates]
+        duplicates=[d.get("key") for d in open_duplicates],
+        skipped_closed=len(already_closed)
     )
 
     consolidated = []
     errors = []
 
-    for dup in duplicates:
+    for dup in open_duplicates:
         dup_key = dup.get("key")
         try:
             # 1. Add link comment to duplicate
@@ -521,16 +650,19 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
                 # Link might fail if not supported, continue anyway
                 pass
 
-            # 3. Transition to closed/done (transition ID varies by project)
-            # Common transition IDs: 31=Done, 41=Closed, 51=Resolved
+            # 3. Get available transitions and find one that closes the ticket
+            transitions = get_transitions(dup_key)
+            close_transition_id = _find_close_transition(transitions) if transitions else None
+
             transitioned = False
-            for transition_id in ["31", "41", "51", "21", "2"]:
-                try:
-                    if transition_issue(dup_key, transition_id):
-                        transitioned = True
-                        break
-                except Exception:
-                    continue
+            if close_transition_id:
+                # Pass resolution="Duplicate" since we're closing as duplicate
+                transitioned = transition_issue(dup_key, close_transition_id, resolution="Duplicate")
+                if transitioned:
+                    log_info(f"Closed ticket using transition",
+                             duplicate=dup_key,
+                             transition_id=close_transition_id,
+                             resolution="Duplicate")
 
             if transitioned:
                 consolidated.append(dup_key)
@@ -538,13 +670,18 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 # Could not transition but comment was added
                 consolidated.append(dup_key)
-                log_warning(f"Added comment but could not close ticket", duplicate=dup_key)
+                available = [f"{t.get('name')} -> {t.get('to_status')}" for t in (transitions or [])]
+                log_warning(f"Added comment but could not close ticket",
+                           duplicate=dup_key,
+                           available_transitions=available)
 
         except Exception as e:
             log_error(f"Failed to consolidate ticket", duplicate=dup_key, error=str(e))
             errors.append(f"{dup_key}: {str(e)}")
 
     result_msg = f"Consolidated {len(consolidated)} tickets into {primary['key']}"
+    if already_closed:
+        result_msg += f" (skipped {len(already_closed)} already closed)"
     if errors:
         result_msg += f". Errors: {len(errors)}"
 
@@ -554,5 +691,6 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
         "consolidated_count": len(consolidated),
         "primary_ticket": primary["key"],
         "closed_tickets": consolidated,
+        "skipped_closed": already_closed,
         "consolidation_errors": errors,
     }

@@ -23,6 +23,7 @@ from .sleuth_nodes import (
     suggest_action,
     invoke_patchy,
     consolidate_duplicates,
+    search_jira_direct,
 )
 
 
@@ -52,7 +53,7 @@ def build_graph():
     return g.compile()
 
 
-def _format_output(result: Dict[str, Any]) -> str:
+def _format_output(result: Dict[str, Any], jira_mode: bool = False) -> str:
     """Format the investigation results for CLI output."""
     lines = []
 
@@ -60,12 +61,15 @@ def _format_output(result: Dict[str, Any]) -> str:
     query = result.get("query", "")
     dd_query = result.get("dd_query", "")
     lines.append(f"Investigating: \"{query}\"")
+    if jira_mode:
+        lines.append(f"Mode: Jira search (--jira)")
     lines.append(f"Generated query: {dd_query}")
     lines.append("")
 
-    # Logs found
+    # Logs found (skip in Jira mode)
     logs = result.get("logs", [])
-    lines.append(f"Logs found: {len(logs)}")
+    if not jira_mode:
+        lines.append(f"Logs found: {len(logs)}")
 
     if logs:
         lines.append("")
@@ -93,16 +97,27 @@ def _format_output(result: Dict[str, Any]) -> str:
         lines.append(f"  {root_cause}")
         lines.append("")
 
-    # Related tickets
+    # Tickets found (Jira mode) or Related tickets (Datadog mode)
     tickets = result.get("related_tickets", [])
     if tickets:
-        lines.append("Related tickets:")
-        for t in tickets[:5]:
+        if jira_mode:
+            lines.append(f"Tickets found: {len(tickets)}")
+        else:
+            lines.append("Related tickets:")
+        # Show more tickets in Jira mode (up to 15), fewer in Datadog mode (5)
+        max_show = 15 if jira_mode else 5
+        for t in tickets[:max_show]:
             score = t.get("score", 0)
             status = t.get("status", "")
-            score_str = f"Score: {score:.2f}" if score else "JQL match"
-            status_str = f", {status}" if status else ""
-            lines.append(f"  - {t['key']}: {t.get('summary', '')} ({score_str}{status_str})")
+            score_str = f"Score: {score:.2f}" if score else ""
+            status_str = status if status else ""
+            # Format: key: summary (status)
+            extra = f" ({status_str})" if status_str else ""
+            if score_str and not jira_mode:
+                extra = f" ({score_str}{', ' + status_str if status_str else ''})"
+            lines.append(f"  - {t['key']}: {t.get('summary', '')[:60]}{extra}")
+        if len(tickets) > max_show:
+            lines.append(f"  ... and {len(tickets) - max_show} more")
         lines.append("")
 
     # Suggested fix
@@ -189,6 +204,16 @@ Examples:
         action="store_true",
         help="Show what would be consolidated without making changes"
     )
+    parser.add_argument(
+        "--jira",
+        action="store_true",
+        help="Search Jira directly instead of Datadog logs (faster for finding duplicate tickets)"
+    )
+    parser.add_argument(
+        "--status",
+        default=None,
+        help="Filter tickets by status (e.g., 'open', 'done', 'tested'). Only works with --jira"
+    )
 
     args = parser.parse_args()
 
@@ -205,9 +230,14 @@ Examples:
         "all_status": args.all_status,
     }
 
-    # Run the graph
-    graph = build_graph()
-    result = graph.invoke(state, config={"recursion_limit": 100})
+    # Run Jira-only search or full graph
+    if args.jira:
+        # Direct Jira search - skip Datadog
+        result = search_jira_direct(state, status_filter=args.status)
+    else:
+        # Full investigation via Datadog
+        graph = build_graph()
+        result = graph.invoke(state, config={"recursion_limit": 100})
 
     # Handle Patchy invocation if requested
     if args.invoke_patchy and result.get("can_auto_fix") and not args.no_patchy:
@@ -229,11 +259,32 @@ Examples:
             sorted_tickets = sorted(tickets, key=ticket_number)
             primary = sorted_tickets[0]
             duplicates = sorted_tickets[1:]
-            print(f"\n[DRY-RUN] Would consolidate {len(duplicates)} tickets into {primary['key']}:")
-            print(f"  Primary: {primary['key']} - {primary.get('summary', '')[:50]}")
-            print("  Would close:")
+
+            # Separate open vs already-closed tickets
+            closed_statuses = {"done", "closed", "resolved", "tested", "won't do", "won't fix", "cancelled"}
+            to_close = []
+            already_closed = []
             for dup in duplicates:
-                print(f"    - {dup['key']} - {dup.get('summary', '')[:50]}")
+                status = dup.get("status", "").lower()
+                if status in closed_statuses:
+                    already_closed.append(dup)
+                else:
+                    to_close.append(dup)
+
+            print(f"\n[DRY-RUN] Consolidation preview for {primary['key']}:")
+            print(f"  Primary: {primary['key']} - {primary.get('summary', '')[:50]}")
+            if to_close:
+                print(f"  Would close ({len(to_close)}):")
+                for dup in to_close:
+                    status = dup.get('status', '')
+                    print(f"    - {dup['key']} ({status}) - {dup.get('summary', '')[:40]}")
+            else:
+                print("  No open tickets to close.")
+            if already_closed:
+                print(f"  Already closed ({len(already_closed)}) - will skip:")
+                for dup in already_closed:
+                    status = dup.get('status', '')
+                    print(f"    - {dup['key']} ({status})")
         else:
             print(f"\nConsolidating {len(tickets)} related tickets...")
             result = consolidate_duplicates(result)
@@ -241,6 +292,8 @@ Examples:
             if result.get("closed_tickets"):
                 print(f"Primary ticket: {result.get('primary_ticket')}")
                 print(f"Closed tickets: {', '.join(result.get('closed_tickets', []))}")
+            if result.get("skipped_closed"):
+                print(f"Skipped (already closed): {', '.join(result.get('skipped_closed', []))}")
             if result.get("consolidation_errors"):
                 print(f"Errors: {result.get('consolidation_errors')}")
 
@@ -251,7 +304,7 @@ Examples:
         output = {k: v for k, v in result.items() if not k.startswith("_")}
         print(json.dumps(output, indent=2, default=str))
     else:
-        print(_format_output(result))
+        print(_format_output(result, jira_mode=args.jira))
 
     # Exit with error code if investigation failed
     if result.get("error"):
