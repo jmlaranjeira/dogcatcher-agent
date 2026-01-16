@@ -34,6 +34,7 @@ class PatchyState(TypedDict, total=False):
     message: str
     fault_file: str
     fault_line: int
+    has_valid_fault_line: bool  # True if fault_line came from stacktrace
     allowed_paths: list
     lint_cmd: str
     test_cmd: str
@@ -235,16 +236,34 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
     fault_line: int | None = None
 
     # Strategy 1: Parse stacktrace for file:line patterns
+    # More comprehensive patterns for various stacktrace formats
     patterns = [
-        r"\b([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
-        r"\bat\s+([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
         # Java stacktrace: at com.example.Class.method(File.java:123)
-        r"at\s+[\w.]+\(([\w]+\.java):(\d+)\)",
+        r"at\s+[\w.$]+\(([\w]+\.java):(\d+)\)",
+        # Java stacktrace: at com.example.Class.method(Class.java:123)
+        r"\((\w+\.java):(\d+)\)",
+        # Python traceback: File "/path/to/file.py", line 123
+        r'File\s+"([^"]+\.py)",\s+line\s+(\d+)',
+        # Node.js: at function (/path/to/file.js:123:45)
+        r"at\s+\w+\s+\(([^:]+\.(?:js|ts|tsx)):(\d+):\d+\)",
+        # Generic: file.ext:123
+        r"\b([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
+        # Kotlin: at Class.method(File.kt:123)
+        r"\((\w+\.kt):(\d+)\)",
+        # Go: file.go:123
+        r"\b(\w+\.go):(\d+)\b",
     ]
     for pat in patterns:
         m = re.search(pat, st)
         if m:
             fault_file, fault_line = m.group(1), int(m.group(2))
+            append_audit({
+                "service": state.get("service"),
+                "status": "fault_line_from_stacktrace",
+                "file": fault_file,
+                "line": fault_line,
+                "pattern": pat,
+            })
             break
 
     # Strategy 2: Convert logger name to file path (Java/Kotlin)
@@ -295,13 +314,21 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
             })
 
     if fault_file:
+        # Track if we have a real fault_line from stacktrace or just a fallback
+        has_valid_fault_line = fault_line is not None and fault_line > 0
         append_audit({
             "service": state.get("service"),
             "status": "fault_located",
             "file": fault_file,
             "line": fault_line,
+            "has_valid_fault_line": has_valid_fault_line,
         })
-        return {**state, "fault_file": fault_file, "fault_line": fault_line or 1}
+        return {
+            **state,
+            "fault_file": fault_file,
+            "fault_line": fault_line if has_valid_fault_line else 0,  # 0 = unknown
+            "has_valid_fault_line": has_valid_fault_line,
+        }
 
     append_audit({
         "service": state.get("service"),
@@ -405,10 +432,22 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         # Intelligent fix attempt based on error type (language-aware)
         suffix = touch_path.suffix.lower()
         error_type = state.get("error_type", "")
+        fault_line = int(state.get("fault_line") or 0)
+        has_valid_fault_line = state.get("has_valid_fault_line", False)
+
+        # Log warning if no valid fault_line for fix mode
+        if not has_valid_fault_line:
+            append_audit({
+                "service": service,
+                "status": "fix_warning",
+                "branch": branch,
+                "message": "No valid fault_line from stacktrace; fix may be limited",
+            })
+
         try:
             if suffix == ".java":
                 from .utils.fix_java import apply_java_fix  # type: ignore
-                result = apply_java_fix(touch_path, int(state.get("fault_line") or 0), error_type=error_type)
+                result = apply_java_fix(touch_path, fault_line, error_type=error_type)
                 if not result.changed:
                     append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
                 else:
