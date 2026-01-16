@@ -182,8 +182,54 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
             is_duplicate=False,
             message="LLM decision: do not create a ticket for this log"
         )
-    
-    # 3. Check Jira for similar tickets
+
+    # 3. Check for recent tickets with same error_type (prevents cross-logger duplicates)
+    error_type = state.get("error_type", "")
+    if error_type and error_type != "unknown":
+        try:
+            config = get_config()
+            jql = (
+                f"project = {config.jira_project_key} "
+                f"AND labels = datadog-log "
+                f"AND labels = {error_type} "
+                f"AND created >= -7d "
+                f"ORDER BY created DESC"
+            )
+            from agent.jira.client import search as jira_search
+            resp = jira_search(jql, max_results=1)
+            if resp and resp.get("issues"):
+                existing = resp["issues"][0]
+                existing_key = existing.get("key")
+                existing_summary = existing.get("fields", {}).get("summary", "")
+                log_info(
+                    "Duplicate found by error_type label",
+                    error_type=error_type,
+                    existing_key=existing_key
+                )
+                # Update fingerprint cache
+                processed.add(fingerprint)
+                _save_processed_fingerprints(processed)
+
+                _append_audit(
+                    decision="duplicate-error-type",
+                    state=state,
+                    fingerprint=fingerprint,
+                    occ=1,
+                    jira_key=existing_key,
+                    duplicate=True,
+                    create=False,
+                    message=f"Duplicate by error_type '{error_type}': {existing_key}",
+                )
+                return DuplicateCheckResult(
+                    is_duplicate=True,
+                    existing_ticket_key=existing_key,
+                    similarity_score=0.95,
+                    message=f"Recent ticket with same error_type: {existing_key} - {existing_summary}"
+                )
+        except Exception as e:
+            log_error("Error during error_type duplicate check", error=str(e))
+
+    # 4. Check Jira for similar tickets
     try:
         key, score, existing_summary = find_similar_ticket(title, state)
         if key:
@@ -332,12 +378,19 @@ def _execute_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> D
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> str:
-    """Compute a stable fingerprint for the log entry using normalized message."""
+    """Compute a stable fingerprint for the log entry.
+
+    Uses error_type (from LLM analysis) + normalized message to group
+    similar errors regardless of which logger produced them.
+    """
     log_data = state.get("log_data", {})
     raw_msg = log_data.get('message', '')
     norm_msg = normalize_log_message(raw_msg)
-    # Ignore thread to avoid per-thread duplicates
-    fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+
+    # Use error_type from LLM analysis (more stable than logger name)
+    error_type = state.get("error_type", "unknown")
+
+    fp_source = f"{error_type}|{norm_msg or raw_msg}"
     return hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
 
 

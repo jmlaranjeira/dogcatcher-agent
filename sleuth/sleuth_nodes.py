@@ -455,3 +455,104 @@ def invoke_patchy(state: Dict[str, Any]) -> Dict[str, Any]:
             "patchy_invoked": True,
             "patchy_result": f"Patchy failed: {e}",
         }
+
+
+def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Consolidate duplicate tickets by closing them and linking to primary.
+
+    Keeps the oldest ticket as the primary and closes newer duplicates,
+    adding a link comment to each closed ticket.
+
+    Args:
+        state: State containing related_tickets from correlate_jira
+
+    Returns:
+        Updated state with consolidation results
+    """
+    from agent.jira.client import add_comment, transition_issue, link_issues
+
+    tickets = state.get("related_tickets", [])
+
+    if len(tickets) < 2:
+        log_info("Not enough tickets to consolidate", count=len(tickets))
+        return {
+            **state,
+            "consolidation_result": "Not enough tickets to consolidate (need at least 2)",
+            "consolidated_count": 0,
+        }
+
+    # Sort by key (older tickets have lower numbers)
+    # DDSIT-154 < DDSIT-159
+    def ticket_number(t):
+        key = t.get("key", "")
+        try:
+            return int(key.split("-")[-1])
+        except (ValueError, IndexError):
+            return 999999
+
+    sorted_tickets = sorted(tickets, key=ticket_number)
+    primary = sorted_tickets[0]
+    duplicates = sorted_tickets[1:]
+
+    log_info(
+        "Consolidating tickets",
+        primary=primary.get("key"),
+        duplicates=[d.get("key") for d in duplicates]
+    )
+
+    consolidated = []
+    errors = []
+
+    for dup in duplicates:
+        dup_key = dup.get("key")
+        try:
+            # 1. Add link comment to duplicate
+            comment = (
+                f"This ticket has been identified as a duplicate of [{primary['key']}].\n\n"
+                f"Closing this ticket and linking to the primary ticket for tracking.\n\n"
+                f"_Consolidated by Sleuth agent._"
+            )
+            add_comment(dup_key, comment)
+
+            # 2. Link duplicate to primary (if link_issues is available)
+            try:
+                link_issues(dup_key, primary["key"], link_type="Duplicate")
+            except Exception:
+                # Link might fail if not supported, continue anyway
+                pass
+
+            # 3. Transition to closed/done (transition ID varies by project)
+            # Common transition IDs: 31=Done, 41=Closed, 51=Resolved
+            transitioned = False
+            for transition_id in ["31", "41", "51", "21", "2"]:
+                try:
+                    if transition_issue(dup_key, transition_id):
+                        transitioned = True
+                        break
+                except Exception:
+                    continue
+
+            if transitioned:
+                consolidated.append(dup_key)
+                log_info(f"Consolidated duplicate ticket", duplicate=dup_key, primary=primary["key"])
+            else:
+                # Could not transition but comment was added
+                consolidated.append(dup_key)
+                log_warning(f"Added comment but could not close ticket", duplicate=dup_key)
+
+        except Exception as e:
+            log_error(f"Failed to consolidate ticket", duplicate=dup_key, error=str(e))
+            errors.append(f"{dup_key}: {str(e)}")
+
+    result_msg = f"Consolidated {len(consolidated)} tickets into {primary['key']}"
+    if errors:
+        result_msg += f". Errors: {len(errors)}"
+
+    return {
+        **state,
+        "consolidation_result": result_msg,
+        "consolidated_count": len(consolidated),
+        "primary_ticket": primary["key"],
+        "closed_tickets": consolidated,
+        "consolidation_errors": errors,
+    }

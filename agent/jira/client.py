@@ -124,3 +124,56 @@ def add_labels(issue_key: str, labels_to_add: list[str]) -> bool:
     except requests.RequestException as e:
         log_error("Failed to add labels", error=str(e), issue_key=issue_key, labels=labels_to_add)
         return False
+
+
+def transition_issue(issue_key: str, transition_id: str) -> bool:
+    """Transition a Jira issue to a new status.
+
+    Args:
+        issue_key: Issue key (e.g., DDSIT-123)
+        transition_id: Transition ID (varies by project workflow)
+
+    Returns:
+        True if transition successful
+    """
+    if not is_configured():
+        return False
+    config = get_config()
+    url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}/transitions"
+    body = {"transition": {"id": transition_id}}
+    try:
+        resp = requests.post(url, headers=_headers(), json=body)
+        log_api_response("Jira transition", resp.status_code)
+        return resp.status_code in (200, 204)
+    except requests.RequestException as e:
+        log_error("Failed to transition issue", error=str(e), issue_key=issue_key, transition_id=transition_id)
+        return False
+
+
+def link_issues(from_key: str, to_key: str, link_type: str = "Duplicate") -> bool:
+    """Create a link between two Jira issues.
+
+    Args:
+        from_key: Source issue key
+        to_key: Target issue key
+        link_type: Link type name (e.g., "Duplicate", "Blocks", "Relates")
+
+    Returns:
+        True if link created successfully
+    """
+    if not is_configured():
+        return False
+    config = get_config()
+    url = f"https://{config.jira_domain}/rest/api/3/issueLink"
+    body = {
+        "type": {"name": link_type},
+        "inwardIssue": {"key": from_key},
+        "outwardIssue": {"key": to_key},
+    }
+    try:
+        resp = requests.post(url, headers=_headers(), json=body)
+        log_api_response("Jira issue link", resp.status_code)
+        return resp.status_code in (200, 201)
+    except requests.RequestException as e:
+        log_error("Failed to link issues", error=str(e), from_key=from_key, to_key=to_key)
+        return False

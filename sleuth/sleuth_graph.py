@@ -22,6 +22,7 @@ from .sleuth_nodes import (
     analyze_results,
     suggest_action,
     invoke_patchy,
+    consolidate_duplicates,
 )
 
 
@@ -178,6 +179,16 @@ Examples:
         action="store_true",
         help="Search all log statuses, not just errors"
     )
+    parser.add_argument(
+        "--consolidate",
+        action="store_true",
+        help="Consolidate duplicate tickets (close duplicates and link to primary)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be consolidated without making changes"
+    )
 
     args = parser.parse_args()
 
@@ -202,6 +213,36 @@ Examples:
     if args.invoke_patchy and result.get("can_auto_fix") and not args.no_patchy:
         print("Invoking Patchy...")
         result = invoke_patchy(result)
+
+    # Handle consolidation if requested
+    if args.consolidate:
+        tickets = result.get("related_tickets", [])
+        if len(tickets) < 2:
+            print(f"\nNot enough related tickets to consolidate (found {len(tickets)}, need at least 2)")
+        elif args.dry_run:
+            # Sort by key to show what would happen
+            def ticket_number(t):
+                try:
+                    return int(t.get("key", "").split("-")[-1])
+                except (ValueError, IndexError):
+                    return 999999
+            sorted_tickets = sorted(tickets, key=ticket_number)
+            primary = sorted_tickets[0]
+            duplicates = sorted_tickets[1:]
+            print(f"\n[DRY-RUN] Would consolidate {len(duplicates)} tickets into {primary['key']}:")
+            print(f"  Primary: {primary['key']} - {primary.get('summary', '')[:50]}")
+            print("  Would close:")
+            for dup in duplicates:
+                print(f"    - {dup['key']} - {dup.get('summary', '')[:50]}")
+        else:
+            print(f"\nConsolidating {len(tickets)} related tickets...")
+            result = consolidate_duplicates(result)
+            print(f"Result: {result.get('consolidation_result', 'Unknown')}")
+            if result.get("closed_tickets"):
+                print(f"Primary ticket: {result.get('primary_ticket')}")
+                print(f"Closed tickets: {', '.join(result.get('closed_tickets', []))}")
+            if result.get("consolidation_errors"):
+                print(f"Errors: {result.get('consolidation_errors')}")
 
     # Output results
     if args.json:
