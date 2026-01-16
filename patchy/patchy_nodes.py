@@ -13,12 +13,18 @@ from agent.jira.client import add_comment as jira_add_comment, is_configured as 
 
 
 class PatchyState(TypedDict, total=False):
+    # Input
     service: str
     error_type: str
     loghash: str
     jira: str
     draft: bool
+    stacktrace: str
+    logger: str
+    hint: str
+    mode: str
 
+    # Generated
     repo_dir: str
     repo_owner: str
     repo_name: str
@@ -28,6 +34,9 @@ class PatchyState(TypedDict, total=False):
     message: str
     fault_file: str
     fault_line: int
+    allowed_paths: list
+    lint_cmd: str
+    test_cmd: str
 
 
 def _allowed(service: str) -> bool:
