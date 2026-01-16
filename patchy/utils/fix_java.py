@@ -34,8 +34,13 @@ def _extract_receiver_token(line: str) -> Optional[str]:
 
     Returns the left-most identifier before a dot, skipping keywords.
     """
+    # Skip package/import statements entirely
+    stripped = line.strip()
+    if stripped.startswith("package ") or stripped.startswith("import "):
+        return None
+
     matches = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\.", line)
-    skip_tokens = {"this", "super", "class", "new", "return", "throw", "if", "else", "for", "while"}
+    skip_tokens = {"this", "super", "class", "new", "return", "throw", "if", "else", "for", "while", "package", "import", "org", "com", "java", "javax", "io", "net", "util"}
     for tok in matches:
         if tok.lower() not in skip_tokens:
             return tok
@@ -79,6 +84,53 @@ def _is_inside_try_block(lines: List[str], line_idx: int) -> bool:
     return False
 
 
+def _is_safe_insertion_point(lines: List[str], idx: int) -> bool:
+    """Check if idx is a safe place to insert code (not in file header area)."""
+    if idx < 0 or idx >= len(lines):
+        return False
+
+    # Check if we're still in the header area (package, imports, annotations)
+    for i in range(idx + 1):
+        stripped = lines[i].strip()
+        if stripped.startswith("package ") or stripped.startswith("import "):
+            if i >= idx:
+                return False  # We're at or before a package/import
+        # Found a class/interface/enum declaration - we're past the header
+        if re.search(r'\b(class|interface|enum)\s+\w+', stripped):
+            return True
+
+    return True
+
+
+def _find_first_method_body(lines: List[str]) -> Optional[int]:
+    """Find the first line inside a method body (after opening brace)."""
+    in_class = False
+    brace_depth = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Track when we enter a class
+        if re.search(r'\b(class|interface|enum)\s+\w+', stripped):
+            in_class = True
+
+        if not in_class:
+            continue
+
+        # Track braces
+        brace_depth += line.count('{') - line.count('}')
+
+        # Look for method signature followed by opening brace
+        if re.search(r'\)\s*\{', line) or (re.search(r'\)\s*$', line) and i + 1 < len(lines) and '{' in lines[i + 1]):
+            # Found a method, return the line after the opening brace
+            if '{' in line:
+                return i + 1
+            elif i + 1 < len(lines) and '{' in lines[i + 1]:
+                return i + 2
+
+    return None
+
+
 # ============================================================================
 # Fix Strategy: NPE Guard
 # ============================================================================
@@ -94,12 +146,38 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
         return FixResult(False, "npe_guard", f"read_failed: {e}")
 
     lines = text.splitlines()
+    if not lines:
+        return FixResult(False, "npe_guard", "empty_file")
+
+    # Determine insertion point
     idx = max(0, min(len(lines) - 1, (fault_line - 1) if fault_line else 0))
     line = lines[idx] if lines else ""
 
+    # Check if this is a safe insertion point
+    if not _is_safe_insertion_point(lines, idx):
+        # If fault_line was 0/invalid, try to find first method body
+        if not fault_line or fault_line <= 0:
+            method_idx = _find_first_method_body(lines)
+            if method_idx and method_idx < len(lines):
+                idx = method_idx
+                line = lines[idx]
+            else:
+                return FixResult(False, "npe_guard", "no_safe_insertion_point_found")
+        else:
+            return FixResult(False, "npe_guard", "insertion_point_in_file_header")
+
     token = _extract_receiver_token(line)
     if not token:
-        return FixResult(False, "npe_guard", "no_receiver_token_found")
+        # Try scanning nearby lines for a valid token
+        for offset in range(1, 6):
+            if idx + offset < len(lines):
+                token = _extract_receiver_token(lines[idx + offset])
+                if token:
+                    idx = idx + offset
+                    line = lines[idx]
+                    break
+        if not token:
+            return FixResult(False, "npe_guard", "no_receiver_token_found")
 
     indent = _get_indentation(line)
     guard = f"{indent}java.util.Objects.requireNonNull({token}, \"{token} must not be null\");"
@@ -109,9 +187,13 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
         if idx - lookback >= 0 and f"requireNonNull({token}" in lines[idx - lookback]:
             return FixResult(False, "npe_guard", "guard_already_present")
 
+    # Final safety check
+    if not _is_safe_insertion_point(lines, idx):
+        return FixResult(False, "npe_guard", "unsafe_insertion_point")
+
     lines.insert(idx, guard)
     _write_file(file_path, lines, text)
-    return FixResult(True, "npe_guard", f"Inserted null guard for '{token}'", 1)
+    return FixResult(True, "npe_guard", f"Inserted null guard for '{token}' at line {idx + 1}", 1)
 
 
 # ============================================================================
