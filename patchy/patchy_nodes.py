@@ -358,22 +358,49 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     touch_path.parent.mkdir(parents=True, exist_ok=True)
     mode = (state.get("mode") or "note").strip().lower()
     if mode in ("touch", "note"):
-        body_lines = [
-            "# Patchy touch file",
+        # Build note content
+        note_lines = [
             f"Service: {service}",
             f"Error-Type: {error_type}",
             f"Loghash: {loghash}",
             f"Target: {chosen_rel}",
         ]
         if jira:
-            body_lines.append(f"Jira: {jira}")
-        if touch_path.exists() and mode == "note":
-            with touch_path.open("a", encoding="utf-8") as f:
-                f.write("\n\n# Patchy note\n")
-                for ln in body_lines[1:]:
-                    f.write(f"{ln}\n")
+            note_lines.append(f"Jira: {jira}")
+
+        # Format note based on file type
+        suffix = touch_path.suffix.lower()
+        if suffix in (".java", ".kt", ".scala", ".groovy"):
+            # Java-style block comment
+            note_content = "/*\n * Patchy note\n"
+            for ln in note_lines:
+                note_content += f" * {ln}\n"
+            note_content += " */\n"
+        elif suffix in (".py",):
+            # Python docstring/comment
+            note_content = '"""\nPatchy note\n'
+            for ln in note_lines:
+                note_content += f"{ln}\n"
+            note_content += '"""\n'
+        elif suffix in (".ts", ".tsx", ".js", ".jsx", ".go", ".c", ".cpp", ".h"):
+            # C-style block comment
+            note_content = "/*\n * Patchy note\n"
+            for ln in note_lines:
+                note_content += f" * {ln}\n"
+            note_content += " */\n"
         else:
-            touch_path.write_text("\n".join(body_lines) + "\n", encoding="utf-8")
+            # Default: markdown style
+            note_content = "# Patchy note\n"
+            for ln in note_lines:
+                note_content += f"{ln}\n"
+
+        if touch_path.exists() and mode == "note":
+            # Append note to existing file
+            content = touch_path.read_text(encoding="utf-8")
+            touch_path.write_text(content + "\n" + note_content, encoding="utf-8")
+        else:
+            # Create new file with note
+            touch_path.write_text(note_content, encoding="utf-8")
     elif mode == "fix":
         # Minimal safe fix attempt (language-aware v0)
         suffix = touch_path.suffix.lower()
