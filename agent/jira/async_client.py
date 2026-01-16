@@ -91,10 +91,10 @@ class AsyncJiraClient:
         if max_results is None:
             max_results = self.config.jira_search_max_results
 
-        url = f"https://{self.config.jira_domain}/rest/api/3/search"
+        # Use new /search/jql endpoint (old /search was deprecated Oct 2025)
+        url = f"https://{self.config.jira_domain}/rest/api/3/search/jql"
 
         try:
-            # Use POST instead of GET (Atlassian deprecated GET for search)
             resp = await self._client.post(
                 url,
                 headers=self._headers(),
