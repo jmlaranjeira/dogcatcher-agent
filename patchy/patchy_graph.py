@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("--stacktrace", default="", help="Optional stacktrace to locate the faulted file/line")
     parser.add_argument("--logger", default="", help="Logger name (e.g., com.example.myservice.controller.LicensePurchaseController)")
     parser.add_argument("--hint", default="", help="Optional search hint (symbol/text)")
-    parser.add_argument("--mode", default="note", choices=["touch","note","fix"], help="Change mode: touch (new file), note (append), fix (attempt minimal safe fix)")
+    parser.add_argument("--mode", default="auto", choices=["auto", "fix", "note"], help="Mode: auto (try fix, fallback to note), fix (only fix), note (only note)")
     parser.add_argument("--draft", default="true")
     args = parser.parse_args()
 

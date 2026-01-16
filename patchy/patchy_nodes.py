@@ -412,8 +412,54 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         chosen_rel = (allowed or ["PATCHY_TOUCH.md"])[0]
     touch_path = repo_dir / chosen_rel
     touch_path.parent.mkdir(parents=True, exist_ok=True)
-    mode = (state.get("mode") or "note").strip().lower()
-    if mode in ("touch", "note"):
+
+    # Mode: "auto" (default) tries fix first, falls back to note
+    # Mode: "fix" only tries fix, fails if can't apply
+    # Mode: "note" only adds note
+    mode = (state.get("mode") or "auto").strip().lower()
+    suffix = touch_path.suffix.lower()
+    fault_line = int(state.get("fault_line") or 0)
+    has_valid_fault_line = state.get("has_valid_fault_line", False)
+
+    # Build context for fix functions
+    fix_context = {
+        "jira": jira,
+        "error_type": error_type,
+        "service": service,
+    }
+
+    # Track if fix was applied (for auto mode fallback)
+    fix_applied = False
+
+    # Try fix mode if mode is "auto" or "fix"
+    if mode in ("auto", "fix"):
+        try:
+            if suffix == ".java":
+                from .utils.fix_java import apply_java_fix  # type: ignore
+                result = apply_java_fix(touch_path, fault_line, error_type=error_type, context=fix_context)
+                if result.changed:
+                    fix_applied = True
+                    append_audit({"service": service, "status": "fix_applied", "branch": branch, "strategy": result.strategy, "lines_added": result.lines_added, "message": result.message})
+                else:
+                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
+            elif suffix in (".py",) and has_valid_fault_line:
+                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
+                new_content = "# Patchy: add None checks/guard clauses as needed\n" + content
+                touch_path.write_text(new_content, encoding="utf-8")
+                fix_applied = True
+            elif suffix in (".ts", ".tsx", ".js") and has_valid_fault_line:
+                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
+                new_content = "// Patchy: add optional chaining/guard clauses as needed\n" + content
+                touch_path.write_text(new_content, encoding="utf-8")
+                fix_applied = True
+        except Exception as e:
+            append_audit({"service": service, "status": "fix_error", "branch": branch, "message": str(e)})
+            # In auto mode, continue to note fallback; in fix mode, fail
+            if mode == "fix":
+                return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}
+
+    # Apply note if: mode is "note", OR (mode is "auto" AND fix wasn't applied)
+    if mode == "note" or (mode == "auto" and not fix_applied):
         # Build note content
         note_lines = [
             f"Service: {service}",
@@ -423,87 +469,37 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         ]
         if jira:
             note_lines.append(f"Jira: {jira}")
+        if not fix_applied and mode == "auto":
+            note_lines.append("Note: Auto-fix could not be applied; manual review needed")
 
         # Format note based on file type
-        suffix = touch_path.suffix.lower()
         if suffix in (".java", ".kt", ".scala", ".groovy"):
-            # Java-style block comment
             note_content = "/*\n * Patchy note\n"
             for ln in note_lines:
                 note_content += f" * {ln}\n"
             note_content += " */\n"
         elif suffix in (".py",):
-            # Python docstring/comment
             note_content = '"""\nPatchy note\n'
             for ln in note_lines:
                 note_content += f"{ln}\n"
             note_content += '"""\n'
         elif suffix in (".ts", ".tsx", ".js", ".jsx", ".go", ".c", ".cpp", ".h"):
-            # C-style block comment
             note_content = "/*\n * Patchy note\n"
             for ln in note_lines:
                 note_content += f" * {ln}\n"
             note_content += " */\n"
         else:
-            # Default: markdown style
             note_content = "# Patchy note\n"
             for ln in note_lines:
                 note_content += f"{ln}\n"
 
-        if touch_path.exists() and mode == "note":
-            # Append note to existing file
+        if touch_path.exists():
             content = touch_path.read_text(encoding="utf-8")
             touch_path.write_text(content + "\n" + note_content, encoding="utf-8")
         else:
-            # Create new file with note
             touch_path.write_text(note_content, encoding="utf-8")
-    elif mode == "fix":
-        # Intelligent fix attempt based on error type (language-aware)
-        suffix = touch_path.suffix.lower()
-        error_type = state.get("error_type", "")
-        fault_line = int(state.get("fault_line") or 0)
-        has_valid_fault_line = state.get("has_valid_fault_line", False)
 
-        # Log warning if no valid fault_line for fix mode
-        if not has_valid_fault_line:
-            append_audit({
-                "service": service,
-                "status": "fix_warning",
-                "branch": branch,
-                "message": "No valid fault_line from stacktrace; fix may be limited",
-            })
-
-        # Build context for fix functions
-        fix_context = {
-            "jira": jira,
-            "error_type": error_type,
-            "service": service,
-        }
-
-        try:
-            if suffix == ".java":
-                from .utils.fix_java import apply_java_fix  # type: ignore
-                result = apply_java_fix(touch_path, fault_line, error_type=error_type, context=fix_context)
-                if not result.changed:
-                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
-                else:
-                    append_audit({"service": service, "status": "fix_applied", "branch": branch, "strategy": result.strategy, "lines_added": result.lines_added, "message": result.message})
-            elif suffix in (".py",):
-                # v0: prepend guidance comment
-                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
-                new_content = "# Patchy: add None checks/guard clauses as needed\n" + content
-                touch_path.write_text(new_content, encoding="utf-8")
-            elif suffix in (".ts", ".tsx", ".js"):
-                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
-                new_content = "// Patchy: add optional chaining/guard clauses as needed\n" + content
-                touch_path.write_text(new_content, encoding="utf-8")
-            else:
-                # Fallback: append a note
-                with touch_path.open("a", encoding="utf-8") as f:
-                    f.write("\n# Patchy: low-risk placeholder change\n")
-        except Exception as e:
-            append_audit({"service": service, "status": "fix_apply_failed", "branch": branch, "message": str(e)})
-            return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}
+        append_audit({"service": service, "status": "note_applied", "branch": branch, "mode": mode})
 
     title = _pr_title(hint, error_type)
     commit_msg = title

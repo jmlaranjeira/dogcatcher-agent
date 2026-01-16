@@ -28,63 +28,86 @@ Patchy can add a null check for `user`, but it cannot determine the correct age 
 
 ## Modes
 
-### 1. `touch` (default)
-Creates a marker file (`PATCHY_TOUCH.md`) to trigger a PR without modifying code.
+### 1. `auto` (default)
+Tries to apply a fix first. If the fix cannot be applied (no valid fault_line, unsupported pattern), falls back to adding a note.
 
 ```bash
-python -m patchy.patchy_graph --service myservice --error-type npe --mode touch
+# Let Patchy decide - tries fix, falls back to note
+python -m patchy.patchy_graph --service myservice --error-type npe --jira TICKET-123
 ```
 
-### 2. `note`
-Appends a comment/note to the target file with context about the error.
+### 2. `fix`
+Only attempts to apply defensive code. Fails if it cannot find a safe insertion point.
+
+```bash
+python -m patchy.patchy_graph --service myservice --error-type npe --mode fix \
+  --stacktrace "NullPointerException at MyClass.java:42"
+```
+
+### 3. `note`
+Only adds a comment/note to the target file with context about the error.
 
 ```bash
 python -m patchy.patchy_graph --service myservice --error-type npe --mode note
 ```
 
-### 3. `fix`
-Applies defensive code based on error type. **Requires `fault_line` for best results.**
+## Auto Mode Flow
 
-```bash
-python -m patchy.patchy_graph --service myservice --error-type npe --mode fix \
-  --logger "org.example.MyClass" \
-  --stacktrace "NullPointerException at MyClass.java:42"
+```
+┌─────────────────────────────────────────────────────────┐
+│  ¿Has valid fault_line from stacktrace?                 │
+│                                                         │
+│     YES ─────────────────────► Try FIX                  │
+│                                      │                  │
+│                              Fix successful?            │
+│                                │         │              │
+│                               YES       NO              │
+│                                │         │              │
+│                                ▼         ▼              │
+│                           PR with     Apply NOTE        │
+│                           code fix    (fallback)        │
+│                                                         │
+│     NO ──────────────────────► Apply NOTE directly      │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## Fix Strategies (Java)
 
 | Error Type | Strategy | What It Does |
 |------------|----------|--------------|
-| `npe`, `null`, `nullpointer` | `npe_guard` | Inserts `Objects.requireNonNull()` |
+| `npe`, `null`, `nullpointer` | `npe_guard` | Inserts `Objects.requireNonNull()` with TODO |
 | `duplicate`, `constraint`, `unique` | `duplicate_check` | Adds existence check TODO |
 | `illegal`, `argument`, `validation` | `validation_check` | Adds parameter validation TODO |
+| `optimistic`, `locking`, `concurrent` | `try_catch` | Adds retry logic suggestion |
 | `persist`, `prepersist`, `save` | `duplicate_check` | Adds pre-save check TODO |
-| Other | `try_catch` | Wraps in try-catch with logging |
+| Other | Default | Tries npe_guard, then try_catch |
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (Auto Mode)
 
 ```bash
-# Touch mode (safest, just creates a PR marker)
-python -m patchy.patchy_graph --service dehnlicense --error-type npe
+# Patchy decides: tries fix, falls back to note if needed
+python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163
 
-# Note mode (adds context comment to file)
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --mode note
+# With stacktrace for better fix targeting
+python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163 \
+  --stacktrace "java.lang.NullPointerException at LicensePurchaseController.java:42"
 
-# Fix mode (adds defensive code)
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --mode fix \
+# With logger name to locate the file
+python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163 \
   --logger "org.devpoint.dehnlicense.controller.LicensePurchaseController"
 ```
 
-### With Stacktrace (Recommended for Fix Mode)
+### Explicit Mode
 
 ```bash
-python -m patchy.patchy_graph \
-  --service dehnlicense \
-  --error-type npe \
-  --mode fix \
-  --stacktrace "java.lang.NullPointerException at LicensePurchaseController.java:127"
+# Force fix mode only (fails if can't apply)
+python -m patchy.patchy_graph --service dehnlicense --error-type npe --mode fix \
+  --stacktrace "NullPointerException at LicensePurchaseController.java:42"
+
+# Force note mode only
+python -m patchy.patchy_graph --service dehnlicense --error-type optimistic-locking --mode note
 ```
 
 ### CLI Options
@@ -92,13 +115,33 @@ python -m patchy.patchy_graph \
 | Option | Description |
 |--------|-------------|
 | `--service` | Service name (required, must be in `repos.json`) |
-| `--error-type` | Type of error (e.g., `npe`, `duplicate`, `validation`) |
-| `--mode` | `touch`, `note`, or `fix` |
+| `--error-type` | Type of error (e.g., `npe`, `duplicate`, `validation`, `optimistic-locking`) |
+| `--mode` | `auto` (default), `fix`, or `note` |
 | `--logger` | Java logger name to locate the file |
 | `--stacktrace` | Stacktrace to extract fault line |
 | `--hint` | Search hint for locating the file |
-| `--jira` | Link to related Jira ticket |
+| `--jira` | Jira ticket key (e.g., `DDSIT-163`) |
 | `--draft` | Create as draft PR (`true`/`false`) |
+
+## Example Output
+
+When fix is applied:
+```java
+// TODO(Patchy): Defensive null guard - investigate root cause | See DDSIT-163
+java.util.Objects.requireNonNull(service, "service must not be null");
+```
+
+When note is applied (auto fallback):
+```java
+/*
+ * Patchy note
+ * Service: dehnlicense
+ * Error-Type: optimistic-locking
+ * Target: LicenseUsageController.java
+ * Jira: DDSIT-164
+ * Note: Auto-fix could not be applied; manual review needed
+ */
+```
 
 ## Configuration
 
@@ -141,10 +184,4 @@ This will:
 - **Duplicate detection**: Won't create duplicate branches/PRs
 - **Safe insertion**: Won't insert code in file headers or invalid locations
 - **Audit logging**: All actions are logged for traceability
-
-## Future Improvements
-
-- [ ] Better stacktrace parsing for automatic `fault_line` extraction
-- [ ] Support for Kotlin, Go, Rust
-- [ ] LLM-assisted analysis for complex patterns
-- [ ] Integration with test frameworks to validate fixes
+- **Auto fallback**: If fix fails, automatically falls back to note mode
