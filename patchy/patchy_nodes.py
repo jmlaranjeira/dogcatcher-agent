@@ -253,18 +253,47 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
         # Go: file.go:123
         r"\b(\w+\.go):(\d+)\b",
     ]
+    stacktrace_filename: str | None = None
     for pat in patterns:
         m = re.search(pat, st)
         if m:
-            fault_file, fault_line = m.group(1), int(m.group(2))
+            stacktrace_filename = m.group(1)
+            fault_line = int(m.group(2))
             append_audit({
                 "service": state.get("service"),
                 "status": "fault_line_from_stacktrace",
-                "file": fault_file,
+                "file": stacktrace_filename,
                 "line": fault_line,
                 "pattern": pat,
             })
             break
+
+    # If stacktrace gave just a filename, find the full path
+    if stacktrace_filename and '/' not in stacktrace_filename:
+        try:
+            import subprocess
+            proc = subprocess.run(
+                ["find", ".", "-name", stacktrace_filename, "-type", "f"],
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                found = proc.stdout.strip().split('\n')[0]
+                if found.startswith('./'):
+                    found = found[2:]
+                fault_file = found
+                append_audit({
+                    "service": state.get("service"),
+                    "status": "fault_file_found_by_search",
+                    "filename": stacktrace_filename,
+                    "full_path": fault_file,
+                })
+        except Exception:
+            pass
+    elif stacktrace_filename:
+        fault_file = stacktrace_filename
 
     # Strategy 2: Convert logger name to file path (Java/Kotlin)
     if not fault_file and logger:
