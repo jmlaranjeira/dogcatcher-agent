@@ -473,10 +473,17 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
                 "message": "No valid fault_line from stacktrace; fix may be limited",
             })
 
+        # Build context for fix functions
+        fix_context = {
+            "jira": jira,
+            "error_type": error_type,
+            "service": service,
+        }
+
         try:
             if suffix == ".java":
                 from .utils.fix_java import apply_java_fix  # type: ignore
-                result = apply_java_fix(touch_path, fault_line, error_type=error_type)
+                result = apply_java_fix(touch_path, fault_line, error_type=error_type, context=fix_context)
                 if not result.changed:
                     append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
                 else:

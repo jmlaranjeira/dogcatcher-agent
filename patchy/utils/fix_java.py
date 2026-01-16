@@ -180,6 +180,17 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
             return FixResult(False, "npe_guard", "no_receiver_token_found")
 
     indent = _get_indentation(line)
+
+    # Build TODO comment with ticket info if available
+    context = context or {}
+    jira_key = context.get("jira", "")
+    error_type = context.get("error_type", "NPE")
+
+    todo_parts = ["TODO(Patchy): Defensive null guard - investigate root cause"]
+    if jira_key:
+        todo_parts.append(f"See {jira_key}")
+    todo_comment = f"{indent}// {' | '.join(todo_parts)}"
+
     guard = f"{indent}java.util.Objects.requireNonNull({token}, \"{token} must not be null\");"
 
     # Avoid duplicate
@@ -191,9 +202,11 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
     if not _is_safe_insertion_point(lines, idx):
         return FixResult(False, "npe_guard", "unsafe_insertion_point")
 
+    # Insert TODO comment and guard
     lines.insert(idx, guard)
+    lines.insert(idx, todo_comment)
     _write_file(file_path, lines, text)
-    return FixResult(True, "npe_guard", f"Inserted null guard for '{token}' at line {idx + 1}", 1)
+    return FixResult(True, "npe_guard", f"Inserted null guard for '{token}' at line {idx + 1}", 2)
 
 
 # ============================================================================
