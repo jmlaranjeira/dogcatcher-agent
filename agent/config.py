@@ -239,13 +239,32 @@ class Config(BaseSettings):
     async_timeout_seconds: int = Field(60, env="ASYNC_TIMEOUT_SECONDS", ge=10, le=300, description="Timeout per log in async mode")
     async_rate_limiting: bool = Field(True, env="ASYNC_RATE_LIMITING", description="Enable rate limiting for API calls")
 
+    # Profile Configuration (Phase 1.3 - Configuration Profiles)
+    profile: Optional[str] = Field(None, description="Configuration profile name (development, staging, production, testing)")
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         "extra": "ignore"
     }
-    
+
+    def load_profile_overrides(self, profile_name: str) -> None:
+        """Load and apply profile configuration overrides.
+
+        Args:
+            profile_name: Name of the profile (development, staging, production, testing)
+
+        Raises:
+            ValueError: If profile name is invalid
+            FileNotFoundError: If profile file doesn't exist
+        """
+        from agent.config_profiles import load_profile, apply_profile_to_config
+
+        profile_config = load_profile(profile_name)
+        apply_profile_to_config(self, profile_config)
+        self.profile = profile_name
+
     def validate_configuration(self) -> List[str]:
         """Validate the complete configuration and return any issues."""
         issues = []
@@ -308,8 +327,9 @@ class Config(BaseSettings):
     def log_configuration(self) -> None:
         """Log the current configuration (sanitized)."""
         from agent.utils.logger import log_info
-        
+
         log_info("Configuration loaded",
+                profile=self.profile,
                 openai_model=self.openai_model,
                 datadog_site=self.datadog_site,
                 datadog_service=self.datadog_service,
