@@ -108,18 +108,129 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _logger_to_filepath(logger_name: str, repo_dir: Path) -> tuple[str | None, int | None]:
+    """Convert a Java/Kotlin logger name to a file path.
+
+    Examples:
+        org.devpoint.dehnlicense.controller.license.LicensePurchaseController
+        -> src/main/java/org/devpoint/dehnlicense/controller/license/LicensePurchaseController.java
+    """
+    if not logger_name:
+        return None, None
+
+    # Clean up logger name (remove line numbers, method names)
+    import re
+    # Remove trailing method/line info like .methodName or :123
+    clean = re.sub(r'[:\.][\w]+\(\)$', '', logger_name)
+    clean = re.sub(r':\d+$', '', clean)
+    clean = clean.strip()
+
+    # Convert dots to path separators
+    path_part = clean.replace('.', '/')
+
+    # Try common source directories and extensions
+    source_dirs = [
+        "src/main/java",
+        "src/main/kotlin",
+        "src/main/scala",
+        "src",
+        "app/src/main/java",
+        "app/src/main/kotlin",
+    ]
+    extensions = [".java", ".kt", ".scala", ".groovy"]
+
+    for src_dir in source_dirs:
+        for ext in extensions:
+            candidate = repo_dir / src_dir / f"{path_part}{ext}"
+            if candidate.exists():
+                rel_path = str(candidate.relative_to(repo_dir))
+                return rel_path, 1
+
+    # Try to find by class name only (last part)
+    class_name = clean.split('.')[-1]
+    for ext in extensions:
+        try:
+            import subprocess
+            # Use find to locate the file
+            proc = subprocess.run(
+                ["find", ".", "-name", f"{class_name}{ext}", "-type", "f"],
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                # Take the first match
+                found = proc.stdout.strip().split('\n')[0]
+                if found.startswith('./'):
+                    found = found[2:]
+                return found, 1
+        except Exception:
+            pass
+
+    return None, None
+
+
+def _search_with_ripgrep(hint: str, repo_dir: Path) -> tuple[str | None, int | None]:
+    """Search for a hint using ripgrep and return file path and line number."""
+    if not hint:
+        return None, None
+
+    try:
+        import subprocess, json as _json
+
+        # Try exact match first
+        proc = subprocess.run(
+            ["rg", "-n", "-F", hint, "--json", "."],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        for line in proc.stdout.splitlines():
+            try:
+                obj = _json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") == "match":
+                path = obj.get("data", {}).get("path", {}).get("text")
+                lno = obj.get("data", {}).get("line_number")
+                if path and isinstance(lno, int):
+                    # Skip test files and non-source files
+                    if "/test/" in path or "Test." in path or path.endswith(".md"):
+                        continue
+                    return path, lno
+
+        # If no exact match, try searching for class/method name patterns
+        if '.' in hint:
+            # Try last part (class name)
+            class_name = hint.split('.')[-1]
+            return _search_with_ripgrep(class_name, repo_dir)
+
+    except Exception:
+        pass
+
+    return None, None
+
+
 def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
-    # V1: try to parse stacktrace `... at path/File.java:123` or `File.py:45`
+    """Locate the faulted file using multiple strategies."""
+    import re
+
     st = (state.get("stacktrace") or "").strip()
     hint = (state.get("hint") or "").strip()
+    logger = (state.get("logger") or "").strip()
     repo_dir = Path(state.get("repo_dir") or ".")
     fault_file: str | None = None
     fault_line: int | None = None
 
-    import re
+    # Strategy 1: Parse stacktrace for file:line patterns
     patterns = [
         r"\b([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
         r"\bat\s+([\w./\\-]+\.(?:java|py|ts|tsx|js|go|kt|scala)):(\d+)\b",
+        # Java stacktrace: at com.example.Class.method(File.java:123)
+        r"at\s+[\w.]+\(([\w]+\.java):(\d+)\)",
     ]
     for pat in patterns:
         m = re.search(pat, st)
@@ -127,26 +238,52 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
             fault_file, fault_line = m.group(1), int(m.group(2))
             break
 
-    # If stacktrace not provided or no match, try a simple ripgrep for hint
+    # Strategy 2: Convert logger name to file path (Java/Kotlin)
+    if not fault_file and logger:
+        fault_file, fault_line = _logger_to_filepath(logger, repo_dir)
+        if fault_file:
+            append_audit({
+                "service": state.get("service"),
+                "status": "fault_located_by_logger",
+                "logger": logger,
+                "file": fault_file,
+            })
+
+    # Strategy 3: Try to extract logger from hint if it looks like a fully qualified class name
+    if not fault_file and hint and '.' in hint and hint[0].islower():
+        # Looks like a package name (e.g., org.devpoint.dehnlicense.controller.LicensePurchaseController)
+        fault_file, fault_line = _logger_to_filepath(hint, repo_dir)
+        if fault_file:
+            append_audit({
+                "service": state.get("service"),
+                "status": "fault_located_by_hint_as_logger",
+                "hint": hint,
+                "file": fault_file,
+            })
+
+    # Strategy 4: Search with ripgrep
     if not fault_file and hint:
-        try:
-            import subprocess, json as _json
-            proc = subprocess.run(
-                ["rg", "-n", "-F", hint, "--json", "."], cwd=str(repo_dir), capture_output=True, text=True, check=True
-            )
-            for line in proc.stdout.splitlines():
-                try:
-                    obj = _json.loads(line)
-                except Exception:
-                    continue
-                if obj.get("type") == "match":
-                    path = obj.get("data", {}).get("path", {}).get("text")
-                    lno = obj.get("data", {}).get("line_number")
-                    if path and isinstance(lno, int):
-                        fault_file, fault_line = path, lno
-                        break
-        except Exception:
-            pass
+        fault_file, fault_line = _search_with_ripgrep(hint, repo_dir)
+        if fault_file:
+            append_audit({
+                "service": state.get("service"),
+                "status": "fault_located_by_ripgrep",
+                "hint": hint,
+                "file": fault_file,
+                "line": fault_line,
+            })
+
+    # Strategy 5: Try logger name with ripgrep (search for class name)
+    if not fault_file and logger:
+        class_name = logger.split('.')[-1]
+        fault_file, fault_line = _search_with_ripgrep(f"class {class_name}", repo_dir)
+        if fault_file:
+            append_audit({
+                "service": state.get("service"),
+                "status": "fault_located_by_class_search",
+                "class": class_name,
+                "file": fault_file,
+            })
 
     if fault_file:
         append_audit({
@@ -160,6 +297,7 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
     append_audit({
         "service": state.get("service"),
         "status": "fault_not_found",
+        "tried": {"stacktrace": bool(st), "logger": bool(logger), "hint": bool(hint)},
     })
     return state
 
@@ -298,8 +436,9 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     pr_lines.append("These improvements aim to keep the system stable and provide safer, incremental fixes.")
     pr_lines.append("")
     if jira:
-        from agent.jira.client import JIRA_DOMAIN
-        pr_lines.append(f"Refs: [#{jira}](https://{JIRA_DOMAIN}/browse/{jira})")
+        from agent.jira.client import get_jira_domain
+        jira_domain = get_jira_domain()
+        pr_lines.append(f"Refs: [#{jira}](https://{jira_domain}/browse/{jira})")
     pr_text = "\n".join(pr_lines)
 
     try:
