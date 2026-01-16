@@ -402,14 +402,17 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
             # Create new file with note
             touch_path.write_text(note_content, encoding="utf-8")
     elif mode == "fix":
-        # Minimal safe fix attempt (language-aware v0)
+        # Intelligent fix attempt based on error type (language-aware)
         suffix = touch_path.suffix.lower()
+        error_type = state.get("error_type", "")
         try:
             if suffix == ".java":
-                from .utils.fix_java import apply_java_npe_guard  # type: ignore
-                changed, msg = apply_java_npe_guard(touch_path, int(state.get("fault_line") or 0))
-                if not changed:
-                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "message": msg})
+                from .utils.fix_java import apply_java_fix  # type: ignore
+                result = apply_java_fix(touch_path, int(state.get("fault_line") or 0), error_type=error_type)
+                if not result.changed:
+                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
+                else:
+                    append_audit({"service": service, "status": "fix_applied", "branch": branch, "strategy": result.strategy, "lines_added": result.lines_added, "message": result.message})
             elif suffix in (".py",):
                 # v0: prepend guidance comment
                 content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
