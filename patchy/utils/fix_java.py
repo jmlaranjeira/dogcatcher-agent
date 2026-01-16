@@ -355,7 +355,23 @@ def apply_try_catch(file_path: Path, fault_line: int, context: dict = None) -> F
         return FixResult(False, "try_catch", f"read_failed: {e}")
 
     lines = text.splitlines()
+    if not lines:
+        return FixResult(False, "try_catch", "empty_file")
+
     idx = max(0, min(len(lines) - 1, (fault_line - 1) if fault_line else 0))
+
+    # Check if this is a safe insertion point
+    if not _is_safe_insertion_point(lines, idx):
+        # If fault_line was 0/invalid, try to find first method body
+        if not fault_line or fault_line <= 0:
+            method_idx = _find_first_method_body(lines)
+            if method_idx and method_idx < len(lines):
+                idx = method_idx
+            else:
+                return FixResult(False, "try_catch", "no_safe_insertion_point_found")
+        else:
+            return FixResult(False, "try_catch", "insertion_point_in_file_header")
+
     line = lines[idx] if lines else ""
     indent = _get_indentation(line)
 
@@ -365,22 +381,23 @@ def apply_try_catch(file_path: Path, fault_line: int, context: dict = None) -> F
 
     class_name = _find_class_name(lines, idx) or "UnknownClass"
 
-    # Insert try-catch TODO
+    # Build context info
+    context = context or {}
+    jira_key = context.get("jira", "")
+
+    # Insert try-catch TODO with Jira reference
+    todo_suffix = f" | See {jira_key}" if jira_key else ""
     catch_lines = [
-        f"{indent}// TODO: Consider wrapping in try-catch for better error handling",
-        f"{indent}// try {{",
-        f"{indent}//     {line.strip()}",
-        f"{indent}// }} catch (Exception e) {{",
-        f"{indent}//     log.error(\"Error in {class_name}: {{}}\", e.getMessage(), e);",
-        f"{indent}//     throw new RuntimeException(\"Operation failed\", e);",
-        f"{indent}// }}",
+        f"{indent}// TODO(Patchy): Consider adding retry logic for optimistic locking{todo_suffix}",
+        f"{indent}// Example: @Retryable(value = OptimisticLockingFailureException.class, maxAttempts = 3)",
+        f"{indent}// Or wrap in try-catch with retry loop",
     ]
 
     for i, catch in enumerate(catch_lines):
         lines.insert(idx + i, catch)
 
     _write_file(file_path, lines, text)
-    return FixResult(True, "try_catch", "Added try-catch suggestion", len(catch_lines))
+    return FixResult(True, "try_catch", f"Added error handling suggestion at line {idx + 1}", len(catch_lines))
 
 
 # ============================================================================
@@ -450,6 +467,10 @@ def apply_java_fix(file_path: Path, fault_line: int, error_type: str = "", conte
 
     elif any(kw in error_type for kw in ['persist', 'prepersist', 'save', 'insert']):
         return apply_duplicate_check(file_path, fault_line, context)
+
+    elif any(kw in error_type for kw in ['optimistic', 'locking', 'concurrent', 'stale', 'version']):
+        # Optimistic locking / concurrent modification errors
+        return apply_try_catch(file_path, fault_line, context)
 
     else:
         # Default: try NPE guard first, then try-catch suggestion
