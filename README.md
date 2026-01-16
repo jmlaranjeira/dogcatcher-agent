@@ -1,177 +1,171 @@
-# 🧠 Datadog → LLM → Jira Agent (LangGraph)
+# Dogcatcher Agent
 
-Automated agent that reads **Datadog error logs**, analyzes them with an **LLM** (LangChain + OpenAI), performs **smart de‑duplication** against Jira, and creates tickets with a **configurable per‑run cap** (default **3**).
-
----
-
-## 🔄 End‑to‑end Flow
-```mermaid
-graph TD;
-    A[Fetch Datadog Logs] --> B[Deduplicate In-Run];
-    B --> C[Analyze Log / LLM];
-    C -->|no ticket| G[Next Log];
-    C -->|create ticket| D[Check Similar Issues in Jira];
-    D -->|duplicate| E[Comment on Existing Ticket];
-    D -->|unique| F[Create Jira Ticket];
-    E --> G;
-    F --> G;
-```
+Automated agent that reads **Datadog error logs**, analyzes them with an **LLM**, performs **smart de-duplication** against Jira, and creates tickets. Includes **async parallel processing** (31k+ logs/hour), **Sleuth** for error investigation, and **Patchy** for self-healing PRs.
 
 ---
 
-## 🚀 Key Features
-- **Datadog ingestion** (service/env/time window) with `logger`, `thread`, `timestamp`, `detail`.
-- **LLM analysis (gpt‑4o‑mini)** → `error_type`, `severity (low|medium|high)`, `ticket_title`, `ticket_description` (markdown: *Problem summary*, *Possible Causes*, *Suggested Actions*).
-- **Ticket guard**: configurable per‑run cap via `MAX_TICKETS_PER_RUN` or `--max-tickets` (**0 = no cap**, default **3**).
-- **Idempotence & de‑dup**
-  - In‑run: skip duplicated logs by `logger|thread|message`.
-  - Cross‑run: fingerprint (`sha1`) cached in `.agent_cache/processed_logs.json`.
-  - Jira short‑circuit via `labels = loghash-<sha1(normalized message)[:12]>`.
-- **Advanced Jira duplicate detection**
-  - **Direct log match first**: compare the **normalized current log** with the ticket’s **Original Log** (extracted from description). If similarity ≥ **0.90** → duplicate immediately.
-  - Otherwise, similarity by **title + description** with boosts (error_type, logger, token overlap). Window **365d**, filtering `statusCategory != Done` and `labels = datadog-log`.
-  - When a duplicate is detected, optionally **auto‑comment** with new context and **retro‑seed** the `loghash-…` label on the existing issue.
-- **Ticket formatting**
-  - Summary: **`[Datadog][<error_type>] <title>`** (title auto‑truncated to 120 chars)
-  - Labels: **`datadog-log`** (+ `loghash-…` where applicable)
-  - Description includes **Original Log**, logger/thread/timestamp, detail, and **occurrence count** within the window.
-- **Noise‑aware context**
-  - The agent aggregates **occurrence counts** per fingerprint and shows: `Occurrences in last <hours>h: <N>` in descriptions and duplicate comments.
+## Quick Start
 
----
-
-## 🧰 Requirements
-- Python **3.11**.
-- Install deps:
 ```bash
+# 1. Install dependencies
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# 2. Configure .env (copy from .env.example)
+cp .env.example .env
+# Edit .env with your API keys
+
+# 3. Verify connections
+python main.py --check
+
+# 4. Run in dry-run mode (safe)
+python main.py --dry-run --service myservice --hours 24
+
+# 5. Run in async mode (faster)
+python main.py --dry-run --async --workers 5 --service myservice --hours 24
 ```
-*(Optional) `rapidfuzz` improves matching — already listed in `requirements.txt`.*
 
 ---
 
-## ⚙️ Configuration
+## End-to-end Flow
 
-### Environment Variables (.env)
+```mermaid
+graph TD;
+    A[Fetch Datadog Logs] --> B[Deduplicate by Fingerprint];
+    B --> C[Analyze with LLM];
+    C -->|no ticket| H[Next Log];
+    C -->|create ticket| D{Check Duplicates};
+    D -->|fingerprint match| E[Skip - Already Processed];
+    D -->|error_type match| F[Skip - Recent Ticket Exists];
+    D -->|similarity match| G[Comment on Existing];
+    D -->|unique| I[Create Jira Ticket];
+    E --> H;
+    F --> H;
+    G --> H;
+    I --> H;
 
-The project uses environment variables for configuration. You can override these with:
-- **Configuration profiles** (YAML files in `config/profiles/`) - **Recommended**
-- **Environment variables** (system-level overrides)
-- **CLI arguments** (runtime overrides)
-
-```ini
-# OpenAI
-OPENAI_API_KEY=sk-...                # API key for OpenAI access
-OPENAI_MODEL=gpt-4.1-nano             # OpenAI model to use for analysis
-OPENAI_RESPONSE_FORMAT=json_object   # Response format: json_object (default) or text
-OPENAI_TEMPERATURE=0                 # Controls randomness (0 = deterministic)
-
-# Datadog
-DATADOG_API_KEY=...                  # Datadog API key
-DATADOG_APP_KEY=...                  # Datadog application key
-DATADOG_SITE=datadoghq.eu            # Datadog site to query (e.g., datadoghq.com or datadoghq.eu)
-DATADOG_SERVICE=dehnlicense          # Datadog service name filter
-DATADOG_ENV=dev                      # Datadog environment filter (e.g., dev or prod)
-DATADOG_HOURS_BACK=48                # Time window in hours to fetch logs from
-DATADOG_LIMIT=50                     # Number of logs per page to fetch
-DATADOG_MAX_PAGES=3                  # Maximum pages to paginate through
-DATADOG_TIMEOUT=20                   # Timeout in seconds for Datadog API requests
-DATADOG_STATUSES=error,critical      # Comma-separated list of log statuses to filter
-DATADOG_QUERY_EXTRA=                 # Extra query terms for Datadog search (optional)
-DATADOG_QUERY_EXTRA_MODE=AND         # Logical operator for extra query terms (AND or OR)
-
-# Jira
-JIRA_DOMAIN=company.atlassian.net  # Jira instance domain
-JIRA_USER=you@company.com               # Jira user email
-JIRA_API_TOKEN=...                      # Jira API token for authentication
-JIRA_PROJECT_KEY=DPRO                   # Jira project key for ticket creation
-
-# Agent behavior
-AUTO_CREATE_TICKET=false             # true/1/yes to create real tickets; false to simulate
-PERSIST_SIM_FP=false                 # Persist fingerprints even in simulation mode
-COMMENT_ON_DUPLICATE=true            # Add comments on detected duplicate issues
-MAX_TICKETS_PER_RUN=3                # Per-run cap on real ticket creation (0 = no cap)
-SEVERITY_RULES_JSON=                 # JSON mapping error_type→severity, e.g. {"blob-not-found":"medium"}
-COMMENT_COOLDOWN_MINUTES=120         # Minutes to wait before re-commenting the same Jira issue (0 disables)
-AGGREGATE_EMAIL_NOT_FOUND=false      # Aggregate email-not-found into one parent ticket (adds label aggregate-email-not-found)
-AGGREGATE_KAFKA_CONSUMER=false       # Aggregate kafka-consumer into one parent ticket (adds label aggregate-kafka-consumer)
-
-# Optional occurrence-based escalation (disabled by default)
-OCC_ESCALATE_ENABLED=false           # Enable escalation based on occurrences in time window
-OCC_ESCALATE_THRESHOLD=10            # Escalate when occurrences >= threshold
-OCC_ESCALATE_TO=high                 # Target severity when escalating (low|medium|high)
+    style A fill:#e1f5fe
+    style C fill:#fff3e0
+    style I fill:#e8f5e9
 ```
-
-Notes:
-- The agent prints the **exact Datadog query** for transparency.
-- If a query with `DATADOG_QUERY_EXTRA` yields 0 results, it will **retry once without** the extra clause and report findings to help tuning.
 
 ---
 
-## ▶️ Run
+## Key Features
 
-### Basic Usage
+### Core Agent
+- **Datadog ingestion** with configurable service/env/time window
+- **LLM analysis** (gpt-4.1-nano) for error classification and ticket content
+- **Multi-layer deduplication**: fingerprint cache, error_type labels, similarity matching
+- **Configurable ticket cap** via `MAX_TICKETS_PER_RUN` (default: 3)
+
+### Async Processing (Phase 2.1)
+- **31,000+ logs/hour** throughput (vs ~150 in sync mode)
+- Parallel workers with rate limiting
+- Circuit breaker protection for API failures
+- Fallback analysis when LLM unavailable
+
+### Sleuth Agent
+- **Natural language** error investigation
+- Correlates logs with existing Jira tickets
+- **Root cause analysis** via LLM
+- **`--consolidate`** command to merge duplicate tickets
+
+### Patchy Bot
+- **Self-healing PRs** for known error patterns
+- Integrates with Sleuth for automatic fixes
+- Draft PR workflow with guardrails
+
+---
+
+## Commands
+
+### Health Check
+Verify all service connections before running:
 ```bash
-python main.py
+python main.py --check
 ```
-- **Early exit** if no logs are available in the selected window.
-- **Simulation** (`AUTO_CREATE_TICKET=false`): analyzes logs and simulates ticket creation.
-- **Real** (`AUTO_CREATE_TICKET=true`): creates **up to 3** real tickets per run; on duplicates it comments and does not create.
-
-### With Configuration Profiles (Recommended)
-
-Use pre-configured environment profiles for easier management:
-
-```bash
-# Development (safe, no tickets, file cache, DEBUG)
-python main.py --profile development
-
-# Staging (limited tickets, file cache, INFO)
-python main.py --profile staging --service myservice
-
-# Production (auto-create, Redis cache, WARNING)
-python main.py --profile production
-
-# Testing (minimal, memory cache)
-python main.py --profile testing
+Output:
+```
+🔍 Running health checks...
+  Checking OpenAI API... ✓ Connected (model: gpt-4.1-nano)
+  Checking Datadog API... ✓ Connected (site: datadoghq.eu)
+  Checking Jira API... ✓ Connected (dehngroup.atlassian.net)
+✅ All services ready!
 ```
 
-**Available profiles:** `development` | `staging` | `production` | `testing`
-**Profile files:** `config/profiles/*.yaml`
-**Precedence:** `.env` → Profile YAML → Environment Variables → CLI Arguments
+### Dogcatcher (Main Agent)
 
-### With CLI Arguments
+```bash
+# Dry-run (simulation, no tickets created)
+python main.py --dry-run --service myservice --hours 24
 
-You can also run with direct CLI arguments:
-```bash
-python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
-```
-```bash
-python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
+# Real mode (creates tickets)
+python main.py --real --service myservice --hours 24 --max-tickets 3
+
+# Async mode (parallel processing)
+python main.py --dry-run --async --workers 5 --service myservice --hours 24
+
+# With configuration profile
+python main.py --profile production --async --workers 10
 ```
 
 **CLI Arguments:**
-- `--profile`: configuration profile (`development|staging|production|testing`)
-- `--dry-run`: run in simulation mode without creating Jira tickets
-- `--real`: (alternative to --dry-run) run in real mode and create tickets
-- `--env`: Datadog environment to query (`dev` or `prod`)
-- `--service`: Datadog service name to filter logs
-- `--hours`: time window in hours for logs to fetch
-- `--limit`: maximum logs per page from Datadog
-- `--max-tickets`: per-run cap on real ticket creation (0 = no cap)
+| Argument | Description |
+|----------|-------------|
+| `--check` | Verify OpenAI, Datadog, Jira connections and exit |
+| `--dry-run` | Simulation mode (no tickets created) |
+| `--real` | Real mode (creates tickets) |
+| `--async` | Enable parallel processing |
+| `--workers N` | Number of parallel workers (default: 5) |
+| `--profile` | Configuration profile (development/staging/production/testing) |
+| `--service` | Datadog service filter |
+| `--env` | Datadog environment filter |
+| `--hours N` | Time window in hours |
+| `--limit N` | Max logs per page |
+| `--max-tickets N` | Per-run ticket cap (0 = no limit) |
 
----
+### Sleuth (Error Investigator)
 
-## Patchy v0 – Draft PR flow (🩹🤖)
-
-Patchy is a minimal self-healing PR bot that, given a `service`, `error_type` and `loghash`, clones the target repo, creates a tiny change, and opens a draft PR with guardrails.
-
-### CLI
 ```bash
-# env
+# Investigate an error
+python -m sleuth "duplicate entry in license table" --service dehnlicense --hours 48
+
+# Preview duplicate consolidation
+python -m sleuth "duplicate entry" --service dehnlicense --consolidate --dry-run
+
+# Execute consolidation (closes duplicates, links to primary)
+python -m sleuth "duplicate entry" --service dehnlicense --consolidate
+
+# With Patchy integration
+python -m sleuth "NullPointerException in UserService" --invoke-patchy
+```
+
+**Sleuth Output:**
+```
+Investigating: "duplicate entry in license table"
+Generated query: service:dehnlicense env:prod status:error "duplicate" "entry"
+
+Logs found: 22
+
+Summary:
+  Multiple duplicate key violations during license creation...
+
+Probable root cause:
+  Race condition in LicenseAuditListener causing concurrent inserts.
+
+Related tickets:
+  - DDSIT-151: Resolve Duplicate License Entry (Score: 1.00)
+  - DDSIT-158: Resolve Duplicate Entry for License Primary Key (Score: 0.95)
+
+Suggested fix:
+  Add @Transactional with proper isolation level...
+```
+
+### Patchy (Self-Healing PRs)
+
+```bash
 export GITHUB_TOKEN=ghp_xxx
-export PATCHY_WORKSPACE=/tmp/patchy-workspace
 
 python -m patchy.patchy_graph \
   --service dehnlicense \
@@ -180,156 +174,228 @@ python -m patchy.patchy_graph \
   --draft true
 ```
 
-### Env
-- `GITHUB_TOKEN` (required)
-- `PATCHY_WORKSPACE` (default `/tmp/patchy-workspace`)
-- `REPAIR_ALLOWED_SERVICES` (CSV allow-list; empty = all)
-- `REPAIR_MAX_PRS_PER_RUN` (default 1)
+---
 
-### Behavior
-- Nodes: `resolve_repo` → `locate_fault` (placeholder) → `create_pr` → `finish`.
-- Shallow clone with token-injected remote, new branch `fix/{service}/{loghash[:8]}`.
-- Touch file `PATCHY_TOUCH.md` with metadata; commit & push; open draft PR.
-- PR title: `fix({service}): auto-fix for {error_type} [{loghash}]`.
-- PR body includes Jira (if provided) and `loghash-<sha>` tag.
-- Guardrails: allow-list, per-run cap, duplicate PR check by branch.
-- Audit JSONL: `.agent_cache/audit_patchy.jsonl`.
+## Configuration
 
-### Docker (optional)
-Add a service to `docker-compose.yml` (example):
-```yaml
-  patchy:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: patchy-agent:latest
-    environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - PATCHY_WORKSPACE=/workspace
-    volumes:
-      - ./_patchy_workspace:/workspace
-    command: ["python","-m","patchy.patchy_graph","--service","dehnlicense","--error-type","npe","--loghash","4c452e2d1c49"]
+### Environment Variables (.env)
+
+```ini
+# OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1-nano
+OPENAI_TEMPERATURE=0
+
+# Datadog
+DATADOG_API_KEY=...
+DATADOG_APP_KEY=...
+DATADOG_SITE=datadoghq.eu
+DATADOG_SERVICE=myservice
+DATADOG_ENV=prod
+DATADOG_HOURS_BACK=48
+DATADOG_LIMIT=50
+
+# Jira
+JIRA_DOMAIN=company.atlassian.net
+JIRA_USER=you@company.com
+JIRA_API_TOKEN=...
+JIRA_PROJECT_KEY=PROJ
+
+# Agent Behavior
+AUTO_CREATE_TICKET=false
+MAX_TICKETS_PER_RUN=3
+COMMENT_ON_DUPLICATE=true
+
+# Async Processing
+ASYNC_ENABLED=false
+ASYNC_MAX_WORKERS=5
+ASYNC_RATE_LIMITING=true
+
+# Circuit Breaker
+CIRCUIT_BREAKER_ENABLED=true
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+CIRCUIT_BREAKER_TIMEOUT_SECONDS=60
+FALLBACK_ANALYSIS_ENABLED=true
 ```
 
-## 📈 Reporting (tools/report.py)
-The agent writes an audit trail to `.agent_cache/audit_logs.jsonl`. You can summarize recent runs with:
+### Configuration Profiles
+
+Pre-configured profiles in `config/profiles/*.yaml`:
+
+| Profile | Description |
+|---------|-------------|
+| `development` | Safe defaults, no tickets, DEBUG logging |
+| `staging` | Limited tickets, INFO logging |
+| `production` | Auto-create, Redis cache, WARNING logging |
+| `testing` | Minimal limits, memory cache |
+
+```bash
+python main.py --profile production --async
+```
+
+**Precedence:** `.env` → Profile YAML → Environment Variables → CLI Arguments
+
+---
+
+## Duplicate Detection
+
+The agent uses a multi-layer approach to prevent duplicate tickets:
+
+### 1. Fingerprint Cache (Fastest)
+```python
+fingerprint = sha1(f"{error_type}|{normalized_message}")[:12]
+```
+- Uses **error_type** (from LLM) instead of logger name
+- Same error from different loggers = same fingerprint
+- Persisted in `.agent_cache/processed_logs.json`
+
+### 2. Error Type Label Search
+Before creating a ticket, searches Jira:
+```
+project = PROJ AND labels = datadog-log AND labels = {error_type} AND created >= -7d
+```
+Prevents duplicates across runs when fingerprint cache is cleared.
+
+### 3. Similarity Matching
+- **Direct log match**: Compare normalized log with ticket's "Original Log" (threshold: 0.90)
+- **Title + description similarity**: Weighted scoring with boosts (threshold: 0.82)
+- On match: optionally auto-comment with new context
+
+### 4. Loghash Labels
+Tickets get `loghash-{fingerprint}` label for O(1) future lookups.
+
+---
+
+## Async Processing
+
+Enable with `--async` flag for 200x throughput improvement:
+
+```bash
+python main.py --async --workers 5 --service myservice --hours 24
+```
+
+**Architecture:**
+- True async with `asyncio` and `httpx`
+- Semaphore-based concurrency control
+- Rate limiting to avoid API throttling
+- Circuit breaker for resilience
+
+**Performance:**
+| Mode | Throughput | Use Case |
+|------|------------|----------|
+| Sync | ~150 logs/hour | Debugging, small batches |
+| Async (5 workers) | ~31,000 logs/hour | Production workloads |
+
+---
+
+## Project Structure
+
+```
+dogcatcher-agent/
+├── main.py                    # CLI entrypoint
+├── agent/
+│   ├── config.py              # Pydantic configuration
+│   ├── graph.py               # LangGraph pipeline
+│   ├── async_processor.py     # Parallel processing
+│   ├── healthcheck.py         # Service connectivity checks
+│   ├── datadog.py             # Datadog client (sync)
+│   ├── datadog_async.py       # Datadog client (async)
+│   ├── nodes/
+│   │   ├── analysis.py        # LLM analysis (sync)
+│   │   ├── analysis_async.py  # LLM analysis (async)
+│   │   ├── ticket.py          # Ticket creation (sync)
+│   │   └── ticket_async.py    # Ticket creation (async)
+│   ├── jira/
+│   │   ├── client.py          # Jira REST client
+│   │   ├── async_client.py    # Async Jira client
+│   │   ├── match.py           # Similarity matching
+│   │   └── utils.py           # Normalization, fingerprints
+│   └── utils/
+│       ├── circuit_breaker.py # Resilience patterns
+│       └── fallback_analysis.py
+├── sleuth/
+│   ├── sleuth_graph.py        # Sleuth CLI & graph
+│   └── sleuth_nodes.py        # Investigation nodes
+├── patchy/
+│   └── patchy_graph.py        # Self-healing PR bot
+├── config/
+│   └── profiles/              # YAML configuration profiles
+├── tools/
+│   └── report.py              # Audit report generator
+└── tests/
+    ├── unit/
+    └── integration/
+```
+
+---
+
+## Docker
+
+### Build & Run
+```bash
+docker build -t dogcatcher-agent:latest .
+
+# Dry-run
+docker run --rm --env-file .env \
+  -v $(pwd)/.agent_cache:/app/.agent_cache \
+  dogcatcher-agent:latest \
+  python main.py --dry-run --async --service myservice
+
+# With docker-compose
+docker compose up --build
+```
+
+---
+
+## Reporting
+
+Generate audit summaries from `.agent_cache/audit_logs.jsonl`:
 
 ```bash
 python tools/report.py --since-hours 24
 ```
 
-**What you get** (key fields):
-- **Total decisions**
-- **Tickets created** (real mode)
-- **Duplicates / no-create** (skipped)
-- **Simulated (dry-run)** and **Would create (simulated true)**
-- Optional: **Cap reached (limit)** counts
-- Breakdowns: **By error_type**, **By severity**, **By decision**
-- Top **fingerprints** and **Jira issues**
-
-Example output snippet:
-
+Output:
 ```
 === Audit Summary ===
-Total decisions: 42
-Tickets created: 3
-Duplicates / no-create: 28
-Simulated (dry-run): 11
-Would create (simulated true): 8
-By decision:
-  created: 3
-  duplicate-fingerprint: 18
-  duplicate-jira: 7
-  simulated: 11
-  no-create: 3
-```
-
-**Notes**
-- The report reads from `.agent_cache/audit_logs.jsonl`. To start fresh, rotate or delete that file.
-- `--since-hours` filters by time window; omit it to include all history.
-
-## 🐳 Docker
-You can run the agent in a container (handy for CI or a long‑running service).
-
-### Build
-```bash
-docker build -t dd-jira-agent:latest .
-```
-
-### Dry‑run (safe)
-```bash
-docker run --rm \
-  --env-file ./.env \
-  -e AUTO_CREATE_TICKET=false \
-  -v $(pwd)/.agent_cache:/app/.agent_cache \
-  dd-jira-agent:latest \
-  python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
-```
-
-### Real mode (creates Jira tickets — be cautious)
-```bash
-docker run --rm \
-  --env-file ./.env \
-  -e AUTO_CREATE_TICKET=true \
-  -v $(pwd)/.agent_cache:/app/.agent_cache \
-  dd-jira-agent:latest \
-  python main.py --real --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
-```
-
-### docker‑compose (optional)
-`docker-compose.yml` includes a ready‑to‑run service:
-```bash
-docker compose up --build
-```
-It mounts `.agent_cache` as a volume and loads variables from `.env`. Override CLI flags via `command:` in the compose file.
-
----
-
-## 🧪 Duplicate Matching — Details
-1. **Fingerprints**: skip if `logger|thread|message` seen in current run; persist across runs in `.agent_cache/processed_logs.json`.
-2. **Exact log match**: normalize current log and compare to issue’s **Original Log** (from description). If similarity ≥ **0.90**, return that issue.
-3. **Similarity scoring**: `0.6*title_sim + 0.3*desc_sim` with boosts (`+0.10` error_type, `+0.05` logger, `+0.05` token overlap). Threshold **0.82**.
-4. **Labels**: on duplicate, add `loghash-<…>` to the existing issue to enable O(1) future matches by label.
-
-Normalization removes email addresses, URLs/tokens, UUIDs, timestamps, long hashes, and collapses whitespace to make matches robust.
-
----
-
-## 📦 Project Structure
-```
-dogcatcher-agent/
-├── main.py                # Entrypoint & CLI
-├── .env                   # Secrets & config
-├── Dockerfile             # Container image
-├── docker-compose.yml     # Optional compose service
-├── .dockerignore
-├── agent/
-│   ├── datadog.py         # Fetch & parse logs
-│   ├── graph.py           # LangGraph wiring
-│   ├── state.py           # Shared state types
-│   └── nodes/             # Agent nodes (split from nodes.py)
-│       ├── __init__.py    # Node registry / exports
-│       ├── analysis.py    # LLM analysis node
-│       ├── ticket.py      # Ticket creation node
-│       └── ...            # (other agent nodes as needed)
-│   └── jira/              # Jira integration (modular)
-│       ├── __init__.py    # Public API: create_ticket, comment_on_issue, find_similar_ticket
-│       ├── client.py      # HTTP helpers (search/create/comment/labels)
-│       ├── match.py       # Similarity, JQL, Original Log extraction
-│       └── utils.py       # Normalization, loghash, fingerprint & comment caches
-├── tools/
-│   └── report.py          # Audit report generator
-└── requirements.txt
+Total decisions: 300
+Tickets created: 2
+Duplicates detected: 286
+  - By fingerprint: 250
+  - By error_type: 20
+  - By similarity: 16
+Errors: 0
 ```
 
 ---
 
-## 🛠️ Troubleshooting
-- No real ticket created → likely a fingerprint or a duplicate (the console prints the reason and any similarity score).
-- 0 results from Datadog with `DATADOG_QUERY_EXTRA` → check the printed query; the agent will probe without extra and report.
-- Jira 401/403 → verify domain/user/token and project permissions.
-- Recursion guard → `recursion_limit` is raised to handle longer runs; ensure your environment matches `main.py`.
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `--check` fails | Verify API keys in `.env` |
+| 410 Gone from Jira | Update agent (uses new `/search/jql` endpoint) |
+| No tickets created | Check fingerprint cache, run with `--dry-run` first |
+| Duplicate tickets | Run Sleuth with `--consolidate` to merge |
+| Slow processing | Use `--async --workers 5` |
+| LLM errors | Circuit breaker will use fallback analysis |
 
 ---
 
-MIT · Built by Juan ⚡️
+## Development
+
+```bash
+# Run tests
+python run_tests.py              # All tests
+python run_tests.py unit         # Unit tests only
+
+# Format code
+black .
+
+# Type checking
+mypy .
+```
+
+---
+
+MIT License · Built with LangGraph
