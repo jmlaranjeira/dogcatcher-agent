@@ -94,13 +94,14 @@ class AsyncJiraClient:
         url = f"https://{self.config.jira_domain}/rest/api/3/search"
 
         try:
-            resp = await self._client.get(
+            # Use POST instead of GET (Atlassian deprecated GET for search)
+            resp = await self._client.post(
                 url,
                 headers=self._headers(),
-                params={
+                json={
                     "jql": jql,
                     "maxResults": max_results,
-                    "fields": fields,
+                    "fields": [f.strip() for f in fields.split(",")],
                 }
             )
             resp.raise_for_status()

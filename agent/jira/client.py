@@ -47,10 +47,11 @@ def search(jql: str, *, fields: str = "summary,description", max_results: int = 
         max_results = config.jira_search_max_results
     url = f"https://{config.jira_domain}/rest/api/3/search"
     try:
-        resp = requests.get(url, headers=_headers(), params={
+        # Use POST instead of GET (Atlassian deprecated GET for search)
+        resp = requests.post(url, headers=_headers(), json={
             "jql": jql,
             "maxResults": max_results,
-            "fields": fields,
+            "fields": [f.strip() for f in fields.split(",")],
         })
         resp.raise_for_status()
         log_api_response("Jira search", resp.status_code)
