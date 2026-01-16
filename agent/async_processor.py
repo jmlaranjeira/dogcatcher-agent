@@ -2,6 +2,8 @@
 
 This module provides the main async processing engine for parallel log analysis.
 Processes multiple logs concurrently while maintaining thread safety and error isolation.
+
+Phase 2.1: True async processing without run_in_executor workarounds.
 """
 
 import asyncio
@@ -13,6 +15,12 @@ from agent.utils.logger import log_info, log_error, log_warning, log_debug
 from agent.utils.thread_safe import ThreadSafeDeduplicator, ProcessingStats, RateLimiter
 from agent.jira.utils import normalize_log_message
 from agent.config import get_config
+
+# Import true async modules (Phase 2.1)
+from agent.nodes.analysis_async import analyze_log_async
+from agent.nodes.ticket_async import create_ticket_async
+from agent.jira.async_client import AsyncJiraClient
+from agent.jira.async_match import find_similar_ticket_async, check_fingerprint_duplicate_async
 
 
 class AsyncLogProcessor:
@@ -210,30 +218,24 @@ class AsyncLogProcessor:
         return f"{logger}|{norm_msg or raw_msg}"
 
     async def _analyze_log_async(self, log: Dict[str, Any]) -> Dict[str, Any]:
-        """Async wrapper for log analysis.
+        """Analyze log using true async LLM calls.
 
-        Currently calls sync version in executor. Will be replaced with
-        fully async version in next iteration.
+        Phase 2.1: Uses analyze_log_async for true async processing
+        without run_in_executor workarounds.
 
         Args:
             log: Log entry data
 
         Returns:
-            Analysis result
+            Analysis result with error_type, create_ticket, ticket_title, etc.
         """
-        # Import here to avoid circular dependency
-        from agent.nodes.analysis import analyze_log
-
-        # For now, run sync analysis in executor to not block
-        loop = asyncio.get_event_loop()
-
         state = {
             "log_data": log,
             "log_message": log.get("message", "")
         }
 
-        # Run sync function in thread pool executor
-        result = await loop.run_in_executor(None, analyze_log, state)
+        # True async analysis (Phase 2.1)
+        result = await analyze_log_async(state)
 
         return result
 
@@ -242,7 +244,10 @@ class AsyncLogProcessor:
         log: Dict[str, Any],
         analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle ticket creation/duplication check with async Jira searches.
+        """Handle ticket creation with true async Jira operations.
+
+        Phase 2.1: Uses create_ticket_async for true async processing
+        without run_in_executor workarounds.
 
         Args:
             log: Original log data
@@ -251,56 +256,46 @@ class AsyncLogProcessor:
         Returns:
             Ticket creation result
         """
-        # Import here to avoid circular dependency
-        from agent.jira.async_client import AsyncJiraClient
-        from agent.jira.async_match import find_similar_ticket_async, check_fingerprint_duplicate_async
-
-        # Use async Jira client for duplicate detection (the bottleneck)
-        async with AsyncJiraClient() as jira_client:
-            # Check for duplicates using async matching
-            summary = analysis.get("summary", "")
-            state = {
-                "log_data": log,
-                **analysis
-            }
-
-            # Check fingerprint cache first
-            fingerprint = analysis.get("fingerprint", "")
-            if fingerprint:
-                is_dup, existing_key = await check_fingerprint_duplicate_async(fingerprint, jira_client)
-                if is_dup:
-                    await self.stats.record_duplicate()
-                    return {
-                        "action": "duplicate",
-                        "ticket_key": existing_key,
-                        "decision": "duplicate_found",
-                        "reason": f"Fingerprint duplicate: {existing_key}"
-                    }
-
-            # Check similarity (this is the expensive Jira search operation)
-            similar_key, score, _ = await find_similar_ticket_async(summary, jira_client, state)
-            if similar_key:
-                await self.stats.record_duplicate()
-                return {
-                    "action": "duplicate",
-                    "ticket_key": similar_key,
-                    "decision": "similar_found",
-                    "reason": f"Similar ticket found (score: {score:.2f}): {similar_key}"
-                }
-
-        # No duplicate found - use sync ticket creation
-        # (Ticket creation is one API call, not the bottleneck)
-        from agent.nodes.ticket import create_ticket
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, create_ticket, state)
-
-        return {
-            "action": "created" if result.get("ticket_key") else "simulated",
-            "ticket_key": result.get("ticket_key"),
-            "decision": result.get("decision"),
-            "reason": result.get("reason")
+        # Build state for ticket creation
+        state = {
+            "log_data": log,
+            **analysis
         }
+
+        # True async ticket creation (Phase 2.1)
+        # Handles duplicate detection and ticket creation in one async flow
+        result = await create_ticket_async(state)
+
+        # Determine action from result
+        if result.get("jira_response_key") or result.get("ticket_key"):
+            return {
+                "action": "created",
+                "ticket_key": result.get("jira_response_key") or result.get("ticket_key"),
+                "decision": "ticket_created",
+                "reason": "Ticket created successfully"
+            }
+        elif "duplicate" in result.get("message", "").lower():
+            await self.stats.record_duplicate()
+            return {
+                "action": "duplicate",
+                "ticket_key": None,
+                "decision": "duplicate_found",
+                "reason": result.get("message", "Duplicate detected")
+            }
+        elif "simulated" in result.get("message", "").lower():
+            return {
+                "action": "simulated",
+                "ticket_key": None,
+                "decision": "dry_run",
+                "reason": result.get("message", "Ticket creation simulated")
+            }
+        else:
+            return {
+                "action": "skipped",
+                "ticket_key": None,
+                "decision": result.get("message", "unknown"),
+                "reason": result.get("message", "Unknown result")
+            }
 
     async def get_summary(self) -> Dict[str, Any]:
         """Get processing statistics summary.

@@ -1,0 +1,632 @@
+"""Async ticket creation module for parallel log processing.
+
+Provides true async ticket creation using AsyncJiraClient,
+with duplicate detection, validation, and audit logging.
+"""
+from __future__ import annotations
+import os
+import json
+import hashlib
+import pathlib
+import datetime
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+
+from agent.jira.async_client import AsyncJiraClient
+from agent.jira.async_match import find_similar_ticket_async, check_fingerprint_duplicate_async
+from agent.jira.utils import normalize_log_message, should_comment, update_comment_timestamp, priority_name_from_severity
+from agent.utils.logger import log_info, log_error, log_warning, log_ticket_operation, log_duplicate_detection
+from agent.config import get_config
+from agent.performance import get_performance_metrics
+
+
+_AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
+
+
+def _utcnow_iso() -> str:
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+
+def _append_audit_log(entry: dict) -> None:
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        log_warning("Failed to append audit log (async)", error=str(e))
+
+
+def _append_audit(
+    *,
+    decision: str,
+    state: Dict[str, Any],
+    fingerprint: str,
+    occ: int,
+    jira_key: Optional[str] = None,
+    duplicate: bool = False,
+    create: bool = False,
+    message: str = ""
+) -> None:
+    entry = {
+        "timestamp": _utcnow_iso(),
+        "fingerprint": fingerprint,
+        "error_type": state.get("error_type"),
+        "severity": state.get("severity"),
+        "create_ticket": bool(create),
+        "duplicate": bool(duplicate),
+        "decision": decision,
+        "existing_issue_key": jira_key,
+        "jira_key": jira_key,
+        "occurrences": occ,
+        "message": message,
+        "async": True,
+    }
+    _append_audit_log(entry)
+
+
+@dataclass
+class TicketValidationResult:
+    """Result of ticket field validation."""
+    is_valid: bool
+    title: Optional[str] = None
+    description: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+@dataclass
+class DuplicateCheckResult:
+    """Result of duplicate checking."""
+    is_duplicate: bool
+    existing_ticket_key: Optional[str] = None
+    similarity_score: Optional[float] = None
+    message: Optional[str] = None
+
+
+@dataclass
+class TicketPayload:
+    """Jira ticket payload with metadata."""
+    payload: Dict[str, Any]
+    title: str
+    description: str
+    labels: list[str]
+    fingerprint: str
+
+
+def _validate_ticket_fields(state: Dict[str, Any]) -> TicketValidationResult:
+    """Validate that required ticket fields are present and valid."""
+    log_info("Validating ticket fields (async)")
+
+    if "ticket_title" not in state or "ticket_description" not in state:
+        error_msg = "Missing LLM fields before ticket creation"
+        log_error("Ticket validation failed (async)", error=error_msg)
+        return TicketValidationResult(is_valid=False, error_message=error_msg)
+
+    title = state.get("ticket_title")
+    description = state.get("ticket_description")
+
+    if not title or not description:
+        error_msg = "Ticket title or description is empty"
+        log_error("Ticket validation failed (async)", error=error_msg)
+        return TicketValidationResult(is_valid=False, error_message=error_msg)
+
+    log_info(
+        "Ticket fields validated (async)",
+        title_preview=title[:50],
+        description_length=len(description)
+    )
+
+    return TicketValidationResult(is_valid=True, title=title, description=description)
+
+
+def _compute_fingerprint(state: Dict[str, Any]) -> str:
+    """Compute a stable fingerprint for the log entry using normalized message."""
+    log_data = state.get("log_data", {})
+    raw_msg = log_data.get('message', '')
+    norm_msg = normalize_log_message(raw_msg)
+    fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
+    return hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
+
+
+def _load_processed_fingerprints() -> set[str]:
+    """Load the set of processed fingerprints from cache."""
+    try:
+        cache_path = pathlib.Path(".agent_cache/processed_logs.json")
+        if cache_path.exists():
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data) if isinstance(data, list) else set()
+    except Exception:
+        pass
+    return set()
+
+
+def _save_processed_fingerprints(fingerprints: set[str]) -> None:
+    """Save the set of processed fingerprints to cache."""
+    try:
+        cache_path = pathlib.Path(".agent_cache/processed_logs.json")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(sorted(list(fingerprints)), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log_error("Failed to save processed fingerprints (async)", error=str(e))
+
+
+async def _check_duplicates_async(
+    state: Dict[str, Any],
+    title: str,
+    client: AsyncJiraClient
+) -> DuplicateCheckResult:
+    """Check for duplicate tickets using multiple strategies asynchronously.
+
+    Args:
+        state: Current agent state
+        title: Proposed ticket title
+        client: Async Jira client instance
+
+    Returns:
+        DuplicateCheckResult with duplicate status and details
+    """
+    log_info("Checking for duplicate tickets (async)")
+
+    # 1. Check fingerprint cache (fastest)
+    fingerprint = _compute_fingerprint(state)
+    processed = _load_processed_fingerprints()
+    created_in_run: set[str] = state.get("created_fingerprints", set())
+
+    if fingerprint in created_in_run or fingerprint in processed:
+        log_info("Duplicate found in fingerprint cache (async)", fingerprint=fingerprint)
+        log_data = state.get("log_data", {})
+        raw_msg = log_data.get('message', '')
+        norm_msg = normalize_log_message(raw_msg)
+        fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
+        occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+        _append_audit(
+            decision="duplicate-fingerprint",
+            state=state,
+            fingerprint=fingerprint,
+            occ=occ,
+            jira_key=None,
+            duplicate=True,
+            create=False,
+            message="Duplicate log skipped (fingerprint cache, async)",
+        )
+        return DuplicateCheckResult(
+            is_duplicate=True,
+            message="Log already processed previously (fingerprint match)"
+        )
+
+    # 2. Check LLM decision
+    if not state.get("create_ticket", False):
+        log_info("LLM decided not to create ticket (async)")
+        return DuplicateCheckResult(
+            is_duplicate=False,
+            message="LLM decision: do not create a ticket for this log"
+        )
+
+    # 3. Check fingerprint label in Jira (async)
+    try:
+        is_fp_dup, fp_key = await check_fingerprint_duplicate_async(fingerprint, client)
+        if is_fp_dup:
+            log_duplicate_detection(1.0, fp_key, existing_summary="fingerprint match")
+            log_data = state.get("log_data", {})
+            raw_msg = log_data.get('message', '')
+            norm_msg = normalize_log_message(raw_msg)
+            fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
+            occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+            _append_audit(
+                decision="duplicate-jira-fingerprint",
+                state=state,
+                fingerprint=fingerprint,
+                occ=occ,
+                jira_key=fp_key,
+                duplicate=True,
+                create=False,
+                message=f"Fingerprint duplicate in Jira: {fp_key}",
+            )
+            return DuplicateCheckResult(
+                is_duplicate=True,
+                existing_ticket_key=fp_key,
+                similarity_score=1.0,
+                message=f"Fingerprint duplicate in Jira: {fp_key}"
+            )
+    except Exception as e:
+        log_error("Error during async fingerprint check", error=str(e))
+
+    # 4. Check Jira for similar tickets (async)
+    try:
+        key, score, existing_summary = await find_similar_ticket_async(title, client, state)
+        if key:
+            log_duplicate_detection(score, key, existing_summary=existing_summary)
+
+            # Update fingerprint cache
+            processed.add(fingerprint)
+            _save_processed_fingerprints(processed)
+
+            log_data = state.get("log_data", {})
+            raw_msg = log_data.get('message', '')
+            norm_msg = normalize_log_message(raw_msg)
+            fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
+            occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+            _append_audit(
+                decision="duplicate-jira",
+                state=state,
+                fingerprint=fingerprint,
+                occ=occ,
+                jira_key=key,
+                duplicate=True,
+                create=False,
+                message=f"Duplicate in Jira (async): {key} - {existing_summary}",
+            )
+
+            return DuplicateCheckResult(
+                is_duplicate=True,
+                existing_ticket_key=key,
+                similarity_score=score,
+                message=f"Duplicate in Jira: {key} - {existing_summary}"
+            )
+    except Exception as e:
+        log_error("Error during async Jira duplicate check", error=str(e))
+
+    log_info("No duplicates found (async), proceeding with ticket creation")
+    return DuplicateCheckResult(is_duplicate=False)
+
+
+def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
+    """Build enhanced description with additional context."""
+    config = get_config()
+    log_data = state.get("log_data", {})
+    win = state.get("window_hours", 48)
+    raw_msg = log_data.get('message', '')
+    norm_msg = normalize_log_message(raw_msg)
+    fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
+    occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+
+    attributes = log_data.get('attributes', {})
+    request_id = attributes.get('requestId') or attributes.get('request_id') or log_data.get('requestId', '')
+    user_id = attributes.get('userId') or attributes.get('user_id') or log_data.get('userId', '')
+    error_type = attributes.get('errorType') or attributes.get('error_type') or log_data.get('errorType', '')
+
+    extra_info = f"""
+---
+Timestamp: {log_data.get('timestamp', 'N/A')}
+Logger: {log_data.get('logger', 'N/A')}
+Thread: {log_data.get('thread', 'N/A')}
+Original Log: {log_data.get('message', 'N/A')}
+Detail: {log_data.get('detail', 'N/A')}
+Occurrences in last {win}h: {occ}"""
+
+    mdc_context = []
+    if request_id:
+        mdc_context.append(f"Request ID: {request_id}")
+    if user_id:
+        mdc_context.append(f"User ID: {user_id}")
+    if error_type:
+        mdc_context.append(f"Error Type: {error_type}")
+
+    if mdc_context:
+        extra_info += "\n---\n" + "\n".join(mdc_context)
+
+    return f"{description.strip()}\n{extra_info}"
+
+
+def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
+    """Build labels for the ticket."""
+    config = get_config()
+    labels = ["datadog-log", "async-created"]
+
+    try:
+        norm_msg = normalize_log_message((state.get("log_data") or {}).get("message", ""))
+        if norm_msg:
+            loghash = hashlib.sha1(norm_msg.encode("utf-8")).hexdigest()[:12]
+            labels.append(f"loghash-{loghash}")
+    except Exception:
+        pass
+
+    etype = (state.get("error_type") or "").strip().lower()
+
+    if config.aggregate_email_not_found and etype == "email-not-found":
+        labels.append("aggregate-email-not-found")
+
+    if config.aggregate_kafka_consumer and etype == "kafka-consumer":
+        labels.append("aggregate-kafka-consumer")
+
+    return labels
+
+
+def _clean_title(title: str, error_type: Optional[str]) -> str:
+    """Clean and format the ticket title."""
+    config = get_config()
+    base_title = title.replace("**", "").strip()
+
+    if error_type == "email-not-found" and config.aggregate_email_not_found:
+        base_title = "Investigate Email Not Found errors (aggregated)"
+    elif error_type == "kafka-consumer" and config.aggregate_kafka_consumer:
+        base_title = "Investigate Kafka Consumer errors (aggregated)"
+
+    max_title = config.max_title_length
+    if len(base_title) > max_title:
+        base_title = base_title[:max_title - 1] + "..."
+
+    prefix = "[Datadog]" + (f"[{error_type}]" if error_type else "")
+    return f"{prefix} {base_title}".strip()
+
+
+def _build_jira_payload(state: Dict[str, Any], title: str, description: str) -> TicketPayload:
+    """Build the Jira ticket payload with proper formatting and labels."""
+    config = get_config()
+    log_info("Building Jira ticket payload (async)")
+
+    fingerprint = _compute_fingerprint(state)
+    full_description = _build_enhanced_description(state, description)
+    labels = _build_labels(state, fingerprint)
+    clean_title = _clean_title(title, state.get("error_type"))
+
+    payload = {
+        "fields": {
+            "project": {"key": config.jira_project_key},
+            "summary": clean_title,
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [{"type": "paragraph", "content": [{"text": full_description, "type": "text"}]}],
+            },
+            "issuetype": {"name": "Bug"},
+            "labels": labels,
+            "priority": {"name": priority_name_from_severity(state.get("severity"))},
+        }
+    }
+
+    try:
+        team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
+        team_field_value = os.getenv("JIRA_TEAM_VALUE")
+        if team_field_id and team_field_value:
+            payload["fields"][team_field_id] = [{"value": team_field_value}]
+    except Exception:
+        pass
+
+    log_info("Jira payload built (async)", title=clean_title, label_count=len(labels))
+
+    return TicketPayload(
+        payload=payload,
+        title=clean_title,
+        description=full_description,
+        labels=labels,
+        fingerprint=fingerprint
+    )
+
+
+def _is_cap_reached(state: Dict[str, Any]) -> bool:
+    """Check if the per-run ticket creation cap has been reached."""
+    config = get_config()
+    max_tickets = config.max_tickets_per_run
+    if max_tickets <= 0:
+        return False
+    return state.get("_tickets_created_in_run", 0) >= max_tickets
+
+
+async def _execute_ticket_creation_async(
+    state: Dict[str, Any],
+    payload: TicketPayload,
+    client: AsyncJiraClient
+) -> Dict[str, Any]:
+    """Execute the actual ticket creation or simulation asynchronously.
+
+    Args:
+        state: Current agent state
+        payload: Complete ticket payload
+        client: Async Jira client instance
+
+    Returns:
+        Updated state with creation results
+    """
+    config = get_config()
+    log_info("Executing ticket creation (async)")
+
+    # Check per-run cap
+    if _is_cap_reached(state):
+        cap_msg = f"Ticket creation limit reached for this run (max {config.max_tickets_per_run})"
+        log_warning("Ticket creation cap reached (async)", max_tickets=config.max_tickets_per_run)
+        _append_audit(
+            decision="cap-reached",
+            state=state,
+            fingerprint=payload.fingerprint,
+            occ=1,
+            jira_key=None,
+            duplicate=False,
+            create=False,
+            message=cap_msg,
+        )
+        return {**state, "message": cap_msg, "ticket_created": True}
+
+    auto_create = config.auto_create_ticket
+
+    if auto_create:
+        return await _create_real_ticket_async(state, payload, client)
+    else:
+        return _simulate_ticket_creation(state, payload)
+
+
+async def _create_real_ticket_async(
+    state: Dict[str, Any],
+    payload: TicketPayload,
+    client: AsyncJiraClient
+) -> Dict[str, Any]:
+    """Create a real Jira ticket asynchronously."""
+    log_ticket_operation("Creating real ticket (async)", title=payload.title)
+
+    try:
+        # Create the ticket via async client
+        result = await client.create_issue(payload.payload)
+
+        if result:
+            issue_key = result.get("key")
+            if issue_key:
+                log_ticket_operation(
+                    "Ticket created successfully (async)",
+                    ticket_key=issue_key,
+                    title=payload.title
+                )
+
+                # Update fingerprint caches
+                processed = _load_processed_fingerprints()
+                processed.add(payload.fingerprint)
+                _save_processed_fingerprints(processed)
+                state.setdefault("created_fingerprints", set()).add(payload.fingerprint)
+
+                # Increment counter
+                state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
+
+                _append_audit(
+                    decision="created",
+                    state=state,
+                    fingerprint=payload.fingerprint,
+                    occ=1,
+                    jira_key=issue_key,
+                    duplicate=False,
+                    create=True,
+                    message="Ticket created successfully (async)",
+                )
+
+                return {
+                    **state,
+                    "ticket_created": True,
+                    "jira_response_key": issue_key,
+                    "ticket_key": issue_key,
+                    "ticket_title": payload.title,
+                    "ticket_description": payload.description,
+                }
+
+        log_error("No Jira issue key found after async ticket creation")
+        return {**state, "ticket_created": True, "message": "Failed to create ticket (async)"}
+
+    except Exception as e:
+        log_error("Failed to create Jira ticket (async)", error=str(e))
+        return {**state, "ticket_created": True, "message": f"Failed to create ticket (async): {e}"}
+
+
+def _simulate_ticket_creation(state: Dict[str, Any], payload: TicketPayload) -> Dict[str, Any]:
+    """Simulate ticket creation for dry-run mode."""
+    config = get_config()
+    log_ticket_operation("Simulating ticket creation (async)", title=payload.title)
+
+    state["ticket_description"] = payload.description
+    state["ticket_title"] = payload.title
+    state["jira_payload"] = payload.payload
+
+    persist_sim = config.persist_sim_fp
+    if persist_sim:
+        processed = _load_processed_fingerprints()
+        processed.add(payload.fingerprint)
+        _save_processed_fingerprints(processed)
+
+    log_info("Ticket creation simulated (async)", title=payload.title, persist_fingerprint=persist_sim)
+    _append_audit(
+        decision="simulated",
+        state=state,
+        fingerprint=payload.fingerprint,
+        occ=1,
+        jira_key=None,
+        duplicate=False,
+        create=False,
+        message="Ticket creation simulated (dry run, async)",
+    )
+    return {**state, "ticket_created": True, "message": "Ticket creation simulated (dry run)"}
+
+
+async def create_ticket_async(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Main async ticket creation orchestrator.
+
+    This function orchestrates the ticket creation process by:
+    1. Validating required fields
+    2. Checking for duplicates (async Jira searches)
+    3. Building the Jira payload
+    4. Executing creation or simulation
+
+    Args:
+        state: Current agent state containing LLM analysis results
+
+    Returns:
+        Updated state with ticket creation results
+    """
+    metrics = get_performance_metrics()
+    metrics.start_timer("create_ticket_async")
+
+    log_ticket_operation("Starting async ticket creation workflow")
+
+    state.setdefault("_tickets_created_in_run", 0)
+
+    # 1. Validate ticket fields
+    validation = _validate_ticket_fields(state)
+    if not validation.is_valid:
+        return {**state, "message": validation.error_message, "ticket_created": True}
+
+    # 2-4. Use async Jira client for all operations
+    async with AsyncJiraClient() as client:
+        # 2. Check for duplicates
+        duplicate_check = await _check_duplicates_async(state, validation.title, client)
+        if duplicate_check.is_duplicate:
+            return {**state, "message": duplicate_check.message, "ticket_created": True}
+
+        # 3. Build Jira payload
+        payload = _build_jira_payload(state, validation.title, validation.description)
+
+        # 4. Execute ticket creation
+        result = await _execute_ticket_creation_async(state, payload, client)
+
+    duration = metrics.end_timer("create_ticket_async")
+
+    log_ticket_operation(
+        "Async ticket creation workflow completed",
+        ticket_created=result.get("ticket_created", False),
+        duration_ms=round(duration * 1000, 2)
+    )
+
+    return result
+
+
+async def create_tickets_batch_async(
+    states: list[Dict[str, Any]],
+    max_concurrent: int = 3
+) -> list[Dict[str, Any]]:
+    """Create multiple tickets concurrently.
+
+    Args:
+        states: List of states with analysis results
+        max_concurrent: Maximum concurrent ticket creation tasks
+
+    Returns:
+        List of ticket creation results
+    """
+    import asyncio
+
+    log_info("Starting batch async ticket creation", count=len(states))
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def create_with_semaphore(state: Dict[str, Any]) -> Dict[str, Any]:
+        async with semaphore:
+            return await create_ticket_async(state)
+
+    tasks = [create_with_semaphore(state) for state in states]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    valid_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            log_error(f"Batch ticket creation error for state {i}", error=str(result))
+            valid_results.append({
+                **states[i],
+                "ticket_created": True,
+                "message": f"Batch creation failed: {str(result)}"
+            })
+        else:
+            valid_results.append(result)
+
+    created_count = sum(1 for r in valid_results if r.get("jira_response_key"))
+    log_info(
+        "Batch async ticket creation completed",
+        total=len(states),
+        created=created_count
+    )
+
+    return valid_results
