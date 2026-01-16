@@ -31,6 +31,8 @@ parser.add_argument('--workers', type=int, help='Number of parallel workers for 
 parser.add_argument('--batch-size', type=int, help='Batch size for async processing (default: 10).')
 parser.add_argument('--profile', type=str, choices=['development', 'staging', 'production', 'testing'],
                     help='Configuration profile to use (overrides .env defaults)')
+parser.add_argument('--check', action='store_true',
+                    help='Run health checks to verify OpenAI, Datadog, and Jira connections, then exit.')
 
 parser.set_defaults(auto_create_ticket=os.getenv('AUTO_CREATE_TICKET', 'true').lower() == 'true')
 
@@ -54,6 +56,12 @@ if args.workers is not None:
     os.environ['ASYNC_MAX_WORKERS'] = str(args.workers)
 if args.batch_size is not None:
     os.environ['ASYNC_BATCH_SIZE'] = str(args.batch_size)
+
+# Handle --check flag: run health checks and exit
+if args.check:
+    from agent.healthcheck import run_health_checks
+    all_healthy, _ = run_health_checks(verbose=True)
+    sys.exit(0 if all_healthy else 1)
 
 from agent.datadog import get_logs
 
