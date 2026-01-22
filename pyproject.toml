@@ -1,0 +1,148 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dogcatcher-agent"
+version = "1.0.0"
+description = "LangGraph-powered agent that fetches Datadog error logs, analyzes them with LLM, and creates Jira tickets with intelligent duplicate detection"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Dogcatcher Team"}
+]
+keywords = [
+    "langgraph",
+    "datadog",
+    "jira",
+    "error-tracking",
+    "automation",
+    "llm",
+    "agent",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Bug Tracking",
+    "Topic :: System :: Logging",
+    "Topic :: System :: Monitoring",
+]
+
+dependencies = [
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.6.0",
+    "langgraph-checkpoint>=2.0.0",
+    "langgraph-prebuilt>=0.6.0",
+    "langgraph-sdk>=0.2.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "PyYAML>=6.0.0",
+    "requests>=2.30.0",
+    "tenacity>=9.0.0",
+    "rapidfuzz>=3.0.0",
+    "redis>=5.0.0",
+    "aiofiles>=24.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "black>=24.0.0",
+    "flake8>=7.0.0",
+    "mypy>=1.8.0",
+    "types-requests>=2.30.0",
+    "types-PyYAML>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/jmlaranjeira/dogcatcher-agent"
+Documentation = "https://github.com/jmlaranjeira/dogcatcher-agent#readme"
+Repository = "https://github.com/jmlaranjeira/dogcatcher-agent"
+Issues = "https://github.com/jmlaranjeira/dogcatcher-agent/issues"
+
+[project.scripts]
+dogcatcher = "main:main"
+sleuth = "sleuth.__main__:main"
+patchy = "patchy.patchy_graph:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*", "patchy*", "sleuth*", "tools*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | \.agent_cache
+)/
+'''
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "\.venv",
+    "\.agent_cache",
+    "build",
+    "dist",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Unit tests",
+    "config: Configuration tests",
+    "ticket: Ticket creation tests",
+    "performance: Performance tests",
+    "integration: Integration tests (require external services)",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["agent", "patchy", "sleuth"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
