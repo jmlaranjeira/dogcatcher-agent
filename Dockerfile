@@ -34,4 +34,4 @@ ENV PYTHONUNBUFFERED=1 \
 ENV AGENT_CACHE_DIR=/app/.agent_cache
 
 # Optional: default args; override with CMD/compose
-CMD ["python", "main.py", "--dry-run", "--env", "dev", "--service", "dehnlicense", "--hours", "24", "--limit", "50"]
+CMD ["python", "main.py", "--dry-run", "--env", "dev", "--service", "myservice", "--hours", "24", "--limit", "50"]

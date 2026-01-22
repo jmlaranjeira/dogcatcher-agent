@@ -1,7 +1,7 @@
 # Phase 2: Performance Benchmark Results
 
 **Date**: December 9, 2025
-**Service**: dehnlicense
+**Service**: myservice
 **Mode**: Dry-run (simulation)
 
 ---
@@ -20,13 +20,13 @@ Performance benchmarking of sync vs async processing modes shows:
 ### Hardware & Environment
 - **Platform**: macOS (Darwin 25.1.0)
 - **Python**: 3.11.9
-- **Service**: dehnlicense (production)
+- **Service**: myservice (production)
 - **Mode**: Dry-run (no real tickets created)
 
 ### Test Parameters
 | Parameter | Value |
 |-----------|-------|
-| **Service** | dehnlicense |
+| **Service** | myservice |
 | **Environment** | prod |
 | **Jira Project** | DDSIT |
 | **Similarity Threshold** | 0.82 |
@@ -232,9 +232,9 @@ python main.py --real --async --workers 3 --limit 100
 ### Test Execution
 ```bash
 # Run all benchmarks
-python tools/benchmark.py --service dehnlicense --hours 24 --limit 30 --workers "3,5,10"
-python tools/benchmark.py --service dehnlicense --hours 48 --limit 50 --workers "3,5"
-python tools/benchmark.py --service dehnlicense --hours 168 --limit 100 --workers "3,5"
+python tools/benchmark.py --service myservice --hours 24 --limit 30 --workers "3,5,10"
+python tools/benchmark.py --service myservice --hours 48 --limit 50 --workers "3,5"
+python tools/benchmark.py --service myservice --hours 168 --limit 100 --workers "3,5"
 ```
 
 ### Metrics Collected

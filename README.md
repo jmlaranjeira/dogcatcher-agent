@@ -90,7 +90,7 @@ Output:
 🔍 Running health checks...
   Checking OpenAI API... ✓ Connected (model: gpt-4.1-nano)
   Checking Datadog API... ✓ Connected (site: datadoghq.eu)
-  Checking Jira API... ✓ Connected (dehngroup.atlassian.net)
+  Checking Jira API... ✓ Connected (your-domain.atlassian.net)
 ✅ All services ready!
 ```
 
@@ -129,13 +129,13 @@ python main.py --profile production --async --workers 10
 
 ```bash
 # Investigate an error
-python -m sleuth "duplicate entry in license table" --service dehnlicense --hours 48
+python -m sleuth "duplicate entry in license table" --service myservice --hours 48
 
 # Preview duplicate consolidation
-python -m sleuth "duplicate entry" --service dehnlicense --consolidate --dry-run
+python -m sleuth "duplicate entry" --service myservice --consolidate --dry-run
 
 # Execute consolidation (closes duplicates, links to primary)
-python -m sleuth "duplicate entry" --service dehnlicense --consolidate
+python -m sleuth "duplicate entry" --service myservice --consolidate
 
 # With Patchy integration
 python -m sleuth "NullPointerException in UserService" --invoke-patchy
@@ -144,7 +144,7 @@ python -m sleuth "NullPointerException in UserService" --invoke-patchy
 **Sleuth Output:**
 ```
 Investigating: "duplicate entry in license table"
-Generated query: service:dehnlicense env:prod status:error "duplicate" "entry"
+Generated query: service:myservice env:prod status:error "duplicate" "entry"
 
 Logs found: 22
 
@@ -168,7 +168,7 @@ Suggested fix:
 export GITHUB_TOKEN=ghp_xxx
 
 python -m patchy.patchy_graph \
-  --service dehnlicense \
+  --service myservice \
   --error-type npe \
   --loghash 4c452e2d1c49 \
   --draft true

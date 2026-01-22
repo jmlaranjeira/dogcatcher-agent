@@ -15,7 +15,7 @@
         "tickets_created": 0,
         "duplicates_found": 0
       },
-      "output_sample": "2025-12-09 11:47:24 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": false,\n  \"async_max_workers\": null,\n  ",
+      "output_sample": "2025-12-09 11:47:24 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"myservice\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": false,\n  \"async_max_workers\": null,\n  ",
       "run": 1
     },
     {
@@ -32,7 +32,7 @@
         "tickets_created": 0,
         "duplicates_found": 0
       },
-      "output_sample": "2025-12-09 11:47:38 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 3,\n  \"log",
+      "output_sample": "2025-12-09 11:47:38 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"myservice\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 3,\n  \"log",
       "run": 1
     },
     {
@@ -49,7 +49,7 @@
         "tickets_created": 0,
         "duplicates_found": 0
       },
-      "output_sample": "2025-12-09 11:47:41 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 5,\n  \"log",
+      "output_sample": "2025-12-09 11:47:41 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"myservice\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 5,\n  \"log",
       "run": 1
     },
     {
@@ -66,7 +66,7 @@
         "tickets_created": 0,
         "duplicates_found": 0
       },
-      "output_sample": "2025-12-09 11:47:53 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"dehnlicense\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 10,\n  \"lo",
+      "output_sample": "2025-12-09 11:47:53 - dogcatcher-agent - INFO - Configuration loaded | Context: {\n  \"openai_model\": \"gpt-4o-mini\",\n  \"datadog_site\": \"datadoghq.eu\",\n  \"datadog_service\": \"myservice\",\n  \"datadog_env\": \"prod\",\n  \"jira_project\": \"DDSIT\",\n  \"auto_create\": false,\n  \"max_tickets\": 3,\n  \"similarity_threshold\": 0.82,\n  \"cache_backend\": \"memory\",\n  \"cache_ttl_seconds\": 3600,\n  \"circuit_breaker_enabled\": true,\n  \"fallback_analysis_enabled\": true,\n  \"async_enabled\": true,\n  \"async_max_workers\": 10,\n  \"lo",
       "run": 1
     }
   ]

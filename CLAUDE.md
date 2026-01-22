@@ -42,7 +42,7 @@ langgraph dev --studio-url http://127.0.0.1:8123
 python tools/report.py --since-hours 24
 
 # Run Patchy (self-healing PR bot)
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49
+python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49
 
 # Run Sleuth (error investigator)
 python -m sleuth "user without role after registration"

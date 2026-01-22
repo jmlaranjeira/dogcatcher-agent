@@ -1,7 +1,7 @@
 {
-  "dehnlicense": {
-    "owner": "dehn",
-    "name": "dehn-project-license-manager-service",
+  "myservice": {
+    "owner": "your-org",
+    "name": "example-backend-service",
     "default_branch": "develop",
     "allowed_paths": ["src/main/java/"],
     "lint_cmd": "",

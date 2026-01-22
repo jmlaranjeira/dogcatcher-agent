@@ -8,18 +8,18 @@ Tip: Use python-dotenv to load .env automatically when running locally.
 
 ### Local (dry-run)
 ```bash
-python main.py --dry-run --env dev --service dehnlicense --hours 24 --limit 50
+python main.py --dry-run --env dev --service myservice --hours 24 --limit 50
 ```
 
 ### Local (real, con límite por ejecución)
 ```bash
-python main.py --real --env prod --service dehnlicense --hours 24 --limit 5 --max-tickets 3
+python main.py --real --env prod --service myservice --hours 24 --limit 5 --max-tickets 3
 ```
 
 ### Local (parámetros típicos)
 ```bash
-python main.py --dry-run --env dev --service dehnlicense --hours 48 --limit 100
-python main.py --real    --env prod --service dehnlicense --hours 48 --limit 100 --max-tickets 5
+python main.py --dry-run --env dev --service myservice --hours 48 --limit 100
+python main.py --real    --env prod --service myservice --hours 48 --limit 100 --max-tickets 5
 ```
 
 ### Reporte de auditoría
@@ -38,7 +38,7 @@ Requiere `GITHUB_TOKEN` y `patchy/repos.json` configurado.
 Para cargar .env automáticamente:
 ```bash
 python -m dotenv -f .env run -- \
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49 --draft true
+python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49 --draft true
 ```
 
 ### Casos rápidos (local)
@@ -47,7 +47,7 @@ python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4
 ```bash
 python -m dotenv -f .env run -- \
 python -m patchy.patchy_graph \
-  --service dehnlicense \
+  --service myservice \
   --error-type npe \
   --jira DPRO-2518 \
   --loghash 09e1ef6cd94b \
@@ -58,7 +58,7 @@ python -m patchy.patchy_graph \
 ```bash
 python -m dotenv -f .env run -- \
 python -m patchy.patchy_graph \
-  --service dehnlicense \
+  --service myservice \
   --error-type "price missing" \
   --hint priceMissing \
   --stacktrace "src/main/java/com/acme/Foo.java:123" \
@@ -71,7 +71,7 @@ python -m patchy.patchy_graph \
 - PR mínima sin Jira:
 ```bash
 python -m dotenv -f .env run -- \
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49 --draft true
+python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49 --draft true
 ```
 
 ### Modos de edición (`--mode`)
@@ -82,7 +82,7 @@ python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4
 ### Docker compose (Patchy)
 ```bash
 docker compose run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN patchy \
-  python -m patchy.patchy_graph --service dehnlicense --error-type npe --loghash 4c452e2d1c49 --draft true
+  python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49 --draft true
 ```
 
 ## Tips

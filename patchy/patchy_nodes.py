@@ -121,8 +121,8 @@ def _logger_to_filepath(logger_name: str, repo_dir: Path) -> tuple[str | None, i
     """Convert a Java/Kotlin logger name to a file path.
 
     Examples:
-        org.devpoint.dehnlicense.controller.license.LicensePurchaseController
-        -> src/main/java/org/devpoint/dehnlicense/controller/license/LicensePurchaseController.java
+        com.example.myservice.controller.license.LicensePurchaseController
+        -> src/main/java/com/example/myservice/controller/license/LicensePurchaseController.java
     """
     if not logger_name:
         return None, None
@@ -260,7 +260,7 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Strategy 3: Try to extract logger from hint if it looks like a fully qualified class name
     if not fault_file and hint and '.' in hint and hint[0].islower():
-        # Looks like a package name (e.g., org.devpoint.dehnlicense.controller.LicensePurchaseController)
+        # Looks like a package name (e.g., com.example.myservice.controller.LicensePurchaseController)
         fault_file, fault_line = _logger_to_filepath(hint, repo_dir)
         if fault_file:
             append_audit({

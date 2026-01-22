@@ -109,7 +109,7 @@ class TestDatadogConfig:
         config = DatadogConfig(api_key="test-api-key", app_key="test-app-key")
         
         assert config.site == "datadoghq.eu"
-        assert config.service == "dehnlicense"
+        assert config.service == "myservice"
         assert config.env == "dev"
         assert config.hours_back == 24
         assert config.limit == 50
