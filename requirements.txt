@@ -44,7 +44,6 @@ zstandard==0.23.0
 rapidfuzz==3.9.6
 # Phase 1 improvements - persistent caching and resilience
 redis>=5.0.0
-aioredis>=2.0.0
 PyYAML>=6.0.0
 # Phase 2 improvements - async parallel processing
 aiofiles>=24.0.0

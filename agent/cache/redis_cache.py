@@ -9,7 +9,7 @@ import json
 from .base import CacheBackend, CacheStats
 
 try:
-    import aioredis
+    import redis.asyncio as aioredis
 
     REDIS_AVAILABLE = True
 except ImportError:
@@ -28,7 +28,7 @@ class RedisCacheBackend(CacheBackend):
         super().__init__(name)
 
         if not REDIS_AVAILABLE:
-            raise ImportError("aioredis is required for Redis cache backend")
+            raise ImportError("redis package is required for Redis cache backend")
 
         self.redis_url = redis_url
         self.key_prefix = key_prefix
@@ -253,7 +253,7 @@ class RedisCacheBackend(CacheBackend):
         """Close Redis connection."""
         if self.redis:
             try:
-                await self.redis.close()
+                await self.redis.aclose()
             except Exception:
                 pass
             finally:

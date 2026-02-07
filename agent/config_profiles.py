@@ -8,11 +8,16 @@ Supports YAML profiles with the following precedence:
 4. CLI argument overrides
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 import yaml
 
 from agent.utils.logger import log_info, log_warning, log_error
+
+if TYPE_CHECKING:
+    from agent.config import Config
 
 PROFILES_DIR = Path(__file__).parent.parent / "config" / "profiles"
 VALID_PROFILES = {"development", "staging", "production", "testing"}

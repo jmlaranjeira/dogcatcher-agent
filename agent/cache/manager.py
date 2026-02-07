@@ -68,7 +68,7 @@ class CacheManager:
         try:
             if backend_type == CacheBackendType.REDIS.value:
                 if not REDIS_AVAILABLE:
-                    log_warning("Redis not available, aioredis not installed")
+                    log_warning("Redis not available, redis package not installed")
                     return None
 
                 redis_url = self.config.get("redis_url", "redis://localhost:6379")
