@@ -3,6 +3,7 @@
 Provides async functions to retrieve logs from the Datadog Logs v2 Search API,
 with environment-driven defaults and safe pagination using connection pooling.
 """
+
 from __future__ import annotations
 import json
 from typing import List, Dict, Any, Optional, Tuple
@@ -29,10 +30,7 @@ class AsyncDatadogClient:
         """Context manager entry - creates HTTP client."""
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.config.datadog_timeout),
-            limits=httpx.Limits(
-                max_keepalive_connections=10,
-                max_connections=20
-            )
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
         )
         return self
 
@@ -60,11 +58,13 @@ class AsyncDatadogClient:
         Returns:
             True if all required config present
         """
-        return all([
-            self.config.datadog_api_key,
-            self.config.datadog_app_key,
-            self.config.datadog_site,
-        ])
+        return all(
+            [
+                self.config.datadog_api_key,
+                self.config.datadog_app_key,
+                self.config.datadog_site,
+            ]
+        )
 
     async def fetch_page(
         self,
@@ -72,7 +72,7 @@ class AsyncDatadogClient:
         start: datetime,
         end: datetime,
         limit: int,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Fetch a single page of logs from Datadog.
 
@@ -108,18 +108,16 @@ class AsyncDatadogClient:
             payload["page"]["cursor"] = cursor
 
         try:
-            resp = await self._client.post(
-                url,
-                json=payload,
-                headers=self._headers()
-            )
+            resp = await self._client.post(url, json=payload, headers=self._headers())
             resp.raise_for_status()
             data = resp.json()
 
             # Extract next cursor
             next_cursor = None
             try:
-                next_cursor = ((data or {}).get("meta") or {}).get("page", {}).get("after")
+                next_cursor = (
+                    ((data or {}).get("meta") or {}).get("page", {}).get("after")
+                )
             except Exception:
                 next_cursor = None
 
@@ -147,7 +145,9 @@ def _coerce_detail(value: Any, fallback: str = "no detailed log") -> str:
     return str(value)
 
 
-def _build_dd_query(service: str, env: str, statuses_csv: str, extra_csv: str, extra_mode: str) -> Tuple[str, str]:
+def _build_dd_query(
+    service: str, env: str, statuses_csv: str, extra_csv: str, extra_mode: str
+) -> Tuple[str, str]:
     """Build Datadog Logs query string and return (query, extra_clause).
 
     `extra_csv` supports comma-separated terms and `extra_mode` combines them as
@@ -182,8 +182,14 @@ def _parse_log_entry(log: Dict[str, Any]) -> Dict[str, Any]:
     """
     attr = log.get("attributes", {})
     msg = attr.get("message", "<no message>")
-    logger_name = attr.get("attributes", {}).get("logger", {}).get("name", "unknown.logger")
-    thread_name = attr.get("attributes", {}).get("logger", {}).get("thread_name", "unknown.thread")
+    logger_name = (
+        attr.get("attributes", {}).get("logger", {}).get("name", "unknown.logger")
+    )
+    thread_name = (
+        attr.get("attributes", {})
+        .get("logger", {})
+        .get("thread_name", "unknown.thread")
+    )
     logger_name = str(logger_name) if logger_name is not None else "unknown.logger"
     thread_name = str(thread_name) if thread_name is not None else "unknown.thread"
 
@@ -206,7 +212,7 @@ async def get_logs_async(
     service: Optional[str] = None,
     env: Optional[str] = None,
     hours_back: Optional[int] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Fetch error logs from Datadog asynchronously.
 
@@ -235,7 +241,7 @@ async def get_logs_async(
         env=env,
         hours_back=hours_back,
         limit=limit,
-        max_pages=config.datadog_max_pages
+        max_pages=config.datadog_max_pages,
     )
 
     now = datetime.utcnow()
@@ -261,11 +267,7 @@ async def get_logs_async(
         while True:
             page += 1
             data, cursor = await client.fetch_page(
-                query=dd_query,
-                start=start,
-                end=now,
-                limit=limit,
-                cursor=cursor
+                query=dd_query, start=start, end=now, limit=limit, cursor=cursor
             )
 
             if not data:
@@ -279,20 +281,18 @@ async def get_logs_async(
 
         # If no results and we used an extra clause, retry once without it
         if not results and extra_clause:
-            log_info("No results with extra clause; retrying once without DATADOG_QUERY_EXTRA (async)")
+            log_info(
+                "No results with extra clause; retrying once without DATADOG_QUERY_EXTRA (async)"
+            )
 
             simple_query = f"service:{service} env:{env} status:error"
             data_no_extra, _ = await client.fetch_page(
-                query=simple_query,
-                start=start,
-                end=now,
-                limit=limit,
-                cursor=None
+                query=simple_query, start=start, end=now, limit=limit, cursor=None
             )
             log_info(
                 "Fallback query results (async)",
                 logs_found=len(data_no_extra),
-                suggestion="relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate"
+                suggestion="relax DATADOG_QUERY_EXTRA or set DATADOG_QUERY_EXTRA_MODE=OR if appropriate",
             )
 
     # End performance timing
@@ -300,7 +300,7 @@ async def get_logs_async(
     log_info(
         "Datadog logs collected (async)",
         total_logs=len(results),
-        duration_ms=round(duration * 1000, 2)
+        duration_ms=round(duration * 1000, 2),
     )
 
     return results
@@ -310,7 +310,7 @@ async def get_logs_batch_async(
     services: List[str],
     env: Optional[str] = None,
     hours_back: Optional[int] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Fetch logs for multiple services concurrently.
 
@@ -328,7 +328,9 @@ async def get_logs_batch_async(
     log_info("Starting batch async log fetch", service_count=len(services))
 
     async def fetch_service(svc: str) -> Tuple[str, List[Dict[str, Any]]]:
-        logs = await get_logs_async(service=svc, env=env, hours_back=hours_back, limit=limit)
+        logs = await get_logs_async(
+            service=svc, env=env, hours_back=hours_back, limit=limit
+        )
         return svc, logs
 
     tasks = [fetch_service(svc) for svc in services]
@@ -351,7 +353,9 @@ async def fetch_logs_async(
     service: Optional[str] = None,
     env: Optional[str] = None,
     hours_back: Optional[int] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Alias for get_logs_async for backward compatibility."""
-    return await get_logs_async(service=service, env=env, hours_back=hours_back, limit=limit)
+    return await get_logs_async(
+        service=service, env=env, hours_back=hours_back, limit=limit
+    )

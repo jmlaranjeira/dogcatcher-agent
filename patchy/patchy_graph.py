@@ -25,15 +25,30 @@ def build_graph():
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Patchy (🩹🤖) – minimal draft PR flow")
+    parser = argparse.ArgumentParser(
+        description="Patchy (🩹🤖) – minimal draft PR flow"
+    )
     parser.add_argument("--service", required=True)
     parser.add_argument("--error-type", dest="error_type", default="unknown")
     parser.add_argument("--loghash", default="")
     parser.add_argument("--jira", default="")
-    parser.add_argument("--stacktrace", default="", help="Optional stacktrace to locate the faulted file/line")
-    parser.add_argument("--logger", default="", help="Logger name (e.g., com.example.myservice.controller.LicensePurchaseController)")
+    parser.add_argument(
+        "--stacktrace",
+        default="",
+        help="Optional stacktrace to locate the faulted file/line",
+    )
+    parser.add_argument(
+        "--logger",
+        default="",
+        help="Logger name (e.g., com.example.myservice.controller.LicensePurchaseController)",
+    )
     parser.add_argument("--hint", default="", help="Optional search hint (symbol/text)")
-    parser.add_argument("--mode", default="auto", choices=["auto", "fix", "note"], help="Mode: auto (try fix, fallback to note), fix (only fix), note (only note)")
+    parser.add_argument(
+        "--mode",
+        default="auto",
+        choices=["auto", "fix", "note"],
+        help="Mode: auto (try fix, fallback to note), fix (only fix), note (only note)",
+    )
     parser.add_argument("--draft", default="true")
     args = parser.parse_args()
 
@@ -61,5 +76,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

@@ -60,7 +60,7 @@ def _format_output(result: Dict[str, Any], jira_mode: bool = False) -> str:
     # Query info
     query = result.get("query", "")
     dd_query = result.get("dd_query", "")
-    lines.append(f"Investigating: \"{query}\"")
+    lines.append(f'Investigating: "{query}"')
     if jira_mode:
         lines.append(f"Mode: Jira search (--jira)")
     lines.append(f"Generated query: {dd_query}")
@@ -151,68 +151,65 @@ Examples:
   python -m sleuth "timeout errors in payment service" --service payment-api
   python -m sleuth "database connection errors" --hours 48 --env prod
   python -m sleuth "authentication failures" --no-patchy
-        """
+        """,
     )
     parser.add_argument(
         "query",
         nargs="+",
-        help="Natural language description of the error to investigate"
+        help="Natural language description of the error to investigate",
     )
     parser.add_argument(
         "--service",
         default=None,
-        help="Service name filter (optional, can be inferred from query)"
+        help="Service name filter (optional, can be inferred from query)",
     )
     parser.add_argument(
         "--env",
         default=None,
-        help="Environment filter (default: from config, usually 'prod')"
+        help="Environment filter (default: from config, usually 'prod')",
     )
     parser.add_argument(
-        "--hours",
-        type=int,
-        default=24,
-        help="Hours to look back (default: 24)"
+        "--hours", type=int, default=24, help="Hours to look back (default: 24)"
     )
     parser.add_argument(
         "--no-patchy",
         action="store_true",
-        help="Don't suggest automatic fixes via Patchy"
+        help="Don't suggest automatic fixes via Patchy",
     )
     parser.add_argument(
         "--invoke-patchy",
         action="store_true",
-        help="Automatically invoke Patchy if a fix is suggested"
+        help="Automatically invoke Patchy if a fix is suggested",
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Output raw JSON result instead of formatted text"
+        help="Output raw JSON result instead of formatted text",
     )
     parser.add_argument(
         "--all-status",
         action="store_true",
-        help="Search all log statuses, not just errors"
+        help="Search all log statuses, not just errors",
     )
     parser.add_argument(
         "--consolidate",
         action="store_true",
-        help="Consolidate duplicate tickets (close duplicates and link to primary)"
+        help="Consolidate duplicate tickets (close duplicates and link to primary)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show what would be consolidated without making changes"
+        help="Show what would be consolidated without making changes",
     )
     parser.add_argument(
         "--jira",
         action="store_true",
-        help="Search Jira directly instead of Datadog logs (faster for finding duplicate tickets)"
+        help="Search Jira directly instead of Datadog logs (faster for finding duplicate tickets)",
     )
     parser.add_argument(
         "--status",
         default=None,
-        help="Filter tickets by status (e.g., 'open', 'done', 'tested'). Only works with --jira"
+        help="Filter tickets by status (e.g., 'open', 'done', 'tested'). Only works with --jira",
     )
 
     args = parser.parse_args()
@@ -248,7 +245,9 @@ Examples:
     if args.consolidate:
         tickets = result.get("related_tickets", [])
         if len(tickets) < 2:
-            print(f"\nNot enough related tickets to consolidate (found {len(tickets)}, need at least 2)")
+            print(
+                f"\nNot enough related tickets to consolidate (found {len(tickets)}, need at least 2)"
+            )
         elif args.dry_run:
             # Sort by key to show what would happen
             def ticket_number(t):
@@ -256,12 +255,21 @@ Examples:
                     return int(t.get("key", "").split("-")[-1])
                 except (ValueError, IndexError):
                     return 999999
+
             sorted_tickets = sorted(tickets, key=ticket_number)
             primary = sorted_tickets[0]
             duplicates = sorted_tickets[1:]
 
             # Separate open vs already-closed tickets
-            closed_statuses = {"done", "closed", "resolved", "tested", "won't do", "won't fix", "cancelled"}
+            closed_statuses = {
+                "done",
+                "closed",
+                "resolved",
+                "tested",
+                "won't do",
+                "won't fix",
+                "cancelled",
+            }
             to_close = []
             already_closed = []
             for dup in duplicates:
@@ -276,14 +284,16 @@ Examples:
             if to_close:
                 print(f"  Would close ({len(to_close)}):")
                 for dup in to_close:
-                    status = dup.get('status', '')
-                    print(f"    - {dup['key']} ({status}) - {dup.get('summary', '')[:40]}")
+                    status = dup.get("status", "")
+                    print(
+                        f"    - {dup['key']} ({status}) - {dup.get('summary', '')[:40]}"
+                    )
             else:
                 print("  No open tickets to close.")
             if already_closed:
                 print(f"  Already closed ({len(already_closed)}) - will skip:")
                 for dup in already_closed:
-                    status = dup.get('status', '')
+                    status = dup.get("status", "")
                     print(f"    - {dup['key']} ({status})")
         else:
             print(f"\nConsolidating {len(tickets)} related tickets...")
@@ -293,13 +303,16 @@ Examples:
                 print(f"Primary ticket: {result.get('primary_ticket')}")
                 print(f"Closed tickets: {', '.join(result.get('closed_tickets', []))}")
             if result.get("skipped_closed"):
-                print(f"Skipped (already closed): {', '.join(result.get('skipped_closed', []))}")
+                print(
+                    f"Skipped (already closed): {', '.join(result.get('skipped_closed', []))}"
+                )
             if result.get("consolidation_errors"):
                 print(f"Errors: {result.get('consolidation_errors')}")
 
     # Output results
     if args.json:
         import json
+
         # Filter out internal keys
         output = {k: v for k, v in result.items() if not k.startswith("_")}
         print(json.dumps(output, indent=2, default=str))

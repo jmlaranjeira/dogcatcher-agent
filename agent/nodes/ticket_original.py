@@ -1,4 +1,5 @@
 """Ticket orchestration node (create_ticket, helpers)."""
+
 from typing import Dict, Any, Set as _Set
 import os
 import json
@@ -6,9 +7,16 @@ import hashlib
 import pathlib
 import datetime
 
-from agent.jira import create_ticket as create_jira_ticket, find_similar_ticket, comment_on_issue
+from agent.jira import (
+    create_ticket as create_jira_ticket,
+    find_similar_ticket,
+    comment_on_issue,
+)
 from agent.jira.utils import normalize_log_message as _normalize_log_message
-from agent.jira.utils import should_comment as _should_comment, update_comment_timestamp as _touch_comment
+from agent.jira.utils import (
+    should_comment as _should_comment,
+    update_comment_timestamp as _touch_comment,
+)
 from agent.jira.utils import priority_name_from_severity as _priority_name_from_severity
 
 # Module-level constants
@@ -16,9 +24,11 @@ MAX_TITLE = 120
 
 from datetime import timezone as _tz
 
+
 def _utcnow_iso() -> str:
     """UTC timestamp in ISO 8601 with timezone info."""
     return datetime.datetime.now(_tz.utc).isoformat()
+
 
 def _map_severity_from_env(error_type: str, current: str) -> str:
     """Optionally override severity via SEVERITY_RULES_JSON mapping."""
@@ -46,7 +56,11 @@ def _maybe_escalate_severity_by_occurrences(current_sev: str, occ: int) -> str:
     - OCC_ESCALATE_TO (one of low|medium|high, default: high)
     """
     try:
-        enabled = (os.getenv("OCC_ESCALATE_ENABLED", "false") or "").lower() in ("1", "true", "yes")
+        enabled = (os.getenv("OCC_ESCALATE_ENABLED", "false") or "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         threshold = int(os.getenv("OCC_ESCALATE_THRESHOLD", "10") or "10")
         target = (os.getenv("OCC_ESCALATE_TO", "high") or "high").strip().lower()
     except Exception:
@@ -63,7 +77,18 @@ def _maybe_escalate_severity_by_occurrences(current_sev: str, occ: int) -> str:
 
 # === Patch: Insert new helper functions ===
 
-def _append_audit(*, decision: str, state: Dict[str, Any], fingerprint: str, occ: int, jira_key: str | None = None, duplicate: bool = False, create: bool = False, message: str = "") -> None:
+
+def _append_audit(
+    *,
+    decision: str,
+    state: Dict[str, Any],
+    fingerprint: str,
+    occ: int,
+    jira_key: str | None = None,
+    duplicate: bool = False,
+    create: bool = False,
+    message: str = "",
+) -> None:
     entry = {
         "timestamp": _utcnow_iso(),
         "fingerprint": fingerprint,
@@ -80,7 +105,9 @@ def _append_audit(*, decision: str, state: Dict[str, Any], fingerprint: str, occ
     _append_audit_log(entry)
 
 
-def _maybe_comment_duplicate(issue_key: str, score: float, log_data: Dict[str, Any], win: int, occ: int) -> None:
+def _maybe_comment_duplicate(
+    issue_key: str, score: float, log_data: Dict[str, Any], win: int, occ: int
+) -> None:
     if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() not in ("1", "true", "yes"):
         return
     try:
@@ -99,8 +126,7 @@ def _maybe_comment_duplicate(issue_key: str, score: float, log_data: Dict[str, A
 
 
 def _build_extra_info(log_data: Dict[str, Any], win: int, occ: int) -> str:
-    return (
-        f"""
+    return f"""
     ---
     🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
     🧩 Logger: {log_data.get('logger', 'N/A')}
@@ -109,28 +135,43 @@ def _build_extra_info(log_data: Dict[str, Any], win: int, occ: int) -> str:
     🔍 Detail: {log_data.get('detail', 'N/A')}
     📈 Occurrences in last {win}h: {occ}
     """.strip()
-    )
 
 
-def _build_labels_and_title(etype: str, title: str, norm_msg: str | None) -> tuple[list[str], str]:
+def _build_labels_and_title(
+    etype: str, title: str, norm_msg: str | None
+) -> tuple[list[str], str]:
     labels: list[str] = ["datadog-log"]
     if norm_msg:
-        loghash = hashlib.sha1(norm_msg.encode("utf-8")).hexdigest()[:12]
+        loghash = hashlib.sha1(
+            norm_msg.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:12]
         labels.append(f"loghash-{loghash}")
 
     base_title = title.replace("**", "")
 
-    aggregate_blob = os.getenv("AGGREGATE_BLOB_NOT_FOUND", "true").lower() in ("1", "true", "yes")
+    aggregate_blob = os.getenv("AGGREGATE_BLOB_NOT_FOUND", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if aggregate_blob and etype == "blob-not-found":
         base_title = "Investigate Blob Not Found errors (aggregated)"
         labels.append("aggregate-blob-not-found")
 
-    aggregate_email = os.getenv("AGGREGATE_EMAIL_NOT_FOUND", "false").lower() in ("1", "true", "yes")
+    aggregate_email = os.getenv("AGGREGATE_EMAIL_NOT_FOUND", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if aggregate_email and etype == "email-not-found":
         base_title = "Investigate Email Not Found errors (aggregated)"
         labels.append("aggregate-email-not-found")
 
-    aggregate_kafka = os.getenv("AGGREGATE_KAFKA_CONSUMER", "false").lower() in ("1", "true", "yes")
+    aggregate_kafka = os.getenv("AGGREGATE_KAFKA_CONSUMER", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if aggregate_kafka and etype == "kafka-consumer":
         base_title = "Investigate Kafka Consumer errors (aggregated)"
         labels.append("aggregate-kafka-consumer")
@@ -151,9 +192,7 @@ def _build_payload(clean_title: str, full_description: str, severity: str) -> di
         "content": [
             {
                 "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": full_description}
-                ],
+                "content": [{"type": "text", "text": full_description}],
             }
         ],
     }
@@ -166,8 +205,16 @@ def _build_payload(clean_title: str, full_description: str, severity: str) -> di
         }
     }
 
-def _do_simulation(state: Dict[str, Any], clean_title: str, full_description: str, payload: dict,
-                   fingerprint: str, occ: int, processed: _Set[str]) -> Dict[str, Any]:
+
+def _do_simulation(
+    state: Dict[str, Any],
+    clean_title: str,
+    full_description: str,
+    payload: dict,
+    fingerprint: str,
+    occ: int,
+    processed: _Set[str],
+) -> Dict[str, Any]:
     # Simulation mode: do not create ticket, just print payload info
     print("\n🧪 Simulated Ticket Creation (AUTO_CREATE_TICKET is false)...")
     print(f"📌 Title      : {clean_title}")
@@ -180,8 +227,16 @@ def _do_simulation(state: Dict[str, Any], clean_title: str, full_description: st
         processed.add(state["log_fingerprint"])
         _save_processed_fingerprints(processed)
 
-    _append_audit(decision="simulated", state=state, fingerprint=fingerprint, occ=occ, jira_key=None,
-                  duplicate=False, create=False, message="Ticket creation simulated (dry run)")
+    _append_audit(
+        decision="simulated",
+        state=state,
+        fingerprint=fingerprint,
+        occ=occ,
+        jira_key=None,
+        duplicate=False,
+        create=False,
+        message="Ticket creation simulated (dry run)",
+    )
 
     state["message"] = (
         f"🧪 Simulation only (no ticket created):\n📌 Title: {clean_title}\n📝 Description: {full_description}"
@@ -189,14 +244,34 @@ def _do_simulation(state: Dict[str, Any], clean_title: str, full_description: st
     return state
 
 
-def _do_auto_create(state: Dict[str, Any], clean_title: str, full_description: str, payload: dict,
-                    fingerprint: str, occ: int, processed: _Set[str], max_tickets: int) -> Dict[str, Any]:
+def _do_auto_create(
+    state: Dict[str, Any],
+    clean_title: str,
+    full_description: str,
+    payload: dict,
+    fingerprint: str,
+    occ: int,
+    processed: _Set[str],
+    max_tickets: int,
+) -> Dict[str, Any]:
     # Enforce per-run cap only for real creation
     if max_tickets > 0 and state.get("_tickets_created_in_run", 0) >= max_tickets:
-        print(f"🔔 Ticket creation limit reached for this run (max {max_tickets}). Skipping.")
-        _append_audit(decision="cap-reached", state=state, fingerprint=fingerprint, occ=occ, jira_key=None,
-                      duplicate=False, create=False, message=f"Per-run ticket cap reached ({max_tickets})")
-        state["message"] = f"⚠️ Ticket creation limit reached for this run (max {max_tickets})."
+        print(
+            f"🔔 Ticket creation limit reached for this run (max {max_tickets}). Skipping."
+        )
+        _append_audit(
+            decision="cap-reached",
+            state=state,
+            fingerprint=fingerprint,
+            occ=occ,
+            jira_key=None,
+            duplicate=False,
+            create=False,
+            message=f"Per-run ticket cap reached ({max_tickets})",
+        )
+        state["message"] = (
+            f"⚠️ Ticket creation limit reached for this run (max {max_tickets})."
+        )
         state["ticket_created"] = True
         return state
 
@@ -213,9 +288,19 @@ def _do_auto_create(state: Dict[str, Any], clean_title: str, full_description: s
             if state.get("log_fingerprint"):
                 processed.add(state["log_fingerprint"])
                 _save_processed_fingerprints(processed)
-            state["_tickets_created_in_run"] = state.get("_tickets_created_in_run", 0) + 1
-            _append_audit(decision="created", state=state, fingerprint=fingerprint, occ=occ, jira_key=issue_key,
-                          duplicate=False, create=True, message="Ticket created successfully")
+            state["_tickets_created_in_run"] = (
+                state.get("_tickets_created_in_run", 0) + 1
+            )
+            _append_audit(
+                decision="created",
+                state=state,
+                fingerprint=fingerprint,
+                occ=occ,
+                jira_key=issue_key,
+                duplicate=False,
+                create=True,
+                message="Ticket created successfully",
+            )
             state["message"] = (
                 f"✅ Ticket created:\n📌 Title: {clean_title}\n📝 Description: {full_description}"
             )
@@ -226,6 +311,7 @@ def _do_auto_create(state: Dict[str, Any], clean_title: str, full_description: s
     except Exception as e:
         print(f"❌ Failed to create Jira ticket due to unexpected error: {e}")
     return state
+
 
 # Local caches/paths used by ticket creation
 _CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
@@ -253,11 +339,12 @@ def _append_audit_log(entry: dict) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-
-
 # --- Additional helpers to reduce create_ticket complexity ---
 
-def _validate_and_preview(state: Dict[str, Any]) -> tuple[bool, Dict[str, Any] | None, str | None, str | None]:
+
+def _validate_and_preview(
+    state: Dict[str, Any],
+) -> tuple[bool, Dict[str, Any] | None, str | None, str | None]:
     """Ensure LLM fields exist and print a short preview. Returns
     (ok, early_return_state, title, description).
     """
@@ -276,31 +363,44 @@ def _validate_and_preview(state: Dict[str, Any]) -> tuple[bool, Dict[str, Any] |
         print(msg)
         return False, {**state, "message": msg, "ticket_created": True}, None, None
 
-    preview = description[:160] + ("…" if description and len(description) > 160 else "")
+    preview = description[:160] + (
+        "…" if description and len(description) > 160 else ""
+    )
     print(f"📝 Description to create: {preview}")
 
     if not title or not description:
-        return False, {
-            **state,
-            "message": "⚠️ Ticket title or description missing. Ticket not created.",
-            "ticket_created": True,
-        }, None, None
+        return (
+            False,
+            {
+                **state,
+                "message": "⚠️ Ticket title or description missing. Ticket not created.",
+                "ticket_created": True,
+            },
+            None,
+            None,
+        )
 
     return True, None, title, description
 
 
-def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tuple[str, str, _Set[str], int, int, str]:
+def _prepare_context(
+    state: Dict[str, Any], title: str, description: str
+) -> tuple[str, str, _Set[str], int, int, str]:
     """Compute severity override, fingerprint + processed set, occurrences/window
     and return (fingerprint, full_description, processed, occ, win, fp_source).
     """
     log_data = state.get("log_data", {})
 
     # Optional severity override and occurrence-based escalation
-    state["severity"] = _map_severity_from_env(state.get("error_type"), state.get("severity"))
+    state["severity"] = _map_severity_from_env(
+        state.get("error_type"), state.get("severity")
+    )
 
     # Stable fingerprint across runs
     fp_source = f"{log_data.get('logger','')}|{log_data.get('thread','')}|{log_data.get('message','')}"
-    fingerprint = hashlib.sha1(fp_source.encode("utf-8")).hexdigest()[:12]
+    fingerprint = hashlib.sha1(
+        fp_source.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:12]
     processed = _load_processed_fingerprints()
 
     # Occurrence stats for description/comments
@@ -308,7 +408,9 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     win = state.get("window_hours", 48)
 
     # Occurrence-based escalation (optional)
-    state["severity"] = _maybe_escalate_severity_by_occurrences(state.get("severity"), occ)
+    state["severity"] = _maybe_escalate_severity_by_occurrences(
+        state.get("severity"), occ
+    )
 
     # Extra info block
     extra_info = _build_extra_info(log_data, win, occ)
@@ -320,9 +422,17 @@ def _prepare_context(state: Dict[str, Any], title: str, description: str) -> tup
     return fingerprint, full_description, processed, occ, win, fp_source
 
 
-def _check_fingerprint_dup(state: Dict[str, Any], fingerprint: str, processed: _Set[str], occ: int, fp_source: str) -> Dict[str, Any] | None:
+def _check_fingerprint_dup(
+    state: Dict[str, Any],
+    fingerprint: str,
+    processed: _Set[str],
+    occ: int,
+    fp_source: str,
+) -> Dict[str, Any] | None:
     if fingerprint in processed:
-        print(f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}")
+        print(
+            f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}"
+        )
         _append_audit(
             decision="duplicate-fingerprint",
             state=state,
@@ -333,11 +443,17 @@ def _check_fingerprint_dup(state: Dict[str, Any], fingerprint: str, processed: _
             create=False,
             message="Duplicate log skipped (fingerprint cache)",
         )
-        return {**state, "message": "⚠️ Log already processed previously (fingerprint match).", "ticket_created": True}
+        return {
+            **state,
+            "message": "⚠️ Log already processed previously (fingerprint match).",
+            "ticket_created": True,
+        }
     return None
 
 
-def _check_llm_no_create(state: Dict[str, Any], fingerprint: str, occ: int) -> Dict[str, Any] | None:
+def _check_llm_no_create(
+    state: Dict[str, Any], fingerprint: str, occ: int
+) -> Dict[str, Any] | None:
     if not state.get("create_ticket", False):
         _append_audit(
             decision="no-create",
@@ -349,11 +465,22 @@ def _check_llm_no_create(state: Dict[str, Any], fingerprint: str, occ: int) -> D
             create=False,
             message="LLM chose not to create a ticket",
         )
-        return {**state, "message": "ℹ️ LLM decision: do not create a ticket for this log.", "ticket_created": True}
+        return {
+            **state,
+            "message": "ℹ️ LLM decision: do not create a ticket for this log.",
+            "ticket_created": True,
+        }
     return None
 
 
-def _check_jira_duplicate(title: str, state: Dict[str, Any], win: int, occ: int, processed: _Set[str], fingerprint: str) -> Dict[str, Any] | None:
+def _check_jira_duplicate(
+    title: str,
+    state: Dict[str, Any],
+    win: int,
+    occ: int,
+    processed: _Set[str],
+    fingerprint: str,
+) -> Dict[str, Any] | None:
     log_data = state.get("log_data", {})
     key, score, existing_summary = find_similar_ticket(title, state)
     if not key:
@@ -376,12 +503,19 @@ def _check_jira_duplicate(title: str, state: Dict[str, Any], win: int, occ: int,
         create=False,
         message=f"Duplicate in Jira: {key} — {existing_summary}",
     )
-    return {**state, "message": f"⚠️ Duplicate in Jira: {key} — {existing_summary}", "ticket_created": True}
+    return {
+        **state,
+        "message": f"⚠️ Duplicate in Jira: {key} — {existing_summary}",
+        "ticket_created": True,
+    }
 
 
 def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
-    print(f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}")
+    print(
+        f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}"
+    )
     import pprint
+
     print("🔎 State received in create_ticket:")
     pprint.pprint(state)
 
@@ -394,7 +528,9 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
         return early  # type: ignore[return-value]
 
     # 2) Prepare context and compute fingerprint
-    fingerprint, full_description, processed, occ, win, fp_source = _prepare_context(state, title, description)
+    fingerprint, full_description, processed, occ, win, fp_source = _prepare_context(
+        state, title, description
+    )
 
     # 3) Fast duplicate by fingerprint
     early = _check_fingerprint_dup(state, fingerprint, processed, occ, fp_source)
@@ -413,7 +549,9 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # 6) Build labels/title/payload
     try:
-        norm_msg = _normalize_log_message((state.get("log_data") or {}).get("message", ""))
+        norm_msg = _normalize_log_message(
+            (state.get("log_data") or {}).get("message", "")
+        )
     except Exception:
         norm_msg = None
     etype = (state.get("error_type") or "").strip().lower()
@@ -434,8 +572,19 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
         max_tickets = 3
 
     if auto_create:
-        state = _do_auto_create(state, clean_title, full_description, payload, fingerprint, occ, processed, max_tickets)
+        state = _do_auto_create(
+            state,
+            clean_title,
+            full_description,
+            payload,
+            fingerprint,
+            occ,
+            processed,
+            max_tickets,
+        )
     else:
-        state = _do_simulation(state, clean_title, full_description, payload, fingerprint, occ, processed)
+        state = _do_simulation(
+            state, clean_title, full_description, payload, fingerprint, occ, processed
+        )
 
     return {**state, "message": state.get("message"), "ticket_created": True}

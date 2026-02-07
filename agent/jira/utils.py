@@ -1,6 +1,5 @@
-
-
 """Utilities for normalization and local fingerprint cache."""
+
 from __future__ import annotations
 import json
 import pathlib
@@ -58,7 +57,9 @@ def normalize_log_message(text: str) -> str:
     t = re.sub(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", " <email> ", t)
     t = re.sub(r"\bhttps?://[^\s]+", " <url> ", t)
     t = re.sub(r"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", " <token> ", t)
-    t = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", " ", t)
+    t = re.sub(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", " ", t
+    )
     t = re.sub(r"\b[0-9a-f]{24}\b", " ", t)
     t = re.sub(r"\b\d{4}-\d{2}-\d{2}[tT ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\b", " ", t)
     t = re.sub(r"\[?\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,\.]\d+)?\]?", " ", t)
@@ -104,8 +105,10 @@ def priority_name_from_severity(sev: str | None) -> str:
         return "Medium"
     return "Low"
 
+
 # --- Comment cool-down helpers ---
 import datetime as _dt
+
 
 def _load_comment_cache() -> dict:
     try:

@@ -3,6 +3,7 @@
 This module provides async versions of duplicate detection logic
 for use in parallel processing pipelines.
 """
+
 from __future__ import annotations
 import hashlib
 import importlib.util
@@ -22,7 +23,7 @@ from agent.performance import (
     get_performance_metrics,
     optimize_jira_search_params,
     cached_normalize_text,
-    cached_normalize_log_message
+    cached_normalize_log_message,
 )
 
 # Check for rapidfuzz availability
@@ -31,6 +32,7 @@ _spec = importlib.util.find_spec("rapidfuzz")
 if _spec is not None:
     try:
         from rapidfuzz import fuzz  # type: ignore
+
         _USE_RAPIDFUZZ = True
     except Exception:
         _USE_RAPIDFUZZ = False
@@ -114,8 +116,10 @@ async def find_similar_ticket_async(
     for p in phrases:
         token_clauses.append(f'summary ~ "\\"{p}\\""')
         token_clauses.append(f'description ~ "\\"{p}\\""')
-    token_clauses.append('labels = datadog-log')
-    token_filter = " OR ".join(token_clauses) if token_clauses else "labels = datadog-log"
+    token_clauses.append("labels = datadog-log")
+    token_filter = (
+        " OR ".join(token_clauses) if token_clauses else "labels = datadog-log"
+    )
 
     # Use optimized search parameters
     optimized_params = optimize_jira_search_params()
@@ -125,25 +129,37 @@ async def find_similar_ticket_async(
         + token_filter
         + ") ORDER BY created DESC"
     )
-    log_info("JQL query built (async)", jql=jql, optimized_window=optimized_params['search_window_days'])
+    log_info(
+        "JQL query built (async)",
+        jql=jql,
+        optimized_window=optimized_params["search_window_days"],
+    )
 
     # Fast path: exact label via loghash
     if norm_current_log:
-        loghash = hashlib.sha1(norm_current_log.encode("utf-8")).hexdigest()[:12]
+        loghash = hashlib.sha1(
+            norm_current_log.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:12]
         jql_hash = (
             f"project = {config.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"
         )
         resp_hash = await client.search(
-            jql_hash,
-            fields="summary,description,labels,created,status",
-            max_results=10
+            jql_hash, fields="summary,description,labels,created,status", max_results=10
         )
         issues_hash = (resp_hash or {}).get("issues", [])
         if issues_hash:
             first = issues_hash[0]
-            log_info("Exact duplicate found by label (async)", loghash=loghash, issue_key=first.get('key'))
-            result = (first.get("key"), 1.00, first.get("fields", {}).get("summary", ""))
+            log_info(
+                "Exact duplicate found by label (async)",
+                loghash=loghash,
+                issue_key=first.get("key"),
+            )
+            result = (
+                first.get("key"),
+                1.00,
+                first.get("fields", {}).get("summary", ""),
+            )
             cache.set(summary, state, result)
             metrics.end_timer("find_similar_ticket_async")
             return result
@@ -152,7 +168,7 @@ async def find_similar_ticket_async(
     resp = await client.search(
         jql,
         fields="summary,description,labels,created,status",
-        max_results=optimized_params['search_max_results']
+        max_results=optimized_params["search_max_results"],
     )
     issues = (resp or {}).get("issues", [])
 
@@ -165,15 +181,21 @@ async def find_similar_ticket_async(
         fields = issue.get("fields", {})
         # Direct Original Log check
         issue_desc_text = extract_text_from_description(fields.get("description"))
-        norm_issue_log = normalize_log_message(issue_desc_text.split("Original Log:")[-1].strip()) if issue_desc_text else ""
+        norm_issue_log = (
+            normalize_log_message(issue_desc_text.split("Original Log:")[-1].strip())
+            if issue_desc_text
+            else ""
+        )
         log_sim = None
         if norm_current_log and norm_issue_log:
             log_sim = _sim(norm_current_log, norm_issue_log)
             if log_sim >= config.jira_direct_log_threshold:
-                log_info("Direct log match found (async)",
-                        similarity=log_sim,
-                        issue_key=issue.get('key'),
-                        action="short-circuiting as duplicate")
+                log_info(
+                    "Direct log match found (async)",
+                    similarity=log_sim,
+                    issue_key=issue.get("key"),
+                    action="short-circuiting as duplicate",
+                )
                 result = (issue.get("key"), 1.00, fields.get("summary", ""))
                 cache.set(summary, state, result)
                 metrics.end_timer("find_similar_ticket_async")
@@ -191,7 +213,12 @@ async def find_similar_ticket_async(
             score += 0.05
         if any(t in s or t in d for t in tokens):
             score += 0.05
-        if log_sim is not None and config.jira_partial_log_threshold <= log_sim < config.jira_direct_log_threshold:
+        if (
+            log_sim is not None
+            and config.jira_partial_log_threshold
+            <= log_sim
+            < config.jira_direct_log_threshold
+        ):
             score += 0.05
 
         if score > best[1]:
@@ -200,7 +227,11 @@ async def find_similar_ticket_async(
     # Cache the result
     result = (None, 0.0, None)
     if best[0] and best[1] >= similarity_threshold:
-        log_info("Similar ticket found (async)", similarity_score=best[1], issue_summary=best[2])
+        log_info(
+            "Similar ticket found (async)",
+            similarity_score=best[1],
+            issue_summary=best[2],
+        )
         result = best
     else:
         log_info("No similar ticket found with advanced matching (async)")
@@ -210,14 +241,15 @@ async def find_similar_ticket_async(
 
     # End performance timing
     duration = metrics.end_timer("find_similar_ticket_async")
-    log_debug("find_similar_ticket_async completed", duration_ms=round(duration * 1000, 2))
+    log_debug(
+        "find_similar_ticket_async completed", duration_ms=round(duration * 1000, 2)
+    )
 
     return result
 
 
 async def check_fingerprint_duplicate_async(
-    fingerprint: str,
-    client: AsyncJiraClient
+    fingerprint: str, client: AsyncJiraClient
 ) -> Tuple[bool, Optional[str]]:
     """Check if a fingerprint already exists in Jira.
 
@@ -234,7 +266,7 @@ async def check_fingerprint_duplicate_async(
     config = get_config()
     jql = (
         f"project = {config.jira_project_key} AND statusCategory != Done AND "
-        f'labels = fingerprint-{fingerprint} ORDER BY created DESC'
+        f"labels = fingerprint-{fingerprint} ORDER BY created DESC"
     )
 
     resp = await client.search(jql, fields="summary,key", max_results=1)
@@ -242,7 +274,11 @@ async def check_fingerprint_duplicate_async(
 
     if issues:
         issue_key = issues[0].get("key")
-        log_info("Fingerprint duplicate found (async)", fingerprint=fingerprint, issue_key=issue_key)
+        log_info(
+            "Fingerprint duplicate found (async)",
+            fingerprint=fingerprint,
+            issue_key=issue_key,
+        )
         return True, issue_key
 
     return False, None

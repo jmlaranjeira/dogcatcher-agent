@@ -36,39 +36,42 @@ def sample_log_data():
         "logger": "com.example.UserService",
         "thread": "http-nio-8080-exec-1",
         "detail": "java.lang.NullPointerException: user not found",
-        "timestamp": "2025-01-01T10:00:00Z"
+        "timestamp": "2025-01-01T10:00:00Z",
     }
 
 
 @pytest.fixture
 def sample_state(sample_log_data):
     """Sample state for testing."""
-    return {
-        "log_data": sample_log_data,
-        "log_message": sample_log_data["message"]
-    }
+    return {"log_data": sample_log_data, "log_message": sample_log_data["message"]}
 
 
 @pytest.fixture
 def valid_llm_response():
     """Valid LLM response JSON."""
-    return json.dumps({
-        "error_type": "null-pointer-exception",
-        "create_ticket": True,
-        "ticket_title": "Fix NullPointerException in UserService",
-        "ticket_description": "## Problem\nNullPointerException when user not found.\n## Causes\n- Missing null check\n## Actions\n- Add null validation",
-        "severity": "high"
-    })
+    return json.dumps(
+        {
+            "error_type": "null-pointer-exception",
+            "create_ticket": True,
+            "ticket_title": "Fix NullPointerException in UserService",
+            "ticket_description": "## Problem\nNullPointerException when user not found.\n## Causes\n- Missing null check\n## Actions\n- Add null validation",
+            "severity": "high",
+        }
+    )
 
 
 class TestAnalyzeLogAsync:
     """Test async log analysis."""
 
     @pytest.mark.asyncio
-    async def test_analyze_log_success(self, mock_config, sample_state, valid_llm_response):
+    async def test_analyze_log_success(
+        self, mock_config, sample_state, valid_llm_response
+    ):
         """Test successful async log analysis."""
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.return_value = valid_llm_response
 
                 result = await analyze_log_async(sample_state)
@@ -81,7 +84,7 @@ class TestAnalyzeLogAsync:
     @pytest.mark.asyncio
     async def test_analyze_log_with_code_block(self, mock_config, sample_state):
         """Test analysis handles JSON wrapped in code block."""
-        json_in_code_block = '''```json
+        json_in_code_block = """```json
         {
             "error_type": "database-error",
             "create_ticket": true,
@@ -89,10 +92,12 @@ class TestAnalyzeLogAsync:
             "ticket_description": "Description here",
             "severity": "medium"
         }
-        ```'''
+        ```"""
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.return_value = json_in_code_block
 
                 result = await analyze_log_async(sample_state)
@@ -105,16 +110,21 @@ class TestAnalyzeLogAsync:
         """Test analysis handles invalid JSON response."""
         mock_config.fallback_analysis_enabled = True
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.return_value = "This is not valid JSON"
 
-                with patch('agent.nodes.analysis_async._use_fallback_analysis_async', new_callable=AsyncMock) as mock_fallback:
+                with patch(
+                    "agent.nodes.analysis_async._use_fallback_analysis_async",
+                    new_callable=AsyncMock,
+                ) as mock_fallback:
                     mock_fallback.return_value = {
                         **sample_state,
                         "error_type": "unknown",
                         "create_ticket": False,
-                        "severity": "low"
+                        "severity": "low",
                     }
 
                     result = await analyze_log_async(sample_state)
@@ -125,22 +135,29 @@ class TestAnalyzeLogAsync:
     @pytest.mark.asyncio
     async def test_analyze_log_missing_fields(self, mock_config, sample_state):
         """Test analysis handles missing required fields."""
-        incomplete_response = json.dumps({
-            "error_type": "some-error"
-            # Missing ticket_title and ticket_description
-        })
+        incomplete_response = json.dumps(
+            {
+                "error_type": "some-error"
+                # Missing ticket_title and ticket_description
+            }
+        )
 
         mock_config.fallback_analysis_enabled = True
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.return_value = incomplete_response
 
-                with patch('agent.nodes.analysis_async._use_fallback_analysis_async', new_callable=AsyncMock) as mock_fallback:
+                with patch(
+                    "agent.nodes.analysis_async._use_fallback_analysis_async",
+                    new_callable=AsyncMock,
+                ) as mock_fallback:
                     mock_fallback.return_value = {
                         **sample_state,
                         "error_type": "unknown",
-                        "create_ticket": False
+                        "create_ticket": False,
                     }
 
                     result = await analyze_log_async(sample_state)
@@ -152,8 +169,10 @@ class TestAnalyzeLogAsync:
         """Test analysis with minimal state."""
         empty_state = {"log_data": {}, "log_message": ""}
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.return_value = valid_llm_response
 
                 result = await analyze_log_async(empty_state)
@@ -171,16 +190,21 @@ class TestAnalyzeLogAsyncCircuitBreaker:
 
         mock_config.fallback_analysis_enabled = True
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.side_effect = CircuitBreakerOpenError("Circuit breaker open")
 
-                with patch('agent.nodes.analysis_async._use_fallback_analysis_async', new_callable=AsyncMock) as mock_fallback:
+                with patch(
+                    "agent.nodes.analysis_async._use_fallback_analysis_async",
+                    new_callable=AsyncMock,
+                ) as mock_fallback:
                     mock_fallback.return_value = {
                         **sample_state,
                         "error_type": "fallback-error",
                         "create_ticket": False,
-                        "severity": "low"
+                        "severity": "low",
                     }
 
                     result = await analyze_log_async(sample_state)
@@ -189,12 +213,14 @@ class TestAnalyzeLogAsyncCircuitBreaker:
         assert result["error_type"] == "fallback-error"
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_disabled(self, mock_config, sample_state, valid_llm_response):
+    async def test_circuit_breaker_disabled(
+        self, mock_config, sample_state, valid_llm_response
+    ):
         """Test analysis when circuit breaker is disabled."""
         mock_config.circuit_breaker_enabled = False
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.analysis_async.chain") as mock_chain:
                 mock_response = MagicMock()
                 mock_response.content = valid_llm_response
                 mock_chain.ainvoke = AsyncMock(return_value=mock_response)
@@ -204,14 +230,18 @@ class TestAnalyzeLogAsyncCircuitBreaker:
         assert result["error_type"] == "null-pointer-exception"
 
     @pytest.mark.asyncio
-    async def test_fallback_disabled_returns_error_state(self, mock_config, sample_state):
+    async def test_fallback_disabled_returns_error_state(
+        self, mock_config, sample_state
+    ):
         """Test error state when fallback is disabled."""
         from agent.utils.circuit_breaker import CircuitBreakerOpenError
 
         mock_config.fallback_analysis_enabled = False
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.side_effect = CircuitBreakerOpenError("Circuit breaker open")
 
                 result = await analyze_log_async(sample_state)
@@ -228,15 +258,20 @@ class TestAnalyzeLogAsyncErrorHandling:
         """Test unexpected exception triggers fallback."""
         mock_config.fallback_analysis_enabled = True
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.side_effect = RuntimeError("Unexpected error")
 
-                with patch('agent.nodes.analysis_async._use_fallback_analysis_async', new_callable=AsyncMock) as mock_fallback:
+                with patch(
+                    "agent.nodes.analysis_async._use_fallback_analysis_async",
+                    new_callable=AsyncMock,
+                ) as mock_fallback:
                     mock_fallback.return_value = {
                         **sample_state,
                         "error_type": "fallback-error",
-                        "create_ticket": False
+                        "create_ticket": False,
                     }
 
                     result = await analyze_log_async(sample_state)
@@ -244,12 +279,16 @@ class TestAnalyzeLogAsyncErrorHandling:
         mock_fallback.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_unexpected_exception_without_fallback(self, mock_config, sample_state):
+    async def test_unexpected_exception_without_fallback(
+        self, mock_config, sample_state
+    ):
         """Test unexpected exception without fallback returns error state."""
         mock_config.fallback_analysis_enabled = False
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async._call_llm_async', new_callable=AsyncMock) as mock_llm:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async._call_llm_async", new_callable=AsyncMock
+            ) as mock_llm:
                 mock_llm.side_effect = RuntimeError("Unexpected error")
 
                 result = await analyze_log_async(sample_state)
@@ -267,14 +306,16 @@ class TestAnalyzeLogsBatchAsync:
         logs = [
             {"message": "Error 1", "logger": "app.service1"},
             {"message": "Error 2", "logger": "app.service2"},
-            {"message": "Error 3", "logger": "app.service3"}
+            {"message": "Error 3", "logger": "app.service3"},
         ]
 
-        with patch('agent.nodes.analysis_async.analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch(
+            "agent.nodes.analysis_async.analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = {
                 "error_type": "test-error",
                 "create_ticket": True,
-                "severity": "medium"
+                "severity": "medium",
             }
 
             results = await analyze_logs_batch_async(logs, max_concurrent=2)
@@ -288,7 +329,7 @@ class TestAnalyzeLogsBatchAsync:
         logs = [
             {"message": "Error 1", "logger": "app.service1"},
             {"message": "Error 2", "logger": "app.service2"},
-            {"message": "Error 3", "logger": "app.service3"}
+            {"message": "Error 3", "logger": "app.service3"},
         ]
 
         call_count = 0
@@ -298,12 +339,11 @@ class TestAnalyzeLogsBatchAsync:
             call_count += 1
             if call_count == 2:
                 raise RuntimeError("Analysis failed")
-            return {
-                "error_type": "test-error",
-                "create_ticket": True
-            }
+            return {"error_type": "test-error", "create_ticket": True}
 
-        with patch('agent.nodes.analysis_async.analyze_log_async', side_effect=mock_analyze):
+        with patch(
+            "agent.nodes.analysis_async.analyze_log_async", side_effect=mock_analyze
+        ):
             results = await analyze_logs_batch_async(logs)
 
         # All 3 should return results (1 with error state)
@@ -336,7 +376,9 @@ class TestAnalyzeLogsBatchAsync:
 
             return {"error_type": "test", "create_ticket": False}
 
-        with patch('agent.nodes.analysis_async.analyze_log_async', side_effect=mock_analyze):
+        with patch(
+            "agent.nodes.analysis_async.analyze_log_async", side_effect=mock_analyze
+        ):
             await analyze_logs_batch_async(logs, max_concurrent=2)
 
         assert max_concurrent <= 2
@@ -348,14 +390,16 @@ class TestUseFallbackAnalysisAsync:
     @pytest.mark.asyncio
     async def test_fallback_analysis_basic(self, sample_state, sample_log_data):
         """Test basic fallback analysis."""
-        with patch('agent.nodes.analysis_async.get_fallback_analyzer') as mock_get_analyzer:
+        with patch(
+            "agent.nodes.analysis_async.get_fallback_analyzer"
+        ) as mock_get_analyzer:
             mock_analyzer = MagicMock()
             mock_analyzer.analyze_log.return_value = {
                 "error_type": "rule-based-error",
                 "create_ticket": False,
                 "ticket_title": "Fallback title",
                 "ticket_description": "Fallback description",
-                "severity": "low"
+                "severity": "low",
             }
             mock_get_analyzer.return_value = mock_analyzer
 
@@ -369,12 +413,14 @@ class TestCallLlmAsync:
     """Test direct LLM calling function."""
 
     @pytest.mark.asyncio
-    async def test_call_llm_circuit_breaker_disabled(self, mock_config, valid_llm_response):
+    async def test_call_llm_circuit_breaker_disabled(
+        self, mock_config, valid_llm_response
+    ):
         """Test LLM call when circuit breaker is disabled."""
         mock_config.circuit_breaker_enabled = False
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.analysis_async.chain") as mock_chain:
                 mock_response = MagicMock()
                 mock_response.content = valid_llm_response
                 mock_chain.ainvoke = AsyncMock(return_value=mock_response)
@@ -384,12 +430,16 @@ class TestCallLlmAsync:
         assert result == valid_llm_response
 
     @pytest.mark.asyncio
-    async def test_call_llm_circuit_breaker_enabled(self, mock_config, valid_llm_response):
+    async def test_call_llm_circuit_breaker_enabled(
+        self, mock_config, valid_llm_response
+    ):
         """Test LLM call with circuit breaker enabled."""
         mock_config.circuit_breaker_enabled = True
 
-        with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_circuit_breaker_registry') as mock_registry:
+        with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_circuit_breaker_registry"
+            ) as mock_registry:
                 mock_breaker = MagicMock()
 
                 async def breaker_call(func):
@@ -398,7 +448,7 @@ class TestCallLlmAsync:
                 mock_breaker.call = breaker_call
                 mock_registry.return_value.get.return_value = mock_breaker
 
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)

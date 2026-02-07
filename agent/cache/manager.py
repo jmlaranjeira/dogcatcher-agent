@@ -13,6 +13,7 @@ from .memory_cache import MemoryCacheBackend
 
 class CacheBackendType(Enum):
     """Cache backend types."""
+
     REDIS = "redis"
     FILE = "file"
     MEMORY = "memory"
@@ -47,9 +48,11 @@ class CacheManager:
             self.active_backend = await self._select_active_backend()
 
             if self.active_backend:
-                log_info("Cache manager initialized successfully",
-                        active_backend=self.active_backend.name,
-                        fallback_count=len(self.fallback_backends))
+                log_info(
+                    "Cache manager initialized successfully",
+                    active_backend=self.active_backend.name,
+                    fallback_count=len(self.fallback_backends),
+                )
                 self._initialized = True
                 return True
             else:
@@ -97,8 +100,11 @@ class CacheManager:
                 return None
 
         except Exception as e:
-            log_error("Failed to create cache backend",
-                     backend_type=backend_type, error=str(e))
+            log_error(
+                "Failed to create cache backend",
+                backend_type=backend_type,
+                error=str(e),
+            )
             return None
 
     async def _create_fallback_backends(self, primary_type: str) -> None:
@@ -107,7 +113,10 @@ class CacheManager:
 
         # Define fallback chain
         if primary_type == CacheBackendType.REDIS.value:
-            fallback_types = [CacheBackendType.FILE.value, CacheBackendType.MEMORY.value]
+            fallback_types = [
+                CacheBackendType.FILE.value,
+                CacheBackendType.MEMORY.value,
+            ]
         elif primary_type == CacheBackendType.FILE.value:
             fallback_types = [CacheBackendType.MEMORY.value]
         # Memory doesn't need fallbacks (it's the ultimate fallback)
@@ -117,9 +126,11 @@ class CacheManager:
             if backend:
                 self.fallback_backends.append(backend)
 
-        log_info("Fallback backends created",
-                fallback_count=len(self.fallback_backends),
-                fallbacks=[b.name for b in self.fallback_backends])
+        log_info(
+            "Fallback backends created",
+            fallback_count=len(self.fallback_backends),
+            fallbacks=[b.name for b in self.fallback_backends],
+        )
 
     async def _select_active_backend(self) -> Optional[CacheBackend]:
         """Select the active backend from available options."""
@@ -131,9 +142,13 @@ class CacheManager:
         # Try fallback backends
         for backend in self.fallback_backends:
             if await self._test_backend(backend):
-                log_warning("Using fallback cache backend",
-                           backend=backend.name,
-                           primary_failed=self.primary_backend.name if self.primary_backend else "none")
+                log_warning(
+                    "Using fallback cache backend",
+                    backend=backend.name,
+                    primary_failed=(
+                        self.primary_backend.name if self.primary_backend else "none"
+                    ),
+                )
                 return backend
 
         return None
@@ -239,20 +254,26 @@ class CacheManager:
 
         try:
             stats = self.active_backend.get_stats()
-            stats.update({
-                "manager_status": "active",
-                "primary_backend": self.primary_backend.name if self.primary_backend else None,
-                "active_backend": self.active_backend.name,
-                "fallback_backends": [b.name for b in self.fallback_backends],
-                "config": self.config
-            })
+            stats.update(
+                {
+                    "manager_status": "active",
+                    "primary_backend": (
+                        self.primary_backend.name if self.primary_backend else None
+                    ),
+                    "active_backend": self.active_backend.name,
+                    "fallback_backends": [b.name for b in self.fallback_backends],
+                    "config": self.config,
+                }
+            )
             return stats
 
         except Exception as e:
             return {
                 "status": "error",
                 "error": str(e),
-                "active_backend": self.active_backend.name if self.active_backend else None
+                "active_backend": (
+                    self.active_backend.name if self.active_backend else None
+                ),
             }
 
     async def close(self) -> None:
@@ -278,8 +299,12 @@ class CacheManager:
     async def _handle_backend_failure(self) -> None:
         """Handle backend failure by switching to fallback."""
         try:
-            log_warning("Cache backend failure detected, attempting fallback",
-                       current_backend=self.active_backend.name if self.active_backend else "none")
+            log_warning(
+                "Cache backend failure detected, attempting fallback",
+                current_backend=(
+                    self.active_backend.name if self.active_backend else "none"
+                ),
+            )
 
             # Try to switch to a working fallback
             new_backend = await self._select_active_backend()
@@ -287,9 +312,11 @@ class CacheManager:
             if new_backend and new_backend != self.active_backend:
                 old_backend = self.active_backend
                 self.active_backend = new_backend
-                log_info("Switched to fallback cache backend",
-                        old_backend=old_backend.name if old_backend else "none",
-                        new_backend=new_backend.name)
+                log_info(
+                    "Switched to fallback cache backend",
+                    old_backend=old_backend.name if old_backend else "none",
+                    new_backend=new_backend.name,
+                )
             else:
                 log_error("No working cache backend available")
                 self.active_backend = None
@@ -318,10 +345,12 @@ class CacheManager:
             "similarity",
             summary.lower().strip()[:100],  # Limit length
             error_type,
-            logger
+            logger,
         )
 
-    async def get_similarity(self, summary: str, state: Optional[Dict] = None) -> Optional[tuple]:
+    async def get_similarity(
+        self, summary: str, state: Optional[Dict] = None
+    ) -> Optional[tuple]:
         """Get cached similarity result."""
         key = self.make_similarity_key(summary, state)
         if not key:
@@ -334,8 +363,9 @@ class CacheManager:
 
         return None
 
-    async def set_similarity(self, summary: str, result: tuple, state: Optional[Dict] = None,
-                           ttl: int = None) -> bool:
+    async def set_similarity(
+        self, summary: str, result: tuple, state: Optional[Dict] = None, ttl: int = None
+    ) -> bool:
         """Cache similarity result."""
         key = self.make_similarity_key(summary, state)
         if not key:
@@ -357,12 +387,14 @@ class CacheManager:
             "timestamp": asyncio.get_event_loop().time(),
             "initialized": self._initialized,
             "active_backend": self.active_backend.name if self.active_backend else None,
-            "backends": {}
+            "backends": {},
         }
 
         # Test primary backend
         if self.primary_backend:
-            health["backends"][self.primary_backend.name] = await self._test_backend(self.primary_backend)
+            health["backends"][self.primary_backend.name] = await self._test_backend(
+                self.primary_backend
+            )
 
         # Test fallback backends
         for backend in self.fallback_backends:
@@ -377,31 +409,34 @@ class CacheManager:
         if not self._initialized or not self.active_backend:
             return {"status": "not_initialized"}
 
-        results = {
-            "backend": self.active_backend.name,
-            "actions_taken": []
-        }
+        results = {"backend": self.active_backend.name, "actions_taken": []}
 
         try:
             # Cleanup expired entries
             expired_count = await self.cleanup_expired()
             if expired_count > 0:
-                results["actions_taken"].append(f"Removed {expired_count} expired entries")
+                results["actions_taken"].append(
+                    f"Removed {expired_count} expired entries"
+                )
 
             # Backend-specific optimizations
-            if hasattr(self.active_backend, 'cleanup_lru'):
+            if hasattr(self.active_backend, "cleanup_lru"):
                 # Memory backend LRU cleanup
                 stats = self.active_backend.get_stats()
                 if stats.get("size", 0) > stats.get("max_size", 1000) * 0.9:
                     lru_removed = await self.active_backend.cleanup_lru(0.2)
-                    results["actions_taken"].append(f"LRU cleanup removed {lru_removed} entries")
+                    results["actions_taken"].append(
+                        f"LRU cleanup removed {lru_removed} entries"
+                    )
 
-            elif hasattr(self.active_backend, 'cleanup_by_size'):
+            elif hasattr(self.active_backend, "cleanup_by_size"):
                 # File backend size cleanup
                 max_size_mb = self.config.get("max_file_cache_size_mb", 100)
                 size_removed = await self.active_backend.cleanup_by_size(max_size_mb)
                 if size_removed > 0:
-                    results["actions_taken"].append(f"Size cleanup removed {size_removed} entries")
+                    results["actions_taken"].append(
+                        f"Size cleanup removed {size_removed} entries"
+                    )
 
             results["status"] = "completed"
 

@@ -1,6 +1,8 @@
 """LLM analysis node (prompt, chain, analyze_log)."""
+
 from typing import Dict, Any
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langchain_openai import ChatOpenAI
@@ -9,7 +11,7 @@ from agent.utils.logger import log_info, log_error, log_debug, log_warning
 from agent.utils.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerOpenError,
-    get_circuit_breaker_registry
+    get_circuit_breaker_registry,
 )
 from agent.utils.fallback_analysis import get_fallback_analyzer
 from agent.config import get_config
@@ -24,7 +26,9 @@ import json
 # OPENAI_RESPONSE_FORMAT: "json_object" or "text" (default: json_object)
 _model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 _temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
-_resp_fmt = (os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object").lower()
+_resp_fmt = (
+    os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object"
+).lower()
 try:
     _temp = float(_temp_raw)
 except Exception:
@@ -41,26 +45,29 @@ llm = ChatOpenAI(
     model_kwargs=_model_kwargs,
 )
 
-prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
+prompt = ChatPromptTemplate.from_messages(
+    [
         (
-            "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
-            "Fields required: "
-            "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
-            "create_ticket (boolean), "
-            "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
-            "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
-            "severity (one of: low, medium, high)."
+            "system",
+            (
+                "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
+                "Fields required: "
+                "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
+                "create_ticket (boolean), "
+                "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
+                "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
+                "severity (one of: low, medium, high)."
+            ),
         ),
-    ),
-    ("human", "{log_message}")
-])
+        ("human", "{log_message}"),
+    ]
+)
 
 chain = prompt | llm
 
 # Initialize circuit breaker for LLM calls (Phase 1.2)
 _circuit_breaker_initialized = False
+
 
 def _initialize_circuit_breaker():
     """Initialize circuit breaker for OpenAI API calls."""
@@ -79,13 +86,15 @@ def _initialize_circuit_breaker():
             timeout_seconds=config.circuit_breaker_timeout_seconds,
             half_open_max_calls=config.circuit_breaker_half_open_calls,
             expected_exception=OpenAIError,
-            name="openai_llm"
+            name="openai_llm",
         )
         registry.register("openai_llm", cb_config)
 
-        log_info("Circuit breaker initialized for LLM",
-                failure_threshold=config.circuit_breaker_failure_threshold,
-                timeout_seconds=config.circuit_breaker_timeout_seconds)
+        log_info(
+            "Circuit breaker initialized for LLM",
+            failure_threshold=config.circuit_breaker_failure_threshold,
+            timeout_seconds=config.circuit_breaker_timeout_seconds,
+        )
 
     _circuit_breaker_initialized = True
 
@@ -152,7 +161,9 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        content = loop.run_until_complete(_call_llm_with_circuit_breaker(contextual_log))
+        content = loop.run_until_complete(
+            _call_llm_with_circuit_breaker(contextual_log)
+        )
 
         log_debug("LLM analysis completed", content_preview=content[:200])
 
@@ -167,17 +178,21 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
         if not title or not desc:
             raise ValueError("Missing title or description")
 
-        log_info("Log analyzed successfully with LLM",
-                error_type=parsed.get('error_type'),
-                create_ticket=parsed.get('create_ticket'))
+        log_info(
+            "Log analyzed successfully with LLM",
+            error_type=parsed.get("error_type"),
+            create_ticket=parsed.get("create_ticket"),
+        )
 
         return {**state, **parsed, "severity": parsed.get("severity", "low")}
 
     except CircuitBreakerOpenError as e:
         # Circuit breaker is open - use fallback analysis
-        log_warning("Circuit breaker open, using fallback analysis",
-                   circuit_name="openai_llm",
-                   reason=str(e))
+        log_warning(
+            "Circuit breaker open, using fallback analysis",
+            circuit_name="openai_llm",
+            reason=str(e),
+        )
 
         if config.fallback_analysis_enabled:
             return _use_fallback_analysis(state, log_data)
@@ -189,14 +204,16 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
                 "create_ticket": False,
                 "ticket_title": "LLM service unavailable",
                 "ticket_description": f"Circuit breaker open: {str(e)}",
-                "severity": "low"
+                "severity": "low",
             }
 
     except (json.JSONDecodeError, ValueError) as e:
         # LLM returned invalid response - try fallback
-        log_error("LLM analysis failed with invalid response",
-                 error=str(e),
-                 content_preview=content[:200] if 'content' in locals() else "N/A")
+        log_error(
+            "LLM analysis failed with invalid response",
+            error=str(e),
+            content_preview=content[:200] if "content" in locals() else "N/A",
+        )
 
         if config.fallback_analysis_enabled:
             log_info("Falling back to rule-based analysis due to LLM error")
@@ -207,14 +224,18 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "unknown",
                 "create_ticket": False,
                 "ticket_title": "LLM returned invalid or incomplete data",
-                "ticket_description": content if 'content' in locals() else "No content"
+                "ticket_description": (
+                    content if "content" in locals() else "No content"
+                ),
             }
 
     except Exception as e:
         # Unexpected error - try fallback
-        log_error("Unexpected error during LLM analysis",
-                 error=str(e),
-                 error_type=type(e).__name__)
+        log_error(
+            "Unexpected error during LLM analysis",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
         if config.fallback_analysis_enabled:
             log_info("Falling back to rule-based analysis due to unexpected error")
@@ -225,11 +246,13 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "analysis-error",
                 "create_ticket": False,
                 "ticket_title": "Analysis failed",
-                "ticket_description": f"Error: {str(e)}"
+                "ticket_description": f"Error: {str(e)}",
             }
 
 
-def _use_fallback_analysis(state: Dict[str, Any], log_data: Dict[str, Any]) -> Dict[str, Any]:
+def _use_fallback_analysis(
+    state: Dict[str, Any], log_data: Dict[str, Any]
+) -> Dict[str, Any]:
     """Use rule-based fallback analysis when LLM is unavailable."""
     fallback_analyzer = get_fallback_analyzer()
 

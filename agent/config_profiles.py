@@ -7,6 +7,7 @@ Supports YAML profiles with the following precedence:
 3. Environment variable overrides
 4. CLI argument overrides
 """
+
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
@@ -45,7 +46,9 @@ def load_profile(profile_name: str) -> Dict[str, Any]:
     with open(profile_path, "r") as f:
         config = yaml.safe_load(f) or {}
 
-    log_info(f"Loaded configuration profile", profile=profile_name, path=str(profile_path))
+    log_info(
+        f"Loaded configuration profile", profile=profile_name, path=str(profile_path)
+    )
     return config
 
 

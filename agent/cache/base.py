@@ -10,6 +10,7 @@ import hashlib
 @dataclass
 class CacheEntry:
     """A cache entry with metadata."""
+
     key: str
     data: Any
     timestamp: datetime
@@ -86,7 +87,9 @@ class CacheBackend(ABC):
 
         # Hash long keys to avoid key length limitations
         if len(key_string) > 200:
-            key_hash = hashlib.md5(key_string.encode()).hexdigest()
+            key_hash = hashlib.md5(
+                key_string.encode(), usedforsecurity=False
+            ).hexdigest()
             return f"{prefix}:{key_hash}"
 
         return key_string.replace(" ", "_")
@@ -130,8 +133,12 @@ class CacheStats:
             "hit_rate_percent": self.hit_rate,
             "size": self.size,
             "memory_usage_bytes": self.memory_usage,
-            "oldest_entry": self.oldest_entry.isoformat() if self.oldest_entry else None,
-            "newest_entry": self.newest_entry.isoformat() if self.newest_entry else None
+            "oldest_entry": (
+                self.oldest_entry.isoformat() if self.oldest_entry else None
+            ),
+            "newest_entry": (
+                self.newest_entry.isoformat() if self.newest_entry else None
+            ),
         }
 
     @property

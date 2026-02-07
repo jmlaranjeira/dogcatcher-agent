@@ -1,4 +1,5 @@
 """Unit tests for configuration schema."""
+
 import pytest
 import os
 import json
@@ -14,58 +15,58 @@ from agent.config import (
     UIConfig,
     Config,
     get_config,
-    reload_config
+    reload_config,
 )
 
 
 class TestOpenAIConfig:
     """Test OpenAI configuration validation."""
-    
+
     def test_openai_config_valid(self):
         """Test valid OpenAI configuration."""
         config = OpenAIConfig(
             api_key="test-key",
             model="gpt-4.1-nano",
             temperature=0.0,
-            response_format="json_object"
+            response_format="json_object",
         )
-        
+
         assert config.api_key == "test-key"
         assert config.model == "gpt-4.1-nano"
         assert config.temperature == 0.0
         assert config.response_format == "json_object"
-    
+
     def test_openai_config_defaults(self):
         """Test OpenAI configuration defaults."""
         config = OpenAIConfig(api_key="test-key")
-        
+
         assert config.model == "gpt-4.1-nano"
         assert config.temperature == 0.0
         assert config.response_format == "json_object"
-    
+
     def test_openai_config_temperature_validation(self):
         """Test temperature validation."""
         # Valid temperature
         config = OpenAIConfig(api_key="test-key", temperature=1.5)
         assert config.temperature == 1.5
-        
+
         # Invalid temperature (too high)
         with pytest.raises(ValidationError):
             OpenAIConfig(api_key="test-key", temperature=3.0)
-        
+
         # Invalid temperature (negative)
         with pytest.raises(ValidationError):
             OpenAIConfig(api_key="test-key", temperature=-0.1)
-    
+
     def test_openai_config_response_format_validation(self):
         """Test response format validation."""
         # Valid formats
         config1 = OpenAIConfig(api_key="test-key", response_format="json_object")
         assert config1.response_format == "json_object"
-        
+
         config2 = OpenAIConfig(api_key="test-key", response_format="text")
         assert config2.response_format == "text"
-        
+
         # Invalid format
         with pytest.raises(ValidationError):
             OpenAIConfig(api_key="test-key", response_format="invalid")
@@ -73,7 +74,7 @@ class TestOpenAIConfig:
 
 class TestDatadogConfig:
     """Test Datadog configuration validation."""
-    
+
     def test_datadog_config_valid(self):
         """Test valid Datadog configuration."""
         config = DatadogConfig(
@@ -88,9 +89,9 @@ class TestDatadogConfig:
             timeout=20,
             statuses="error",
             query_extra="",
-            query_extra_mode="AND"
+            query_extra_mode="AND",
         )
-        
+
         assert config.api_key == "test-api-key"
         assert config.app_key == "test-app-key"
         assert config.site == "datadoghq.eu"
@@ -103,11 +104,11 @@ class TestDatadogConfig:
         assert config.statuses == "error"
         assert config.query_extra == ""
         assert config.query_extra_mode == "AND"
-    
+
     def test_datadog_config_defaults(self):
         """Test Datadog configuration defaults."""
         config = DatadogConfig(api_key="test-api-key", app_key="test-app-key")
-        
+
         assert config.site == "datadoghq.eu"
         assert config.service == "myservice"
         assert config.env == "dev"
@@ -118,56 +119,64 @@ class TestDatadogConfig:
         assert config.statuses == "error"
         assert config.query_extra == ""
         assert config.query_extra_mode == "AND"
-    
+
     def test_datadog_config_hours_back_validation(self):
         """Test hours_back validation."""
         # Valid range
         config = DatadogConfig(api_key="test-key", app_key="test-key", hours_back=168)
         assert config.hours_back == 168
-        
+
         # Too high
         with pytest.raises(ValidationError):
             DatadogConfig(api_key="test-key", app_key="test-key", hours_back=200)
-        
+
         # Too low
         with pytest.raises(ValidationError):
             DatadogConfig(api_key="test-key", app_key="test-key", hours_back=0)
-    
+
     def test_datadog_config_limit_validation(self):
         """Test limit validation."""
         # Valid range
         config = DatadogConfig(api_key="test-key", app_key="test-key", limit=1000)
         assert config.limit == 1000
-        
+
         # Too high
         with pytest.raises(ValidationError):
             DatadogConfig(api_key="test-key", app_key="test-key", limit=2000)
-        
+
         # Too low
         with pytest.raises(ValidationError):
             DatadogConfig(api_key="test-key", app_key="test-key", limit=0)
-    
+
     def test_datadog_config_query_extra_mode_validation(self):
         """Test query_extra_mode validation."""
         # Valid modes
-        config1 = DatadogConfig(api_key="test-key", app_key="test-key", query_extra_mode="AND")
+        config1 = DatadogConfig(
+            api_key="test-key", app_key="test-key", query_extra_mode="AND"
+        )
         assert config1.query_extra_mode == "AND"
-        
-        config2 = DatadogConfig(api_key="test-key", app_key="test-key", query_extra_mode="OR")
+
+        config2 = DatadogConfig(
+            api_key="test-key", app_key="test-key", query_extra_mode="OR"
+        )
         assert config2.query_extra_mode == "OR"
-        
+
         # Case insensitive
-        config3 = DatadogConfig(api_key="test-key", app_key="test-key", query_extra_mode="and")
+        config3 = DatadogConfig(
+            api_key="test-key", app_key="test-key", query_extra_mode="and"
+        )
         assert config3.query_extra_mode == "AND"
-        
+
         # Invalid mode
         with pytest.raises(ValidationError):
-            DatadogConfig(api_key="test-key", app_key="test-key", query_extra_mode="INVALID")
+            DatadogConfig(
+                api_key="test-key", app_key="test-key", query_extra_mode="INVALID"
+            )
 
 
 class TestJiraConfig:
     """Test Jira configuration validation."""
-    
+
     def test_jira_config_valid(self):
         """Test valid Jira configuration."""
         config = JiraConfig(
@@ -179,9 +188,9 @@ class TestJiraConfig:
             search_window_days=365,
             similarity_threshold=0.82,
             direct_log_threshold=0.90,
-            partial_log_threshold=0.70
+            partial_log_threshold=0.70,
         )
-        
+
         assert config.domain == "test.atlassian.net"
         assert config.user == "test@example.com"
         assert config.api_token == "test-token"
@@ -191,22 +200,22 @@ class TestJiraConfig:
         assert config.similarity_threshold == 0.82
         assert config.direct_log_threshold == 0.90
         assert config.partial_log_threshold == 0.70
-    
+
     def test_jira_config_defaults(self):
         """Test Jira configuration defaults."""
         config = JiraConfig(
             domain="test.atlassian.net",
             user="test@example.com",
             api_token="test-token",
-            project_key="TEST"
+            project_key="TEST",
         )
-        
+
         assert config.search_max_results == 200
         assert config.search_window_days == 365
         assert config.similarity_threshold == 0.82
         assert config.direct_log_threshold == 0.90
         assert config.partial_log_threshold == 0.70
-    
+
     def test_jira_config_threshold_validation(self):
         """Test threshold validation."""
         # Valid thresholds
@@ -217,13 +226,13 @@ class TestJiraConfig:
             project_key="TEST",
             similarity_threshold=0.5,
             direct_log_threshold=0.8,
-            partial_log_threshold=0.6
+            partial_log_threshold=0.6,
         )
-        
+
         assert config.similarity_threshold == 0.5
         assert config.direct_log_threshold == 0.8
         assert config.partial_log_threshold == 0.6
-        
+
         # Invalid thresholds (too high)
         with pytest.raises(ValidationError):
             JiraConfig(
@@ -231,9 +240,9 @@ class TestJiraConfig:
                 user="test@example.com",
                 api_token="test-token",
                 project_key="TEST",
-                similarity_threshold=1.5
+                similarity_threshold=1.5,
             )
-        
+
         # Invalid thresholds (negative)
         with pytest.raises(ValidationError):
             JiraConfig(
@@ -241,13 +250,13 @@ class TestJiraConfig:
                 user="test@example.com",
                 api_token="test-token",
                 project_key="TEST",
-                similarity_threshold=-0.1
+                similarity_threshold=-0.1,
             )
 
 
 class TestAgentConfig:
     """Test Agent configuration validation."""
-    
+
     def test_agent_config_valid(self):
         """Test valid Agent configuration."""
         config = AgentConfig(
@@ -261,9 +270,9 @@ class TestAgentConfig:
             aggregate_kafka_consumer=False,
             occ_escalate_enabled=False,
             occ_escalate_threshold=10,
-            occ_escalate_to="high"
+            occ_escalate_to="high",
         )
-        
+
         assert config.auto_create_ticket is False
         assert config.persist_sim_fp is False
         assert config.comment_on_duplicate is True
@@ -275,11 +284,11 @@ class TestAgentConfig:
         assert config.occ_escalate_enabled is False
         assert config.occ_escalate_threshold == 10
         assert config.occ_escalate_to == "high"
-    
+
     def test_agent_config_defaults(self):
         """Test Agent configuration defaults."""
         config = AgentConfig()
-        
+
         assert config.auto_create_ticket is False
         assert config.persist_sim_fp is False
         assert config.comment_on_duplicate is True
@@ -291,83 +300,90 @@ class TestAgentConfig:
         assert config.occ_escalate_enabled is False
         assert config.occ_escalate_threshold == 10
         assert config.occ_escalate_to == "high"
-    
+
     def test_agent_config_severity_rules_validation(self):
         """Test severity rules JSON validation."""
         # Valid JSON
-        config = AgentConfig(severity_rules_json='{"database-connection": "high", "auth-error": "medium"}')
-        assert config.severity_rules_json == '{"database-connection": "high", "auth-error": "medium"}'
-        
+        config = AgentConfig(
+            severity_rules_json='{"database-connection": "high", "auth-error": "medium"}'
+        )
+        assert (
+            config.severity_rules_json
+            == '{"database-connection": "high", "auth-error": "medium"}'
+        )
+
         # Invalid JSON
         with pytest.raises(ValidationError):
             AgentConfig(severity_rules_json='{"invalid": json}')
-        
+
         # Invalid severity values
         with pytest.raises(ValidationError):
             AgentConfig(severity_rules_json='{"database-connection": "invalid"}')
-        
+
         # Empty JSON (valid)
         config = AgentConfig(severity_rules_json="")
         assert config.severity_rules_json == ""
-    
+
     def test_agent_config_escalate_to_validation(self):
         """Test escalation target validation."""
         # Valid targets
         for target in ["low", "medium", "high"]:
             config = AgentConfig(occ_escalate_to=target)
             assert config.occ_escalate_to == target
-        
+
         # Case insensitive
         config = AgentConfig(occ_escalate_to="HIGH")
         assert config.occ_escalate_to == "high"
-        
+
         # Invalid target
         with pytest.raises(ValidationError):
             AgentConfig(occ_escalate_to="invalid")
-    
+
     def test_agent_config_get_severity_rules(self):
         """Test severity rules parsing."""
         # Valid rules
-        config = AgentConfig(severity_rules_json='{"database-connection": "high", "auth-error": "medium"}')
+        config = AgentConfig(
+            severity_rules_json='{"database-connection": "high", "auth-error": "medium"}'
+        )
         rules = config.get_severity_rules()
-        
+
         assert rules == {"database-connection": "high", "auth-error": "medium"}
-        
+
         # Empty rules
         config = AgentConfig(severity_rules_json="")
         rules = config.get_severity_rules()
-        
+
         assert rules == {}
 
 
 class TestLoggingConfig:
     """Test Logging configuration validation."""
-    
+
     def test_logging_config_valid(self):
         """Test valid Logging configuration."""
         config = LoggingConfig(level="INFO", format="%(asctime)s - %(message)s")
-        
+
         assert config.level == "INFO"
         assert config.format == "%(asctime)s - %(message)s"
-    
+
     def test_logging_config_defaults(self):
         """Test Logging configuration defaults."""
         config = LoggingConfig()
-        
+
         assert config.level == "INFO"
         assert config.format == "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    
+
     def test_logging_config_level_validation(self):
         """Test log level validation."""
         # Valid levels
         for level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             config = LoggingConfig(level=level)
             assert config.level == level
-        
+
         # Case insensitive
         config = LoggingConfig(level="info")
         assert config.level == "INFO"
-        
+
         # Invalid level
         with pytest.raises(ValidationError):
             LoggingConfig(level="INVALID")
@@ -375,37 +391,37 @@ class TestLoggingConfig:
 
 class TestUIConfig:
     """Test UI configuration validation."""
-    
+
     def test_ui_config_valid(self):
         """Test valid UI configuration."""
         config = UIConfig(
             max_title_length=120,
             max_description_preview=160,
-            max_json_output_length=1000
+            max_json_output_length=1000,
         )
-        
+
         assert config.max_title_length == 120
         assert config.max_description_preview == 160
         assert config.max_json_output_length == 1000
-    
+
     def test_ui_config_defaults(self):
         """Test UI configuration defaults."""
         config = UIConfig()
-        
+
         assert config.max_title_length == 120
         assert config.max_description_preview == 160
         assert config.max_json_output_length == 1000
-    
+
     def test_ui_config_length_validation(self):
         """Test length validation."""
         # Valid lengths
         config = UIConfig(max_title_length=255)
         assert config.max_title_length == 255
-        
+
         # Too high
         with pytest.raises(ValidationError):
             UIConfig(max_title_length=300)
-        
+
         # Too low
         with pytest.raises(ValidationError):
             UIConfig(max_title_length=5)
@@ -413,11 +429,11 @@ class TestUIConfig:
 
 class TestConfigIntegration:
     """Test complete configuration integration."""
-    
+
     def test_config_validation_success(self):
         """Test successful configuration validation."""
         config = Config()
-        
+
         # Mock required fields
         config.openai.api_key = "test-openai-key"
         config.datadog.api_key = "test-datadog-api-key"
@@ -426,24 +442,24 @@ class TestConfigIntegration:
         config.jira.user = "test@example.com"
         config.jira.api_token = "test-jira-token"
         config.jira.project_key = "TEST"
-        
+
         issues = config.validate_configuration()
         assert len(issues) == 0
-    
+
     def test_config_validation_missing_fields(self):
         """Test configuration validation with missing fields."""
         config = Config()
-        
+
         issues = config.validate_configuration()
         assert len(issues) > 0
         assert any("OPENAI_API_KEY is required" in issue for issue in issues)
         assert any("DATADOG_API_KEY is required" in issue for issue in issues)
         assert any("JIRA_DOMAIN is required" in issue for issue in issues)
-    
+
     def test_config_validation_dangerous_settings(self):
         """Test configuration validation for dangerous settings."""
         config = Config()
-        
+
         # Mock required fields
         config.openai.api_key = "test-openai-key"
         config.datadog.api_key = "test-datadog-api-key"
@@ -452,18 +468,21 @@ class TestConfigIntegration:
         config.jira.user = "test@example.com"
         config.jira.api_token = "test-jira-token"
         config.jira.project_key = "TEST"
-        
+
         # Set dangerous combination
         config.agent.auto_create_ticket = True
         config.agent.max_tickets_per_run = 0
-        
+
         issues = config.validate_configuration()
-        assert any("MAX_TICKETS_PER_RUN=0 with AUTO_CREATE_TICKET=true is dangerous" in issue for issue in issues)
-    
+        assert any(
+            "MAX_TICKETS_PER_RUN=0 with AUTO_CREATE_TICKET=true is dangerous" in issue
+            for issue in issues
+        )
+
     def test_config_validation_low_limits(self):
         """Test configuration validation for low limits."""
         config = Config()
-        
+
         # Mock required fields
         config.openai.api_key = "test-openai-key"
         config.datadog.api_key = "test-datadog-api-key"
@@ -472,19 +491,19 @@ class TestConfigIntegration:
         config.jira.user = "test@example.com"
         config.jira.api_token = "test-jira-token"
         config.jira.project_key = "TEST"
-        
+
         # Set low limits
         config.datadog.limit = 5
         config.jira.similarity_threshold = 0.3
-        
+
         issues = config.validate_configuration()
         assert any("DATADOG_LIMIT is very low" in issue for issue in issues)
         assert any("JIRA_SIMILARITY_THRESHOLD is very low" in issue for issue in issues)
-    
+
     def test_config_logging(self):
         """Test configuration logging."""
         config = Config()
-        
+
         # Mock required fields
         config.openai.api_key = "test-openai-key"
         config.datadog.api_key = "test-datadog-api-key"
@@ -493,44 +512,48 @@ class TestConfigIntegration:
         config.jira.user = "test@example.com"
         config.jira.api_token = "test-jira-token"
         config.jira.project_key = "TEST"
-        
+
         # Should not raise an exception
         config.log_configuration()
 
 
 class TestConfigEnvironment:
     """Test configuration loading from environment variables."""
-    
+
     def test_config_from_env(self, temp_env):
         """Test configuration loading from environment variables."""
         # Set additional environment variables
-        os.environ.update({
-            "DATADOG_LIMIT": "100",
-            "JIRA_SIMILARITY_THRESHOLD": "0.75",
-            "MAX_TITLE_LENGTH": "150",
-            "LOG_LEVEL": "DEBUG"
-        })
-        
+        os.environ.update(
+            {
+                "DATADOG_LIMIT": "100",
+                "JIRA_SIMILARITY_THRESHOLD": "0.75",
+                "MAX_TITLE_LENGTH": "150",
+                "LOG_LEVEL": "DEBUG",
+            }
+        )
+
         # Reload configuration
         config = reload_config()
-        
+
         assert config.datadog.limit == 100
         assert config.jira.similarity_threshold == 0.75
         assert config.ui.max_title_length == 150
         assert config.logging.level == "DEBUG"
-    
+
     def test_config_type_conversion(self, temp_env):
         """Test automatic type conversion from environment variables."""
         # Set string values that should be converted
-        os.environ.update({
-            "DATADOG_LIMIT": "50",  # String to int
-            "JIRA_SIMILARITY_THRESHOLD": "0.82",  # String to float
-            "AUTO_CREATE_TICKET": "true",  # String to bool
-            "MAX_TICKETS_PER_RUN": "5"  # String to int
-        })
-        
+        os.environ.update(
+            {
+                "DATADOG_LIMIT": "50",  # String to int
+                "JIRA_SIMILARITY_THRESHOLD": "0.82",  # String to float
+                "AUTO_CREATE_TICKET": "true",  # String to bool
+                "MAX_TICKETS_PER_RUN": "5",  # String to int
+            }
+        )
+
         config = reload_config()
-        
+
         assert isinstance(config.datadog.limit, int)
         assert config.datadog.limit == 50
         assert isinstance(config.jira.similarity_threshold, float)

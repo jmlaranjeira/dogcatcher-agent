@@ -1,4 +1,5 @@
 """Fetch/prep node (fetch_logs, fp_counts, window hours)."""
+
 from typing import Dict, Any
 
 
@@ -17,6 +18,7 @@ def fetch_logs(state: Dict[str, Any]) -> Dict[str, Any]:
         state["fp_counts"] = counts
         try:
             import os as _os
+
             state["window_hours"] = int(_os.getenv("DATADOG_HOURS_BACK", "48"))
         except Exception:
             state["window_hours"] = 48
@@ -24,14 +26,6 @@ def fetch_logs(state: Dict[str, Any]) -> Dict[str, Any]:
     index = state.get("log_index", 0)
     if index < len(logs):
         log = logs[index]
-        return {
-            **state,
-            "log_message": log.get("message", ""),
-            "log_data": log or {}
-        }
+        return {**state, "log_message": log.get("message", ""), "log_data": log or {}}
     else:
-        return {
-            **state,
-            "log_message": "",
-            "log_data": {}
-        }
+        return {**state, "log_message": "", "log_data": {}}

@@ -49,22 +49,13 @@ def sample_datadog_response():
                     "message": "Test error message",
                     "timestamp": "2025-01-01T10:00:00.000Z",
                     "attributes": {
-                        "logger": {
-                            "name": "test.logger",
-                            "thread_name": "main"
-                        },
-                        "properties": {
-                            "Log": "Detailed log information"
-                        }
-                    }
+                        "logger": {"name": "test.logger", "thread_name": "main"},
+                        "properties": {"Log": "Detailed log information"},
+                    },
                 }
             }
         ],
-        "meta": {
-            "page": {
-                "after": None
-            }
-        }
+        "meta": {"page": {"after": None}},
     }
 
 
@@ -80,11 +71,11 @@ class TestAsyncDatadogClientInit:
 
     def test_is_configured_true(self):
         """Test is_configured returns True with valid config."""
-        with patch('agent.datadog_async.get_config') as mock_get_config:
+        with patch("agent.datadog_async.get_config") as mock_get_config:
             mock_get_config.return_value = MagicMock(
                 datadog_api_key="api-key",
                 datadog_app_key="app-key",
-                datadog_site="datadoghq.com"
+                datadog_site="datadoghq.com",
             )
 
             client = AsyncDatadogClient()
@@ -92,11 +83,9 @@ class TestAsyncDatadogClientInit:
 
     def test_is_configured_false(self):
         """Test is_configured returns False with missing config."""
-        with patch('agent.datadog_async.get_config') as mock_get_config:
+        with patch("agent.datadog_async.get_config") as mock_get_config:
             mock_get_config.return_value = MagicMock(
-                datadog_api_key="",
-                datadog_app_key="",
-                datadog_site=""
+                datadog_api_key="", datadog_app_key="", datadog_site=""
             )
 
             client = AsyncDatadogClient()
@@ -128,7 +117,7 @@ class TestAsyncDatadogClientContextManager:
         """Test context manager allows operations."""
         async with AsyncDatadogClient() as client:
             assert client._client is not None
-            assert hasattr(client, 'fetch_page')
+            assert hasattr(client, "fetch_page")
 
 
 class TestAsyncDatadogClientFetchPage:
@@ -138,7 +127,7 @@ class TestAsyncDatadogClientFetchPage:
     async def test_fetch_page_success(self, sample_datadog_response):
         """Test successful fetch_page operation."""
         async with AsyncDatadogClient() as client:
-            with patch.object(client._client, 'post') as mock_post:
+            with patch.object(client._client, "post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
                 mock_response.json = MagicMock(return_value=sample_datadog_response)
@@ -148,10 +137,7 @@ class TestAsyncDatadogClientFetchPage:
                 now = datetime.utcnow()
                 start = now - timedelta(hours=24)
                 data, cursor = await client.fetch_page(
-                    query="service:test status:error",
-                    start=start,
-                    end=now,
-                    limit=100
+                    query="service:test status:error", start=start, end=now, limit=100
                 )
 
         assert len(data) == 1
@@ -162,11 +148,11 @@ class TestAsyncDatadogClientFetchPage:
         """Test fetch_page with pagination cursor."""
         response_with_cursor = {
             **sample_datadog_response,
-            "meta": {"page": {"after": "next-page-cursor"}}
+            "meta": {"page": {"after": "next-page-cursor"}},
         }
 
         async with AsyncDatadogClient() as client:
-            with patch.object(client._client, 'post') as mock_post:
+            with patch.object(client._client, "post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
                 mock_response.json = MagicMock(return_value=response_with_cursor)
@@ -176,10 +162,7 @@ class TestAsyncDatadogClientFetchPage:
                 now = datetime.utcnow()
                 start = now - timedelta(hours=24)
                 data, cursor = await client.fetch_page(
-                    query="service:test",
-                    start=start,
-                    end=now,
-                    limit=100
+                    query="service:test", start=start, end=now, limit=100
                 )
 
         assert cursor == "next-page-cursor"
@@ -188,13 +171,10 @@ class TestAsyncDatadogClientFetchPage:
     async def test_fetch_page_not_configured(self):
         """Test fetch_page returns empty when not configured."""
         client = AsyncDatadogClient()
-        with patch.object(client, 'is_configured', return_value=False):
+        with patch.object(client, "is_configured", return_value=False):
             now = datetime.utcnow()
             data, cursor = await client.fetch_page(
-                query="test",
-                start=now - timedelta(hours=1),
-                end=now,
-                limit=100
+                query="test", start=now - timedelta(hours=1), end=now, limit=100
             )
 
         assert data == []
@@ -204,15 +184,12 @@ class TestAsyncDatadogClientFetchPage:
     async def test_fetch_page_http_error(self):
         """Test fetch_page handles HTTP errors."""
         async with AsyncDatadogClient() as client:
-            with patch.object(client._client, 'post') as mock_post:
+            with patch.object(client._client, "post") as mock_post:
                 mock_post.side_effect = httpx.HTTPError("Connection failed")
 
                 now = datetime.utcnow()
                 data, cursor = await client.fetch_page(
-                    query="test",
-                    start=now - timedelta(hours=1),
-                    end=now,
-                    limit=100
+                    query="test", start=now - timedelta(hours=1), end=now, limit=100
                 )
 
         assert data == []
@@ -224,10 +201,7 @@ class TestAsyncDatadogClientFetchPage:
         client = AsyncDatadogClient()
         now = datetime.utcnow()
         data, cursor = await client.fetch_page(
-            query="test",
-            start=now - timedelta(hours=1),
-            end=now,
-            limit=100
+            query="test", start=now - timedelta(hours=1), end=now, limit=100
         )
 
         assert data == []
@@ -244,7 +218,7 @@ class TestBuildDdQuery:
             env="prod",
             statuses_csv="error",
             extra_csv="",
-            extra_mode="AND"
+            extra_mode="AND",
         )
 
         assert "service:test-service" in query
@@ -258,7 +232,7 @@ class TestBuildDdQuery:
             env="dev",
             statuses_csv="error,warn,critical",
             extra_csv="",
-            extra_mode="AND"
+            extra_mode="AND",
         )
 
         assert "status:error" in query
@@ -273,7 +247,7 @@ class TestBuildDdQuery:
             env="dev",
             statuses_csv="error",
             extra_csv="@env:prod,@host:server1",
-            extra_mode="AND"
+            extra_mode="AND",
         )
 
         assert "@env:prod" in extra
@@ -287,7 +261,7 @@ class TestBuildDdQuery:
             env="dev",
             statuses_csv="error",
             extra_csv="exception,error",
-            extra_mode="OR"
+            extra_mode="OR",
         )
 
         assert " OR " in extra
@@ -303,14 +277,9 @@ class TestParseLogEntry:
                 "message": "Test message",
                 "timestamp": "2025-01-01T10:00:00Z",
                 "attributes": {
-                    "logger": {
-                        "name": "app.logger",
-                        "thread_name": "main-thread"
-                    },
-                    "properties": {
-                        "Log": "Detailed info"
-                    }
-                }
+                    "logger": {"name": "app.logger", "thread_name": "main-thread"},
+                    "properties": {"Log": "Detailed info"},
+                },
             }
         }
 
@@ -323,11 +292,7 @@ class TestParseLogEntry:
 
     def test_parse_log_missing_fields(self):
         """Test log parsing with missing fields."""
-        raw_log = {
-            "attributes": {
-                "message": "Simple message"
-            }
-        }
+        raw_log = {"attributes": {"message": "Simple message"}}
 
         parsed = _parse_log_entry(raw_log)
 
@@ -341,11 +306,7 @@ class TestParseLogEntry:
         raw_log = {
             "attributes": {
                 "message": "Message",
-                "attributes": {
-                    "properties": {
-                        "Log": long_detail
-                    }
-                }
+                "attributes": {"properties": {"Log": long_detail}},
             }
         }
 
@@ -389,22 +350,19 @@ class TestGetLogsAsync:
     @pytest.mark.asyncio
     async def test_get_logs_success(self, mock_config, sample_datadog_response):
         """Test successful log retrieval."""
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.AsyncDatadogClient') as MockClient:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.AsyncDatadogClient") as MockClient:
                 mock_client = AsyncMock()
                 mock_client.__aenter__.return_value = mock_client
                 mock_client.__aexit__.return_value = None
                 mock_client.fetch_page.return_value = (
                     sample_datadog_response["data"],
-                    None
+                    None,
                 )
                 MockClient.return_value = mock_client
 
                 logs = await get_logs_async(
-                    service="test",
-                    env="dev",
-                    hours_back=24,
-                    limit=100
+                    service="test", env="dev", hours_back=24, limit=100
                 )
 
         assert len(logs) == 1
@@ -413,8 +371,8 @@ class TestGetLogsAsync:
     @pytest.mark.asyncio
     async def test_get_logs_empty(self, mock_config):
         """Test empty log retrieval."""
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.AsyncDatadogClient') as MockClient:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.AsyncDatadogClient") as MockClient:
                 mock_client = AsyncMock()
                 mock_client.__aenter__.return_value = mock_client
                 mock_client.__aexit__.return_value = None
@@ -428,8 +386,8 @@ class TestGetLogsAsync:
     @pytest.mark.asyncio
     async def test_get_logs_pagination(self, mock_config, sample_datadog_response):
         """Test log retrieval with pagination."""
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.AsyncDatadogClient') as MockClient:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.AsyncDatadogClient") as MockClient:
                 mock_client = AsyncMock()
                 mock_client.__aenter__.return_value = mock_client
                 mock_client.__aexit__.return_value = None
@@ -437,7 +395,7 @@ class TestGetLogsAsync:
                 # First call returns cursor, second call returns no cursor
                 mock_client.fetch_page.side_effect = [
                     (sample_datadog_response["data"], "next-cursor"),
-                    (sample_datadog_response["data"], None)
+                    (sample_datadog_response["data"], None),
                 ]
                 MockClient.return_value = mock_client
 
@@ -451,15 +409,16 @@ class TestGetLogsBatchAsync:
     """Test batch log retrieval."""
 
     @pytest.mark.asyncio
-    async def test_batch_fetch_multiple_services(self, mock_config, sample_datadog_response):
+    async def test_batch_fetch_multiple_services(
+        self, mock_config, sample_datadog_response
+    ):
         """Test batch fetching for multiple services."""
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.get_logs_async') as mock_get_logs:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.get_logs_async") as mock_get_logs:
                 mock_get_logs.return_value = [{"message": "test"}]
 
                 result = await get_logs_batch_async(
-                    services=["service1", "service2", "service3"],
-                    env="dev"
+                    services=["service1", "service2", "service3"], env="dev"
                 )
 
         assert len(result) == 3
@@ -470,17 +429,15 @@ class TestGetLogsBatchAsync:
     @pytest.mark.asyncio
     async def test_batch_fetch_handles_errors(self, mock_config):
         """Test batch fetch handles errors gracefully."""
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.get_logs_async') as mock_get_logs:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.get_logs_async") as mock_get_logs:
                 mock_get_logs.side_effect = [
                     [{"message": "success"}],
                     Exception("Failed"),
-                    [{"message": "success2"}]
+                    [{"message": "success2"}],
                 ]
 
-                result = await get_logs_batch_async(
-                    services=["svc1", "svc2", "svc3"]
-                )
+                result = await get_logs_batch_async(services=["svc1", "svc2", "svc3"])
 
         # Should have 2 successful, 1 failed (not in result)
         assert len(result) == 2
@@ -492,7 +449,7 @@ class TestFetchLogsAsyncAlias:
     @pytest.mark.asyncio
     async def test_alias_calls_get_logs_async(self, mock_config):
         """Test that fetch_logs_async is an alias for get_logs_async."""
-        with patch('agent.datadog_async.get_logs_async') as mock_get_logs:
+        with patch("agent.datadog_async.get_logs_async") as mock_get_logs:
             mock_get_logs.return_value = []
 
             await fetch_logs_async(service="test")

@@ -12,7 +12,7 @@ from agent.utils.circuit_breaker import (
     CircuitBreakerOpenError,
     CircuitState,
     CircuitBreakerRegistry,
-    get_circuit_breaker_registry
+    get_circuit_breaker_registry,
 )
 
 
@@ -35,7 +35,7 @@ class TestCircuitBreakerConfig:
             timeout_seconds=30,
             half_open_max_calls=2,
             expected_exception=ValueError,
-            name="test_breaker"
+            name="test_breaker",
         )
         assert config.failure_threshold == 3
         assert config.timeout_seconds == 30
@@ -54,7 +54,7 @@ class TestCircuitBreakerStateTransitions:
             failure_threshold=3,
             timeout_seconds=1,  # Short timeout for testing
             half_open_max_calls=2,
-            name="test_breaker"
+            name="test_breaker",
         )
         return CircuitBreaker(config)
 
@@ -67,6 +67,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_successful_call_in_closed_state(self, breaker):
         """Test successful call in CLOSED state."""
+
         async def successful_func():
             return "success"
 
@@ -79,6 +80,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_failed_call_increments_failure_count(self, breaker):
         """Test failed call increments failure count."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -92,6 +94,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_circuit_opens_after_threshold(self, breaker):
         """Test circuit opens after reaching failure threshold."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -106,6 +109,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_open_circuit_rejects_calls(self, breaker):
         """Test OPEN circuit rejects calls immediately."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -128,6 +132,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_transition_to_half_open_after_timeout(self, breaker):
         """Test circuit transitions to HALF_OPEN after timeout."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -152,6 +157,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_half_open_closes_on_success(self, breaker):
         """Test HALF_OPEN closes after successful test calls."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -178,6 +184,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_half_open_reopens_on_failure(self, breaker):
         """Test HALF_OPEN reopens immediately on failure."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -192,6 +199,7 @@ class TestCircuitBreakerStateTransitions:
         # First call transitions to HALF_OPEN
         async def successful_func():
             return "success"
+
         await breaker.call(successful_func)
         assert breaker.state == CircuitState.HALF_OPEN
 
@@ -204,6 +212,7 @@ class TestCircuitBreakerStateTransitions:
     @pytest.mark.asyncio
     async def test_success_resets_failure_count_in_closed(self, breaker):
         """Test success resets failure count in CLOSED state."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -230,15 +239,14 @@ class TestCircuitBreakerStatistics:
     def breaker(self):
         """Create circuit breaker for testing."""
         config = CircuitBreakerConfig(
-            failure_threshold=3,
-            timeout_seconds=1,
-            name="stats_breaker"
+            failure_threshold=3, timeout_seconds=1, name="stats_breaker"
         )
         return CircuitBreaker(config)
 
     @pytest.mark.asyncio
     async def test_stats_track_calls(self, breaker):
         """Test statistics track all calls."""
+
         async def successful_func():
             return "success"
 
@@ -259,6 +267,7 @@ class TestCircuitBreakerStatistics:
     @pytest.mark.asyncio
     async def test_stats_track_rejections(self, breaker):
         """Test statistics track rejected calls."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -280,6 +289,7 @@ class TestCircuitBreakerStatistics:
     @pytest.mark.asyncio
     async def test_stats_success_rate(self, breaker):
         """Test success rate calculation."""
+
         async def successful_func():
             return "success"
 
@@ -305,6 +315,7 @@ class TestCircuitBreakerStatistics:
     @pytest.mark.asyncio
     async def test_get_stats_returns_complete_info(self, breaker):
         """Test get_stats returns complete information."""
+
         async def successful_func():
             return "success"
 
@@ -417,6 +428,7 @@ class TestCircuitBreakerManualControl:
     @pytest.mark.asyncio
     async def test_manual_reset(self, breaker):
         """Test manual reset of circuit breaker."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -477,6 +489,7 @@ class TestCircuitBreakerSyncAsyncSupport:
     @pytest.mark.asyncio
     async def test_async_function_support(self, breaker):
         """Test circuit breaker works with async functions."""
+
         async def async_func():
             return "async_result"
 
@@ -486,6 +499,7 @@ class TestCircuitBreakerSyncAsyncSupport:
     @pytest.mark.asyncio
     async def test_sync_function_support(self, breaker):
         """Test circuit breaker works with sync functions."""
+
         def sync_func():
             return "sync_result"
 
@@ -500,9 +514,7 @@ class TestCircuitBreakerEdgeCases:
     def breaker(self):
         """Create circuit breaker for testing."""
         config = CircuitBreakerConfig(
-            failure_threshold=3,
-            timeout_seconds=1,
-            name="edge_case_breaker"
+            failure_threshold=3, timeout_seconds=1, name="edge_case_breaker"
         )
         return CircuitBreaker(config)
 
@@ -526,6 +538,7 @@ class TestCircuitBreakerEdgeCases:
     @pytest.mark.asyncio
     async def test_expected_exception_counted(self, breaker):
         """Test expected exceptions are counted as failures."""
+
         # Default expected_exception is Exception (catches all)
         async def throws_value_error():
             raise ValueError("Expected error")
@@ -540,6 +553,7 @@ class TestCircuitBreakerEdgeCases:
     @pytest.mark.asyncio
     async def test_half_open_call_limit(self, breaker):
         """Test HALF_OPEN state limits number of calls."""
+
         async def failing_func():
             raise Exception("Test error")
 
@@ -554,6 +568,7 @@ class TestCircuitBreakerEdgeCases:
         # Transition to HALF_OPEN
         async def successful_func():
             return "success"
+
         await breaker.call(successful_func)
 
         assert breaker.state == CircuitState.HALF_OPEN

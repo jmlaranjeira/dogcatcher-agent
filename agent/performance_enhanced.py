@@ -59,7 +59,7 @@ class PerformanceMetrics:
             "avg_ms": round(sum(durations) * 1000 / len(durations), 2),
             "min_ms": round(min(durations) * 1000, 2),
             "max_ms": round(max(durations) * 1000, 2),
-            "total_ms": round(sum(durations) * 1000, 2)
+            "total_ms": round(sum(durations) * 1000, 2),
         }
 
     def get_all_stats(self) -> Dict[str, Dict[str, float]]:
@@ -75,10 +75,12 @@ class PerformanceMetrics:
         log_info("Performance metrics summary")
         for operation, op_stats in stats.items():
             if op_stats:
-                log_info(f"  {operation}: {op_stats['count']} calls, "
-                        f"avg {op_stats['avg_ms']}ms, "
-                        f"min {op_stats['min_ms']}ms, "
-                        f"max {op_stats['max_ms']}ms")
+                log_info(
+                    f"  {operation}: {op_stats['count']} calls, "
+                    f"avg {op_stats['avg_ms']}ms, "
+                    f"min {op_stats['min_ms']}ms, "
+                    f"max {op_stats['max_ms']}ms"
+                )
 
 
 class EnhancedSimilarityCache:
@@ -102,19 +104,31 @@ class EnhancedSimilarityCache:
             # Get cache configuration
             cache_config = {
                 "backend": getattr(config, "cache_backend", "memory"),
-                "redis_url": getattr(config, "cache_redis_url", "redis://localhost:6379"),
-                "file_cache_dir": getattr(config, "cache_file_dir", ".agent_cache/persistent"),
+                "redis_url": getattr(
+                    config, "cache_redis_url", "redis://localhost:6379"
+                ),
+                "file_cache_dir": getattr(
+                    config, "cache_file_dir", ".agent_cache/persistent"
+                ),
                 "ttl_seconds": getattr(config, "cache_ttl_seconds", 3600),
                 "max_memory_size": getattr(config, "cache_max_memory_size", 1000),
-                "similarity_ttl_seconds": getattr(config, "cache_similarity_ttl_seconds", 3600)
+                "similarity_ttl_seconds": getattr(
+                    config, "cache_similarity_ttl_seconds", 3600
+                ),
             }
 
             self.cache_manager = CacheManager(cache_config)
             self._initialized = await self.cache_manager.initialize()
 
             if self._initialized:
-                log_info("Enhanced similarity cache initialized successfully",
-                        backend=self.cache_manager.active_backend.name if self.cache_manager.active_backend else "none")
+                log_info(
+                    "Enhanced similarity cache initialized successfully",
+                    backend=(
+                        self.cache_manager.active_backend.name
+                        if self.cache_manager.active_backend
+                        else "none"
+                    ),
+                )
             else:
                 log_error("Failed to initialize enhanced similarity cache")
 
@@ -124,7 +138,9 @@ class EnhancedSimilarityCache:
             log_error("Error initializing enhanced similarity cache", error=str(e))
             return False
 
-    async def get(self, summary: str, state: Optional[dict] = None) -> Optional[Tuple[str, float, str]]:
+    async def get(
+        self, summary: str, state: Optional[dict] = None
+    ) -> Optional[Tuple[str, float, str]]:
         """Get cached similarity result."""
         if not self._initialized or not self.cache_manager:
             self.misses += 1
@@ -144,7 +160,9 @@ class EnhancedSimilarityCache:
             self.errors += 1
             return None
 
-    async def set(self, summary: str, state: Optional[dict], result: Tuple[str, float, str]) -> None:
+    async def set(
+        self, summary: str, state: Optional[dict], result: Tuple[str, float, str]
+    ) -> None:
         """Cache similarity result."""
         if not self._initialized or not self.cache_manager:
             return
@@ -165,17 +183,19 @@ class EnhancedSimilarityCache:
                 "status": "not_initialized",
                 "hits": self.hits,
                 "misses": self.misses,
-                "errors": self.errors
+                "errors": self.errors,
             }
 
         try:
             cache_stats = self.cache_manager.get_stats()
-            cache_stats.update({
-                "wrapper_hits": self.hits,
-                "wrapper_misses": self.misses,
-                "wrapper_errors": self.errors,
-                "wrapper_hit_rate_percent": self._calculate_hit_rate()
-            })
+            cache_stats.update(
+                {
+                    "wrapper_hits": self.hits,
+                    "wrapper_misses": self.misses,
+                    "wrapper_errors": self.errors,
+                    "wrapper_hit_rate_percent": self._calculate_hit_rate(),
+                }
+            )
             return cache_stats
 
         except Exception as e:
@@ -184,7 +204,7 @@ class EnhancedSimilarityCache:
                 "error": str(e),
                 "hits": self.hits,
                 "misses": self.misses,
-                "errors": self.errors
+                "errors": self.errors,
             }
 
     def _calculate_hit_rate(self) -> float:
@@ -236,7 +256,7 @@ class EnhancedSimilarityCache:
                 "hits": self.hits,
                 "misses": self.misses,
                 "errors": self.errors,
-                "hit_rate_percent": self._calculate_hit_rate()
+                "hit_rate_percent": self._calculate_hit_rate(),
             }
             return health
 
@@ -289,10 +309,12 @@ def optimize_jira_search_params() -> Dict[str, Any]:
     # For high-volume projects, reduce window to improve performance
     if config.jira_search_window_days > 180:
         optimized_window = 180  # 6 months max
-        log_info("Optimized Jira search window",
-                original=config.jira_search_window_days,
-                optimized=optimized_window,
-                reason="High-volume project optimization")
+        log_info(
+            "Optimized Jira search window",
+            original=config.jira_search_window_days,
+            optimized=optimized_window,
+            reason="High-volume project optimization",
+        )
     else:
         optimized_window = config.jira_search_window_days
 
@@ -300,16 +322,20 @@ def optimize_jira_search_params() -> Dict[str, Any]:
     # Higher thresholds need fewer results since we're looking for exact matches
     if config.jira_similarity_threshold >= 0.9:
         optimized_max_results = min(50, config.jira_search_max_results)
-        log_info("Optimized Jira search max results",
-                original=config.jira_search_max_results,
-                optimized=optimized_max_results,
-                reason="High similarity threshold optimization")
+        log_info(
+            "Optimized Jira search max results",
+            original=config.jira_search_max_results,
+            optimized=optimized_max_results,
+            reason="High similarity threshold optimization",
+        )
     elif config.jira_similarity_threshold >= 0.8:
         optimized_max_results = min(100, config.jira_search_max_results)
-        log_info("Optimized Jira search max results",
-                original=config.jira_search_max_results,
-                optimized=optimized_max_results,
-                reason="Medium similarity threshold optimization")
+        log_info(
+            "Optimized Jira search max results",
+            original=config.jira_search_max_results,
+            optimized=optimized_max_results,
+            reason="Medium similarity threshold optimization",
+        )
     else:
         optimized_max_results = config.jira_search_max_results
 
@@ -318,7 +344,7 @@ def optimize_jira_search_params() -> Dict[str, Any]:
         "search_max_results": optimized_max_results,
         "similarity_threshold": config.jira_similarity_threshold,
         "direct_log_threshold": config.jira_direct_log_threshold,
-        "partial_log_threshold": config.jira_partial_log_threshold
+        "partial_log_threshold": config.jira_partial_log_threshold,
     }
 
 
@@ -326,24 +352,27 @@ def log_configuration_performance() -> None:
     """Log performance-related configuration values."""
     config = get_config()
 
-    log_info("Performance configuration",
-             jira_search_window_days=config.jira_search_window_days,
-             jira_search_max_results=config.jira_search_max_results,
-             jira_similarity_threshold=config.jira_similarity_threshold,
-             jira_direct_log_threshold=config.jira_direct_log_threshold,
-             jira_partial_log_threshold=config.jira_partial_log_threshold,
-             datadog_limit=config.datadog_limit,
-             datadog_max_pages=config.datadog_max_pages,
-             datadog_timeout=config.datadog_timeout,
-             max_tickets_per_run=config.max_tickets_per_run,
-             cache_backend=getattr(config, "cache_backend", "memory"),
-             cache_ttl_seconds=getattr(config, "cache_ttl_seconds", 3600))
+    log_info(
+        "Performance configuration",
+        jira_search_window_days=config.jira_search_window_days,
+        jira_search_max_results=config.jira_search_max_results,
+        jira_similarity_threshold=config.jira_similarity_threshold,
+        jira_direct_log_threshold=config.jira_direct_log_threshold,
+        jira_partial_log_threshold=config.jira_partial_log_threshold,
+        datadog_limit=config.datadog_limit,
+        datadog_max_pages=config.datadog_max_pages,
+        datadog_timeout=config.datadog_timeout,
+        max_tickets_per_run=config.max_tickets_per_run,
+        cache_backend=getattr(config, "cache_backend", "memory"),
+        cache_ttl_seconds=getattr(config, "cache_ttl_seconds", 3600),
+    )
 
 
 @lru_cache(maxsize=128)
 def cached_normalize_text(text: str) -> str:
     """Cached version of text normalization for frequently used strings."""
     from agent.jira.utils import normalize_text
+
     return normalize_text(text)
 
 
@@ -351,6 +380,7 @@ def cached_normalize_text(text: str) -> str:
 def cached_normalize_log_message(message: str) -> str:
     """Cached version of log message normalization for frequently used strings."""
     from agent.jira.utils import normalize_log_message
+
     return normalize_log_message(message)
 
 
@@ -445,13 +475,17 @@ class LegacySimilarityCache:
             self._enhanced_cache = await get_similarity_cache()
         return self._enhanced_cache
 
-    def get(self, summary: str, state: Optional[dict] = None) -> Optional[Tuple[str, float, str]]:
+    def get(
+        self, summary: str, state: Optional[dict] = None
+    ) -> Optional[Tuple[str, float, str]]:
         """Get cached similarity result (sync wrapper)."""
         loop = self._get_loop()
         cache = loop.run_until_complete(self._get_cache())
         return loop.run_until_complete(cache.get(summary, state))
 
-    def set(self, summary: str, state: Optional[dict], result: Tuple[str, float, str]) -> None:
+    def set(
+        self, summary: str, state: Optional[dict], result: Tuple[str, float, str]
+    ) -> None:
         """Cache similarity result (sync wrapper)."""
         loop = self._get_loop()
         cache = loop.run_until_complete(self._get_cache())
@@ -476,6 +510,7 @@ similarity_cache = LegacySimilarityCache()
 
 # Migration utilities
 
+
 async def migrate_from_legacy_cache() -> Dict[str, Any]:
     """Migrate data from legacy memory cache to enhanced cache."""
     try:
@@ -486,7 +521,7 @@ async def migrate_from_legacy_cache() -> Dict[str, Any]:
         return {
             "status": "completed",
             "migrated_entries": 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
     except Exception as e:
@@ -494,7 +529,7 @@ async def migrate_from_legacy_cache() -> Dict[str, Any]:
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
 
@@ -504,7 +539,7 @@ async def performance_health_check() -> Dict[str, Any]:
         health = {
             "timestamp": datetime.now().isoformat(),
             "status": "healthy",
-            "components": {}
+            "components": {},
         }
 
         # Check cache health
@@ -516,7 +551,9 @@ async def performance_health_check() -> Dict[str, Any]:
         metrics_stats = performance_metrics.get_all_stats()
         health["components"]["metrics"] = {
             "active_operations": len(metrics_stats),
-            "total_measurements": sum(len(stats.get("count", 0)) for stats in metrics_stats.values() if stats)
+            "total_measurements": sum(
+                len(stats.get("count", 0)) for stats in metrics_stats.values() if stats
+            ),
         }
 
         # Overall health determination
@@ -530,5 +567,5 @@ async def performance_health_check() -> Dict[str, Any]:
         return {
             "timestamp": datetime.now().isoformat(),
             "status": "error",
-            "error": str(e)
+            "error": str(e),
         }

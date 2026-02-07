@@ -3,6 +3,7 @@
 Provides true async analysis using LangChain's ainvoke() method,
 with circuit breaker protection and fallback analysis support.
 """
+
 from __future__ import annotations
 import os
 import re
@@ -16,7 +17,7 @@ from agent.utils.logger import log_info, log_error, log_debug, log_warning
 from agent.utils.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerOpenError,
-    get_circuit_breaker_registry
+    get_circuit_breaker_registry,
 )
 from agent.utils.fallback_analysis import get_fallback_analyzer
 from agent.config import get_config
@@ -24,7 +25,9 @@ from agent.config import get_config
 # LLM configuration via environment variables
 _model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 _temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
-_resp_fmt = (os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object").lower()
+_resp_fmt = (
+    os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object"
+).lower()
 
 try:
     _temp = float(_temp_raw)
@@ -43,21 +46,23 @@ llm = ChatOpenAI(
     model_kwargs=_model_kwargs,
 )
 
-prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
+prompt = ChatPromptTemplate.from_messages(
+    [
         (
-            "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
-            "Fields required: "
-            "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
-            "create_ticket (boolean), "
-            "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
-            "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
-            "severity (one of: low, medium, high)."
+            "system",
+            (
+                "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
+                "Fields required: "
+                "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
+                "create_ticket (boolean), "
+                "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
+                "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
+                "severity (one of: low, medium, high)."
+            ),
         ),
-    ),
-    ("human", "{log_message}")
-])
+        ("human", "{log_message}"),
+    ]
+)
 
 chain = prompt | llm
 
@@ -85,14 +90,14 @@ def _initialize_circuit_breaker_async():
                 timeout_seconds=config.circuit_breaker_timeout_seconds,
                 half_open_max_calls=config.circuit_breaker_half_open_calls,
                 expected_exception=OpenAIError,
-                name="openai_llm_async"
+                name="openai_llm_async",
             )
             registry.register("openai_llm_async", cb_config)
 
             log_info(
                 "Circuit breaker initialized for async LLM",
                 failure_threshold=config.circuit_breaker_failure_threshold,
-                timeout_seconds=config.circuit_breaker_timeout_seconds
+                timeout_seconds=config.circuit_breaker_timeout_seconds,
             )
 
     _circuit_breaker_initialized = True
@@ -168,7 +173,10 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         # Call LLM asynchronously with circuit breaker protection
         content = await _call_llm_async(contextual_log)
 
-        log_debug("Async LLM analysis completed", content_preview=content[:200] if content else "N/A")
+        log_debug(
+            "Async LLM analysis completed",
+            content_preview=content[:200] if content else "N/A",
+        )
 
         # Parse LLM response
         match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
@@ -183,8 +191,8 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
 
         log_info(
             "Log analyzed successfully with async LLM",
-            error_type=parsed.get('error_type'),
-            create_ticket=parsed.get('create_ticket')
+            error_type=parsed.get("error_type"),
+            create_ticket=parsed.get("create_ticket"),
         )
 
         return {**state, **parsed, "severity": parsed.get("severity", "low")}
@@ -194,7 +202,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         log_warning(
             "Async circuit breaker open, using fallback analysis",
             circuit_name="openai_llm_async",
-            reason=str(e)
+            reason=str(e),
         )
 
         if config.fallback_analysis_enabled:
@@ -206,7 +214,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
                 "create_ticket": False,
                 "ticket_title": "LLM service unavailable",
                 "ticket_description": f"Circuit breaker open: {str(e)}",
-                "severity": "low"
+                "severity": "low",
             }
 
     except (json.JSONDecodeError, ValueError) as e:
@@ -214,7 +222,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         log_error(
             "Async LLM analysis failed with invalid response",
             error=str(e),
-            content_preview=content[:200] if content else "N/A"
+            content_preview=content[:200] if content else "N/A",
         )
 
         if config.fallback_analysis_enabled:
@@ -226,7 +234,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "unknown",
                 "create_ticket": False,
                 "ticket_title": "LLM returned invalid or incomplete data",
-                "ticket_description": content if content else "No content"
+                "ticket_description": content if content else "No content",
             }
 
     except Exception as e:
@@ -234,11 +242,13 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         log_error(
             "Unexpected error during async LLM analysis",
             error=str(e),
-            error_type=type(e).__name__
+            error_type=type(e).__name__,
         )
 
         if config.fallback_analysis_enabled:
-            log_info("Falling back to rule-based analysis due to unexpected async error")
+            log_info(
+                "Falling back to rule-based analysis due to unexpected async error"
+            )
             return await _use_fallback_analysis_async(state, log_data)
         else:
             return {
@@ -246,11 +256,13 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "analysis-error",
                 "create_ticket": False,
                 "ticket_title": "Analysis failed",
-                "ticket_description": f"Error: {str(e)}"
+                "ticket_description": f"Error: {str(e)}",
             }
 
 
-async def _use_fallback_analysis_async(state: Dict[str, Any], log_data: Dict[str, Any]) -> Dict[str, Any]:
+async def _use_fallback_analysis_async(
+    state: Dict[str, Any], log_data: Dict[str, Any]
+) -> Dict[str, Any]:
     """Use rule-based fallback analysis when LLM is unavailable.
 
     This is a thin async wrapper around the sync fallback analyzer.
@@ -274,8 +286,7 @@ async def _use_fallback_analysis_async(state: Dict[str, Any], log_data: Dict[str
 
 
 async def analyze_logs_batch_async(
-    logs: list[Dict[str, Any]],
-    max_concurrent: int = 5
+    logs: list[Dict[str, Any]], max_concurrent: int = 5
 ) -> list[Dict[str, Any]]:
     """Analyze multiple logs concurrently.
 
@@ -292,10 +303,7 @@ async def analyze_logs_batch_async(
 
     async def analyze_with_semaphore(log: Dict[str, Any]) -> Dict[str, Any]:
         async with semaphore:
-            state = {
-                "log_data": log,
-                "log_message": log.get("message", "")
-            }
+            state = {"log_data": log, "log_message": log.get("message", "")}
             return await analyze_log_async(state)
 
     tasks = [analyze_with_semaphore(log) for log in logs]
@@ -306,20 +314,22 @@ async def analyze_logs_batch_async(
     for i, result in enumerate(results):
         if isinstance(result, Exception):
             log_error(f"Batch analysis error for log {i}", error=str(result))
-            valid_results.append({
-                "error_type": "batch-analysis-error",
-                "create_ticket": False,
-                "ticket_title": f"Analysis failed: {str(result)}",
-                "ticket_description": str(result),
-                "severity": "low"
-            })
+            valid_results.append(
+                {
+                    "error_type": "batch-analysis-error",
+                    "create_ticket": False,
+                    "ticket_title": f"Analysis failed: {str(result)}",
+                    "ticket_description": str(result),
+                    "severity": "low",
+                }
+            )
         else:
             valid_results.append(result)
 
     log_info(
         "Batch async analysis completed",
         total=len(logs),
-        successful=sum(1 for r in valid_results if r.get("create_ticket"))
+        successful=sum(1 for r in valid_results if r.get("create_ticket")),
     )
 
     return valid_results

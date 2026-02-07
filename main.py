@@ -4,6 +4,7 @@ Loads environment variables, builds the processing graph, fetches logs,
 and runs the LangGraph pipeline to analyze and create Jira tickets.
 All logging and comments are in English for consistency.
 """
+
 from dotenv import load_dotenv
 import argparse
 import os
@@ -15,55 +16,97 @@ load_dotenv()
 from agent.graph import build_graph
 from agent.utils.logger import log_info, log_error, log_agent_progress
 from agent.config import get_config, reload_config
-from agent.performance import log_performance_summary, log_configuration_performance, get_performance_recommendations
+from agent.performance import (
+    log_performance_summary,
+    log_configuration_performance,
+    get_performance_recommendations,
+)
 
 parser = argparse.ArgumentParser(description="Run the Datadog → Jira automation agent.")
 group = parser.add_mutually_exclusive_group()
-group.add_argument('--dry-run', dest='auto_create_ticket', action='store_false', help='Run in dry-run mode (do not create tickets).')
-group.add_argument('--real', dest='auto_create_ticket', action='store_true', help='Run in real mode (create tickets).')
-parser.add_argument('--env', type=str, help='Environment filter for logs.')
-parser.add_argument('--service', type=str, help='Service filter for logs.')
-parser.add_argument('--hours', type=int, help='Number of hours to look back for logs.')
-parser.add_argument('--limit', type=int, help='Limit the number of logs fetched.')
-parser.add_argument('--max-tickets', type=int, help='Per-run cap on real Jira ticket creation (0 = no limit).')
-parser.add_argument('--async', dest='async_enabled', action='store_true', help='Enable async parallel processing.')
-parser.add_argument('--workers', type=int, help='Number of parallel workers for async mode (default: 5).')
-parser.add_argument('--batch-size', type=int, help='Batch size for async processing (default: 10).')
-parser.add_argument('--profile', type=str, choices=['development', 'staging', 'production', 'testing'],
-                    help='Configuration profile to use (overrides .env defaults)')
-parser.add_argument('--check', action='store_true',
-                    help='Run health checks to verify OpenAI, Datadog, and Jira connections, then exit.')
-parser.add_argument('--patchy', action='store_true',
-                    help='Invoke Patchy to create draft PRs for tickets created (requires GITHUB_TOKEN).')
+group.add_argument(
+    "--dry-run",
+    dest="auto_create_ticket",
+    action="store_false",
+    help="Run in dry-run mode (do not create tickets).",
+)
+group.add_argument(
+    "--real",
+    dest="auto_create_ticket",
+    action="store_true",
+    help="Run in real mode (create tickets).",
+)
+parser.add_argument("--env", type=str, help="Environment filter for logs.")
+parser.add_argument("--service", type=str, help="Service filter for logs.")
+parser.add_argument("--hours", type=int, help="Number of hours to look back for logs.")
+parser.add_argument("--limit", type=int, help="Limit the number of logs fetched.")
+parser.add_argument(
+    "--max-tickets",
+    type=int,
+    help="Per-run cap on real Jira ticket creation (0 = no limit).",
+)
+parser.add_argument(
+    "--async",
+    dest="async_enabled",
+    action="store_true",
+    help="Enable async parallel processing.",
+)
+parser.add_argument(
+    "--workers",
+    type=int,
+    help="Number of parallel workers for async mode (default: 5).",
+)
+parser.add_argument(
+    "--batch-size", type=int, help="Batch size for async processing (default: 10)."
+)
+parser.add_argument(
+    "--profile",
+    type=str,
+    choices=["development", "staging", "production", "testing"],
+    help="Configuration profile to use (overrides .env defaults)",
+)
+parser.add_argument(
+    "--check",
+    action="store_true",
+    help="Run health checks to verify OpenAI, Datadog, and Jira connections, then exit.",
+)
+parser.add_argument(
+    "--patchy",
+    action="store_true",
+    help="Invoke Patchy to create draft PRs for tickets created (requires GITHUB_TOKEN).",
+)
 
-parser.set_defaults(auto_create_ticket=os.getenv('AUTO_CREATE_TICKET', 'true').lower() == 'true')
+parser.set_defaults(
+    auto_create_ticket=os.getenv("AUTO_CREATE_TICKET", "true").lower() == "true"
+)
 
 args = parser.parse_args()
 
 # Apply parsed arguments to environment variables
-os.environ['AUTO_CREATE_TICKET'] = 'true' if args.auto_create_ticket else 'false'
+os.environ["AUTO_CREATE_TICKET"] = "true" if args.auto_create_ticket else "false"
 if args.env is not None:
-    os.environ['DATADOG_ENV'] = args.env
+    os.environ["DATADOG_ENV"] = args.env
 if args.service is not None:
-    os.environ['DATADOG_SERVICE'] = args.service
+    os.environ["DATADOG_SERVICE"] = args.service
 if args.hours is not None:
-    os.environ['DATADOG_HOURS_BACK'] = str(args.hours)
+    os.environ["DATADOG_HOURS_BACK"] = str(args.hours)
 if args.limit is not None:
-    os.environ['DATADOG_LIMIT'] = str(args.limit)
+    os.environ["DATADOG_LIMIT"] = str(args.limit)
 if args.max_tickets is not None:
-    os.environ['MAX_TICKETS_PER_RUN'] = str(args.max_tickets)
+    os.environ["MAX_TICKETS_PER_RUN"] = str(args.max_tickets)
 if args.async_enabled:
-    os.environ['ASYNC_ENABLED'] = 'true'
+    os.environ["ASYNC_ENABLED"] = "true"
 if args.workers is not None:
-    os.environ['ASYNC_MAX_WORKERS'] = str(args.workers)
+    os.environ["ASYNC_MAX_WORKERS"] = str(args.workers)
 if args.batch_size is not None:
-    os.environ['ASYNC_BATCH_SIZE'] = str(args.batch_size)
+    os.environ["ASYNC_BATCH_SIZE"] = str(args.batch_size)
 if args.patchy:
-    os.environ['INVOKE_PATCHY'] = 'true'
+    os.environ["INVOKE_PATCHY"] = "true"
 
 # Handle --check flag: run health checks and exit
 if args.check:
     from agent.healthcheck import run_health_checks
+
     all_healthy, _ = run_health_checks(verbose=True)
     sys.exit(0 if all_healthy else 1)
 
@@ -78,7 +121,9 @@ if args.profile:
         config.load_profile_overrides(args.profile)
         print(f"✓ Using configuration profile: {args.profile}")
     except (ValueError, FileNotFoundError) as e:
-        log_error("Failed to load configuration profile", profile=args.profile, error=str(e))
+        log_error(
+            "Failed to load configuration profile", profile=args.profile, error=str(e)
+        )
         print(f"❌ Failed to load profile '{args.profile}': {e}")
         sys.exit(1)
 
@@ -119,9 +164,13 @@ _max = config.max_tickets_per_run
 
 if _auto:
     if _max > 0:
-        log_info(f"Safety guard: up to {_max} real Jira tickets will be created per run.")
+        log_info(
+            f"Safety guard: up to {_max} real Jira tickets will be created per run."
+        )
     else:
-        log_info("Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful.")
+        log_info(
+            "Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful."
+        )
 else:
     log_info("Dry-run mode: Jira ticket creation is disabled.")
 
@@ -137,7 +186,7 @@ if config.async_enabled:
         return await process_logs_parallel(
             logs=logs,
             max_workers=config.async_max_workers,
-            enable_rate_limiting=config.async_rate_limiting
+            enable_rate_limiting=config.async_rate_limiting,
         )
 
     result = asyncio.run(run_async())
@@ -148,7 +197,7 @@ if config.async_enabled:
         processed=result.get("processed", 0),
         successful=result.get("successful", 0),
         errors=result.get("errors", 0),
-        duration_seconds=result.get("stats", {}).get("duration_seconds", 0)
+        duration_seconds=result.get("stats", {}).get("duration_seconds", 0),
     )
 
 else:
@@ -156,8 +205,13 @@ else:
 
     # Use traditional sync processing
     graph.invoke(
-        {"logs": logs, "log_index": 0, "seen_logs": set(), "created_fingerprints": set()},
-        {"recursion_limit": 2000}
+        {
+            "logs": logs,
+            "log_index": 0,
+            "seen_logs": set(),
+            "created_fingerprints": set(),
+        },
+        {"recursion_limit": 2000},
     )
 
 log_agent_progress("Agent execution finished")

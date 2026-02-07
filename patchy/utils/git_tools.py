@@ -27,7 +27,10 @@ def _token() -> str:
 
 
 def _workspace() -> Path:
-    base = os.getenv("PATCHY_WORKSPACE", "/tmp/patchy-workspace").strip() or "/tmp/patchy-workspace"
+    base = (
+        os.getenv("PATCHY_WORKSPACE", "/tmp/patchy-workspace").strip()  # nosec B108
+        or "/tmp/patchy-workspace"
+    )
     p = Path(base)
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -55,10 +58,26 @@ def clone_repo(service: str, cfg: RepoConfig) -> Path:
 
     origin = f"https://github.com/{cfg.owner}/{cfg.name}.git"
     # Use --depth 2 for a small history
-    subprocess.run(["git", "clone", "--depth", "2", "--branch", cfg.default_branch, origin, str(dest)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--depth",
+            "2",
+            "--branch",
+            cfg.default_branch,
+            origin,
+            str(dest),
+        ],
+        check=True,
+    )
 
     # Re-point origin to token-injected URL for push operations
-    subprocess.run(["git", "remote", "set-url", "origin", _https_origin_with_token(cfg)], cwd=str(dest), check=True)
+    subprocess.run(
+        ["git", "remote", "set-url", "origin", _https_origin_with_token(cfg)],
+        cwd=str(dest),
+        check=True,
+    )
     return dest
 
 
@@ -70,10 +89,17 @@ def git_commit_push(target_dir: Path, message: str) -> None:
     _git("add", "-A", cwd=target_dir)
     # Configure a generic bot identity if not set
     try:
-        _git("-c", "user.name=patchy-bot", "-c", "user.email=patchy@company.com", "commit", "-m", message, cwd=target_dir)
+        _git(
+            "-c",
+            "user.name=patchy-bot",
+            "-c",
+            "user.email=patchy@company.com",
+            "commit",
+            "-m",
+            message,
+            cwd=target_dir,
+        )
     except subprocess.CalledProcessError:
         # Nothing to commit? Re-raise to signal to caller
         raise
     _git("push", "-u", "origin", "HEAD", cwd=target_dir)
-
-

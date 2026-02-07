@@ -3,6 +3,7 @@
 Provides functions to test connectivity to OpenAI, Datadog, and Jira APIs
 before running the main agent workflow.
 """
+
 from __future__ import annotations
 import sys
 from typing import Dict, Any, List, Tuple
@@ -15,6 +16,7 @@ from agent.utils.logger import log_info, log_error
 @dataclass
 class HealthCheckResult:
     """Result of a single health check."""
+
     service: str
     healthy: bool
     message: str
@@ -41,9 +43,7 @@ def check_openai() -> HealthCheckResult:
         api_key = os.getenv("OPENAI_API_KEY", "")
         if not api_key:
             return HealthCheckResult(
-                service="OpenAI",
-                healthy=False,
-                message="OPENAI_API_KEY not set"
+                service="OpenAI", healthy=False, message="OPENAI_API_KEY not set"
             )
 
         client = OpenAI(api_key=api_key)
@@ -51,19 +51,14 @@ def check_openai() -> HealthCheckResult:
 
         # Make a minimal API call to verify connectivity
         response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1
+            model=model, messages=[{"role": "user", "content": "ping"}], max_tokens=1
         )
 
         return HealthCheckResult(
             service="OpenAI",
             healthy=True,
             message=f"Connected (model: {model})",
-            details={
-                "model": model,
-                "response_id": response.id if response else None
-            }
+            details={"model": model, "response_id": response.id if response else None},
         )
 
     except Exception as e:
@@ -73,9 +68,7 @@ def check_openai() -> HealthCheckResult:
             error_msg = error_msg[:100] + "..."
 
         return HealthCheckResult(
-            service="OpenAI",
-            healthy=False,
-            message=f"Connection failed: {error_msg}"
+            service="OpenAI", healthy=False, message=f"Connection failed: {error_msg}"
         )
 
 
@@ -101,7 +94,7 @@ def check_datadog() -> HealthCheckResult:
             return HealthCheckResult(
                 service="Datadog",
                 healthy=False,
-                message=f"Missing: {', '.join(missing)}"
+                message=f"Missing: {', '.join(missing)}",
             )
 
         # Use the validate endpoint to check API keys
@@ -121,14 +114,14 @@ def check_datadog() -> HealthCheckResult:
                 details={
                     "site": config.datadog_site,
                     "service": config.datadog_service,
-                    "env": config.datadog_env
-                }
+                    "env": config.datadog_env,
+                },
             )
         else:
             return HealthCheckResult(
                 service="Datadog",
                 healthy=False,
-                message=f"API returned {response.status_code}: {response.text[:50]}"
+                message=f"API returned {response.status_code}: {response.text[:50]}",
             )
 
     except Exception as e:
@@ -137,9 +130,7 @@ def check_datadog() -> HealthCheckResult:
             error_msg = error_msg[:100] + "..."
 
         return HealthCheckResult(
-            service="Datadog",
-            healthy=False,
-            message=f"Connection failed: {error_msg}"
+            service="Datadog", healthy=False, message=f"Connection failed: {error_msg}"
         )
 
 
@@ -167,9 +158,7 @@ def check_jira() -> HealthCheckResult:
 
         if missing:
             return HealthCheckResult(
-                service="Jira",
-                healthy=False,
-                message=f"Missing: {', '.join(missing)}"
+                service="Jira", healthy=False, message=f"Missing: {', '.join(missing)}"
             )
 
         # Build auth header
@@ -177,7 +166,7 @@ def check_jira() -> HealthCheckResult:
         auth_encoded = base64.b64encode(auth_string.encode()).decode()
         headers = {
             "Authorization": f"Basic {auth_encoded}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         # Check server info endpoint (lightweight)
@@ -195,26 +184,26 @@ def check_jira() -> HealthCheckResult:
                 details={
                     "domain": config.jira_domain,
                     "user": display_name,
-                    "project": config.jira_project_key
-                }
+                    "project": config.jira_project_key,
+                },
             )
         elif response.status_code == 401:
             return HealthCheckResult(
                 service="Jira",
                 healthy=False,
-                message="Authentication failed (check JIRA_USER and JIRA_API_TOKEN)"
+                message="Authentication failed (check JIRA_USER and JIRA_API_TOKEN)",
             )
         elif response.status_code == 403:
             return HealthCheckResult(
                 service="Jira",
                 healthy=False,
-                message="Access forbidden (check permissions)"
+                message="Access forbidden (check permissions)",
             )
         else:
             return HealthCheckResult(
                 service="Jira",
                 healthy=False,
-                message=f"API returned {response.status_code}"
+                message=f"API returned {response.status_code}",
             )
 
     except Exception as e:
@@ -223,9 +212,7 @@ def check_jira() -> HealthCheckResult:
             error_msg = error_msg[:100] + "..."
 
         return HealthCheckResult(
-            service="Jira",
-            healthy=False,
-            message=f"Connection failed: {error_msg}"
+            service="Jira", healthy=False, message=f"Connection failed: {error_msg}"
         )
 
 
@@ -311,6 +298,7 @@ def require_healthy_services() -> bool:
 if __name__ == "__main__":
     # Allow running directly: python -m agent.healthcheck
     from dotenv import load_dotenv
+
     load_dotenv()
 
     all_healthy, _ = run_health_checks()

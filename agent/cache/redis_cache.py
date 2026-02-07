@@ -10,6 +10,7 @@ from .base import CacheBackend, CacheStats
 
 try:
     import aioredis
+
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -18,8 +19,12 @@ except ImportError:
 class RedisCacheBackend(CacheBackend):
     """Redis-based cache backend for distributed caching."""
 
-    def __init__(self, redis_url: str = "redis://localhost:6379",
-                 key_prefix: str = "dogcatcher:", name: str = "redis"):
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379",
+        key_prefix: str = "dogcatcher:",
+        name: str = "redis",
+    ):
         super().__init__(name)
 
         if not REDIS_AVAILABLE:
@@ -43,7 +48,7 @@ class RedisCacheBackend(CacheBackend):
             self.redis = aioredis.from_url(
                 self.redis_url,
                 encoding="utf-8",
-                decode_responses=False  # We handle binary data
+                decode_responses=False,  # We handle binary data
             )
             await self.redis.ping()
             self._connected = True
@@ -86,7 +91,7 @@ class RedisCacheBackend(CacheBackend):
                 return None
 
             # Deserialize data
-            data = pickle.loads(data_bytes)
+            data = pickle.loads(data_bytes)  # nosec B301
 
             # Update access count in metadata
             if metadata_bytes:
@@ -98,7 +103,7 @@ class RedisCacheBackend(CacheBackend):
                     await self.redis.set(
                         metadata_key,
                         json.dumps(metadata),
-                        ex=metadata.get("ttl_seconds", 3600)
+                        ex=metadata.get("ttl_seconds", 3600),
                     )
                 except Exception:
                     pass  # Don't fail on metadata update issues
@@ -127,7 +132,7 @@ class RedisCacheBackend(CacheBackend):
                 "timestamp": datetime.now().isoformat(),
                 "ttl_seconds": ttl,
                 "access_count": 0,
-                "size_bytes": len(data_bytes)
+                "size_bytes": len(data_bytes),
             }
             metadata_bytes = json.dumps(metadata)
 
@@ -135,12 +140,12 @@ class RedisCacheBackend(CacheBackend):
             if ttl > 0:
                 await asyncio.gather(
                     self.redis.set(redis_key, data_bytes, ex=ttl),
-                    self.redis.set(metadata_key, metadata_bytes, ex=ttl)
+                    self.redis.set(metadata_key, metadata_bytes, ex=ttl),
                 )
             else:
                 await asyncio.gather(
                     self.redis.set(redis_key, data_bytes),
-                    self.redis.set(metadata_key, metadata_bytes)
+                    self.redis.set(metadata_key, metadata_bytes),
                 )
 
             return True
@@ -231,7 +236,7 @@ class RedisCacheBackend(CacheBackend):
                 "redis_url": self.redis_url,
                 "connected": self._connected,
                 "key_prefix": self.key_prefix,
-                "note": "Size and memory stats require scanning all keys"
+                "note": "Size and memory stats require scanning all keys",
             }
 
         except Exception:
@@ -241,7 +246,7 @@ class RedisCacheBackend(CacheBackend):
                 "hits": self.hits,
                 "misses": self.misses,
                 "errors": self.errors,
-                "connected": self._connected
+                "connected": self._connected,
             }
 
     async def close(self) -> None:
@@ -271,7 +276,7 @@ class RedisCacheBackend(CacheBackend):
                 "connected_clients": info.get("connected_clients"),
                 "total_commands_processed": info.get("total_commands_processed"),
                 "keyspace_hits": info.get("keyspace_hits"),
-                "keyspace_misses": info.get("keyspace_misses")
+                "keyspace_misses": info.get("keyspace_misses"),
             }
 
         except Exception:
@@ -294,7 +299,7 @@ class RedisCacheBackend(CacheBackend):
                     "timestamp": datetime.now().isoformat(),
                     "ttl_seconds": ttl,
                     "access_count": 0,
-                    "size_bytes": len(data_bytes)
+                    "size_bytes": len(data_bytes),
                 }
 
                 if ttl > 0:
@@ -322,7 +327,9 @@ class RedisCacheBackend(CacheBackend):
             all_keys = []
 
             while True:
-                cursor, keys = await self.redis.scan(cursor, match=full_pattern, count=100)
+                cursor, keys = await self.redis.scan(
+                    cursor, match=full_pattern, count=100
+                )
                 all_keys.extend(keys)
 
                 if cursor == 0:

@@ -25,7 +25,7 @@ def run_benchmark(
     workers: int = None,
     service: str = None,
     hours: int = 24,
-    limit: int = None
+    limit: int = None,
 ) -> Dict[str, Any]:
     """Run a single benchmark test.
 
@@ -39,11 +39,7 @@ def run_benchmark(
     Returns:
         Dictionary with benchmark results
     """
-    cmd = [
-        sys.executable,
-        "main.py",
-        "--dry-run"
-    ]
+    cmd = [sys.executable, "main.py", "--dry-run"]
 
     if service:
         cmd.extend(["--service", service])
@@ -65,10 +61,7 @@ def run_benchmark(
 
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minute timeout
+            cmd, capture_output=True, text=True, timeout=600  # 10 minute timeout
         )
 
         duration = time.time() - start_time
@@ -85,7 +78,7 @@ def run_benchmark(
             "return_code": result.returncode,
             "success": result.returncode == 0,
             "stats": stats,
-            "output_sample": output[:500]  # First 500 chars for debugging
+            "output_sample": output[:500],  # First 500 chars for debugging
         }
 
     except subprocess.TimeoutExpired:
@@ -98,7 +91,7 @@ def run_benchmark(
             "return_code": -1,
             "success": False,
             "error": "Timeout (>10 minutes)",
-            "stats": {}
+            "stats": {},
         }
     except Exception as e:
         duration = time.time() - start_time
@@ -110,7 +103,7 @@ def run_benchmark(
             "return_code": -1,
             "success": False,
             "error": str(e),
-            "stats": {}
+            "stats": {},
         }
 
 
@@ -128,34 +121,42 @@ def parse_output(output: str) -> Dict[str, Any]:
         "logs_successful": 0,
         "logs_errors": 0,
         "tickets_created": 0,
-        "duplicates_found": 0
+        "duplicates_found": 0,
     }
 
-    lines = output.split('\n')
+    lines = output.split("\n")
 
     for line in lines:
         # Parse async processing completed message
         if "Async processing completed" in line:
             if "processed=" in line:
                 try:
-                    stats["logs_processed"] = int(line.split("processed=")[1].split()[0].rstrip(','))
+                    stats["logs_processed"] = int(
+                        line.split("processed=")[1].split()[0].rstrip(",")
+                    )
                 except:
                     pass
             if "successful=" in line:
                 try:
-                    stats["logs_successful"] = int(line.split("successful=")[1].split()[0].rstrip(','))
+                    stats["logs_successful"] = int(
+                        line.split("successful=")[1].split()[0].rstrip(",")
+                    )
                 except:
                     pass
             if "errors=" in line:
                 try:
-                    stats["logs_errors"] = int(line.split("errors=")[1].split()[0].rstrip(','))
+                    stats["logs_errors"] = int(
+                        line.split("errors=")[1].split()[0].rstrip(",")
+                    )
                 except:
                     pass
 
         # Parse logs loaded message
         if "Logs loaded" in line and "log_count=" in line:
             try:
-                stats["logs_processed"] = int(line.split("log_count=")[1].split()[0].rstrip(','))
+                stats["logs_processed"] = int(
+                    line.split("log_count=")[1].split()[0].rstrip(",")
+                )
             except:
                 pass
 
@@ -191,7 +192,9 @@ def format_duration(seconds: float) -> str:
         return f"{hours}h {minutes}m"
 
 
-def calculate_improvement(sync_duration: float, async_duration: float) -> Dict[str, Any]:
+def calculate_improvement(
+    sync_duration: float, async_duration: float
+) -> Dict[str, Any]:
     """Calculate performance improvement metrics.
 
     Args:
@@ -212,7 +215,7 @@ def calculate_improvement(sync_duration: float, async_duration: float) -> Dict[s
         "speedup": round(speedup, 2),
         "time_saved_seconds": round(time_saved, 2),
         "time_saved_formatted": format_duration(time_saved),
-        "percentage": round(percentage, 1)
+        "percentage": round(percentage, 1),
     }
 
 
@@ -222,44 +225,52 @@ def print_results(results: List[Dict[str, Any]]):
     Args:
         results: List of benchmark result dictionaries
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("BENCHMARK RESULTS")
-    print("="*80)
+    print("=" * 80)
 
     # Print individual results
-    print(f"\n{'Mode':<10} {'Workers':<8} {'Duration':<12} {'Logs':<8} {'Success':<10} {'Status'}")
+    print(
+        f"\n{'Mode':<10} {'Workers':<8} {'Duration':<12} {'Logs':<8} {'Success':<10} {'Status'}"
+    )
     print("-" * 80)
 
     for r in results:
-        mode = r['mode'].upper()
-        workers = r['workers']
-        duration = r['duration_formatted']
-        logs = r['stats'].get('logs_processed', 'N/A')
-        success = '✓' if r['success'] else '✗'
-        status = 'OK' if r['success'] else r.get('error', 'FAILED')
+        mode = r["mode"].upper()
+        workers = r["workers"]
+        duration = r["duration_formatted"]
+        logs = r["stats"].get("logs_processed", "N/A")
+        success = "✓" if r["success"] else "✗"
+        status = "OK" if r["success"] else r.get("error", "FAILED")
 
-        print(f"{mode:<10} {workers:<8} {duration:<12} {logs:<8} {success:<10} {status}")
+        print(
+            f"{mode:<10} {workers:<8} {duration:<12} {logs:<8} {success:<10} {status}"
+        )
 
     # Calculate and print comparisons
-    sync_results = [r for r in results if r['mode'] == 'sync' and r['success']]
-    async_results = [r for r in results if r['mode'] == 'async' and r['success']]
+    sync_results = [r for r in results if r["mode"] == "sync" and r["success"]]
+    async_results = [r for r in results if r["mode"] == "async" and r["success"]]
 
     if sync_results and async_results:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("PERFORMANCE COMPARISON")
-        print("="*80)
+        print("=" * 80)
 
-        sync_baseline = sync_results[0]['duration_seconds']
+        sync_baseline = sync_results[0]["duration_seconds"]
 
-        print(f"\n{'Workers':<10} {'Duration':<15} {'Speedup':<10} {'Time Saved':<15} {'Improvement'}")
+        print(
+            f"\n{'Workers':<10} {'Duration':<15} {'Speedup':<10} {'Time Saved':<15} {'Improvement'}"
+        )
         print("-" * 80)
 
         # Sync baseline
-        print(f"{'1 (sync)':<10} {sync_results[0]['duration_formatted']:<15} {'1.0x':<10} {'-':<15} {'baseline'}")
+        print(
+            f"{'1 (sync)':<10} {sync_results[0]['duration_formatted']:<15} {'1.0x':<10} {'-':<15} {'baseline'}"
+        )
 
         # Async results
         for r in async_results:
-            improvement = calculate_improvement(sync_baseline, r['duration_seconds'])
+            improvement = calculate_improvement(sync_baseline, r["duration_seconds"])
             print(
                 f"{r['workers']:<10} "
                 f"{r['duration_formatted']:<15} "
@@ -270,16 +281,20 @@ def print_results(results: List[Dict[str, Any]]):
 
         # Best performer
         if async_results:
-            best = min(async_results, key=lambda x: x['duration_seconds'])
-            improvement = calculate_improvement(sync_baseline, best['duration_seconds'])
+            best = min(async_results, key=lambda x: x["duration_seconds"])
+            improvement = calculate_improvement(sync_baseline, best["duration_seconds"])
 
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("BEST CONFIGURATION")
-            print("="*80)
+            print("=" * 80)
             print(f"Mode: ASYNC with {best['workers']} workers")
-            print(f"Duration: {best['duration_formatted']} (vs {sync_results[0]['duration_formatted']} sync)")
+            print(
+                f"Duration: {best['duration_formatted']} (vs {sync_results[0]['duration_formatted']} sync)"
+            )
             print(f"Speedup: {improvement['speedup']}x faster")
-            print(f"Time saved: {improvement['time_saved_formatted']} ({improvement['percentage']}% improvement)")
+            print(
+                f"Time saved: {improvement['time_saved_formatted']} ({improvement['percentage']}% improvement)"
+            )
 
 
 def save_results(results: List[Dict[str, Any]], output_file: str = None):
@@ -295,12 +310,9 @@ def save_results(results: List[Dict[str, Any]], output_file: str = None):
 
     output_path = Path("tools") / output_file
 
-    benchmark_data = {
-        "timestamp": datetime.now().isoformat(),
-        "results": results
-    }
+    benchmark_data = {"timestamp": datetime.now().isoformat(), "results": results}
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(benchmark_data, f, indent=2)
 
     print(f"\n✓ Results saved to: {output_path}")
@@ -310,60 +322,50 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run performance benchmarks for sync vs async processing"
     )
-    parser.add_argument(
-        "--service",
-        type=str,
-        help="Datadog service filter"
-    )
+    parser.add_argument("--service", type=str, help="Datadog service filter")
     parser.add_argument(
         "--hours",
         type=int,
         default=24,
-        help="Number of hours to look back (default: 24)"
+        help="Number of hours to look back (default: 24)",
     )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        help="Limit number of logs to process"
-    )
+    parser.add_argument("--limit", type=int, help="Limit number of logs to process")
     parser.add_argument(
         "--runs",
         type=int,
         default=1,
-        help="Number of runs per configuration (default: 1)"
+        help="Number of runs per configuration (default: 1)",
     )
     parser.add_argument(
         "--workers",
         type=str,
         default="3,5,10",
-        help="Comma-separated list of worker counts for async tests (default: 3,5,10)"
+        help="Comma-separated list of worker counts for async tests (default: 3,5,10)",
     )
     parser.add_argument(
-        "--skip-sync",
-        action="store_true",
-        help="Skip sync baseline test"
+        "--skip-sync", action="store_true", help="Skip sync baseline test"
     )
     parser.add_argument(
         "--output",
         type=str,
-        help="Output file name for results (default: benchmark_results_<timestamp>.json)"
+        help="Output file name for results (default: benchmark_results_<timestamp>.json)",
     )
 
     args = parser.parse_args()
 
     # Parse worker counts
-    worker_counts = [int(w.strip()) for w in args.workers.split(',')]
+    worker_counts = [int(w.strip()) for w in args.workers.split(",")]
 
-    print("="*80)
+    print("=" * 80)
     print("DOGCATCHER AGENT - PERFORMANCE BENCHMARK")
-    print("="*80)
+    print("=" * 80)
     print(f"Service: {args.service or 'ALL'}")
     print(f"Hours back: {args.hours}")
     print(f"Limit: {args.limit or 'None'}")
     print(f"Runs per config: {args.runs}")
     print(f"Worker counts: {worker_counts}")
     print(f"Skip sync: {args.skip_sync}")
-    print("="*80)
+    print("=" * 80)
 
     all_results = []
 
@@ -375,15 +377,12 @@ def main():
                 print(f"\n  Run {run + 1}/{args.runs}")
 
             result = run_benchmark(
-                mode="sync",
-                service=args.service,
-                hours=args.hours,
-                limit=args.limit
+                mode="sync", service=args.service, hours=args.hours, limit=args.limit
             )
             result["run"] = run + 1
             all_results.append(result)
 
-            if result['success']:
+            if result["success"]:
                 print(f"  ✓ Completed in {result['duration_formatted']}")
             else:
                 print(f"  ✗ Failed: {result.get('error', 'Unknown error')}")
@@ -400,12 +399,12 @@ def main():
                 workers=workers,
                 service=args.service,
                 hours=args.hours,
-                limit=args.limit
+                limit=args.limit,
             )
             result["run"] = run + 1
             all_results.append(result)
 
-            if result['success']:
+            if result["success"]:
                 print(f"  ✓ Completed in {result['duration_formatted']}")
             else:
                 print(f"  ✗ Failed: {result.get('error', 'Unknown error')}")

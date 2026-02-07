@@ -20,5 +20,5 @@ __all__ = [
     "CacheManager",
     "RedisCacheBackend",
     "FileCacheBackend",
-    "MemoryCacheBackend"
+    "MemoryCacheBackend",
 ]

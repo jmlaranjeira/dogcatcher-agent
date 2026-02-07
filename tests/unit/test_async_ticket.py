@@ -47,7 +47,7 @@ def sample_log_data():
         "logger": "com.example.UserService",
         "thread": "http-nio-8080-exec-1",
         "detail": "User not found",
-        "timestamp": "2025-01-01T10:00:00Z"
+        "timestamp": "2025-01-01T10:00:00Z",
     }
 
 
@@ -61,7 +61,7 @@ def sample_state(sample_log_data):
         "ticket_title": "Fix NullPointerException in UserService",
         "ticket_description": "## Problem\nUser not found error",
         "severity": "high",
-        "_tickets_created_in_run": 0
+        "_tickets_created_in_run": 0,
     }
 
 
@@ -147,70 +147,99 @@ class TestCheckDuplicatesAsync:
     @pytest.mark.asyncio
     async def test_no_duplicates(self, mock_config, sample_state, mock_jira_client):
         """Test no duplicates found."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
-                with patch('agent.nodes.ticket_async.check_fingerprint_duplicate_async', new_callable=AsyncMock) as mock_fp:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value=set(),
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.check_fingerprint_duplicate_async",
+                    new_callable=AsyncMock,
+                ) as mock_fp:
                     mock_fp.return_value = (False, None)
 
-                    with patch('agent.nodes.ticket_async.find_similar_ticket_async', new_callable=AsyncMock) as mock_sim:
+                    with patch(
+                        "agent.nodes.ticket_async.find_similar_ticket_async",
+                        new_callable=AsyncMock,
+                    ) as mock_sim:
                         mock_sim.return_value = (None, 0.0, None)
 
                         result = await _check_duplicates_async(
-                            sample_state,
-                            sample_state["ticket_title"],
-                            mock_jira_client
+                            sample_state, sample_state["ticket_title"], mock_jira_client
                         )
 
         assert result.is_duplicate is False
 
     @pytest.mark.asyncio
-    async def test_fingerprint_cache_duplicate(self, mock_config, sample_state, mock_jira_client):
+    async def test_fingerprint_cache_duplicate(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test duplicate found in fingerprint cache."""
         fingerprint = _compute_fingerprint(sample_state)
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value={fingerprint}):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value={fingerprint},
+            ):
                 result = await _check_duplicates_async(
-                    sample_state,
-                    sample_state["ticket_title"],
-                    mock_jira_client
+                    sample_state, sample_state["ticket_title"], mock_jira_client
                 )
 
         assert result.is_duplicate is True
         assert "fingerprint" in result.message.lower()
 
     @pytest.mark.asyncio
-    async def test_jira_fingerprint_duplicate(self, mock_config, sample_state, mock_jira_client):
+    async def test_jira_fingerprint_duplicate(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test duplicate found via Jira fingerprint label."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
-                with patch('agent.nodes.ticket_async.check_fingerprint_duplicate_async', new_callable=AsyncMock) as mock_fp:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value=set(),
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.check_fingerprint_duplicate_async",
+                    new_callable=AsyncMock,
+                ) as mock_fp:
                     mock_fp.return_value = (True, "TEST-456")
 
                     result = await _check_duplicates_async(
-                        sample_state,
-                        sample_state["ticket_title"],
-                        mock_jira_client
+                        sample_state, sample_state["ticket_title"], mock_jira_client
                     )
 
         assert result.is_duplicate is True
         assert result.existing_ticket_key == "TEST-456"
 
     @pytest.mark.asyncio
-    async def test_similarity_duplicate(self, mock_config, sample_state, mock_jira_client):
+    async def test_similarity_duplicate(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test duplicate found via similarity search."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
-                with patch('agent.nodes.ticket_async.check_fingerprint_duplicate_async', new_callable=AsyncMock) as mock_fp:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value=set(),
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.check_fingerprint_duplicate_async",
+                    new_callable=AsyncMock,
+                ) as mock_fp:
                     mock_fp.return_value = (False, None)
 
-                    with patch('agent.nodes.ticket_async.find_similar_ticket_async', new_callable=AsyncMock) as mock_sim:
-                        mock_sim.return_value = ("TEST-789", 0.92, "Similar issue title")
+                    with patch(
+                        "agent.nodes.ticket_async.find_similar_ticket_async",
+                        new_callable=AsyncMock,
+                    ) as mock_sim:
+                        mock_sim.return_value = (
+                            "TEST-789",
+                            0.92,
+                            "Similar issue title",
+                        )
 
                         result = await _check_duplicates_async(
-                            sample_state,
-                            sample_state["ticket_title"],
-                            mock_jira_client
+                            sample_state, sample_state["ticket_title"], mock_jira_client
                         )
 
         assert result.is_duplicate is True
@@ -218,16 +247,19 @@ class TestCheckDuplicatesAsync:
         assert result.similarity_score == 0.92
 
     @pytest.mark.asyncio
-    async def test_llm_decided_no_ticket(self, mock_config, sample_state, mock_jira_client):
+    async def test_llm_decided_no_ticket(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test when LLM decided not to create ticket."""
         sample_state["create_ticket"] = False
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value=set(),
+            ):
                 result = await _check_duplicates_async(
-                    sample_state,
-                    sample_state["ticket_title"],
-                    mock_jira_client
+                    sample_state, sample_state["ticket_title"], mock_jira_client
                 )
 
         assert result.is_duplicate is False
@@ -239,11 +271,11 @@ class TestBuildJiraPayload:
 
     def test_payload_structure(self, mock_config, sample_state):
         """Test payload has correct structure."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             payload = _build_jira_payload(
                 sample_state,
                 sample_state["ticket_title"],
-                sample_state["ticket_description"]
+                sample_state["ticket_description"],
             )
 
         assert isinstance(payload, TicketPayload)
@@ -253,11 +285,11 @@ class TestBuildJiraPayload:
 
     def test_payload_labels(self, mock_config, sample_state):
         """Test payload includes correct labels."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             payload = _build_jira_payload(
                 sample_state,
                 sample_state["ticket_title"],
-                sample_state["ticket_description"]
+                sample_state["ticket_description"],
             )
 
         assert "datadog-log" in payload.labels
@@ -271,11 +303,11 @@ class TestBuildJiraPayload:
         sample_state["ticket_title"] = "**Bold Title**"
         sample_state["error_type"] = "db-error"
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             payload = _build_jira_payload(
                 sample_state,
                 sample_state["ticket_title"],
-                sample_state["ticket_description"]
+                sample_state["ticket_description"],
             )
 
         assert "**" not in payload.title
@@ -291,7 +323,7 @@ class TestIsCapReached:
         sample_state["_tickets_created_in_run"] = 5
         mock_config.max_tickets_per_run = 10
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             assert _is_cap_reached(sample_state) is False
 
     def test_cap_reached(self, mock_config, sample_state):
@@ -299,7 +331,7 @@ class TestIsCapReached:
         sample_state["_tickets_created_in_run"] = 10
         mock_config.max_tickets_per_run = 10
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             assert _is_cap_reached(sample_state) is True
 
     def test_cap_exceeded(self, mock_config, sample_state):
@@ -307,7 +339,7 @@ class TestIsCapReached:
         sample_state["_tickets_created_in_run"] = 15
         mock_config.max_tickets_per_run = 10
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             assert _is_cap_reached(sample_state) is True
 
     def test_cap_unlimited(self, mock_config, sample_state):
@@ -315,7 +347,7 @@ class TestIsCapReached:
         sample_state["_tickets_created_in_run"] = 100
         mock_config.max_tickets_per_run = 0
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             assert _is_cap_reached(sample_state) is False
 
 
@@ -323,18 +355,28 @@ class TestCreateTicketAsync:
     """Test main async ticket creation."""
 
     @pytest.mark.asyncio
-    async def test_create_ticket_success(self, mock_config, sample_state, mock_jira_client):
+    async def test_create_ticket_success(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test successful ticket creation."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockClient:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockClient:
                 MockClient.return_value.__aenter__.return_value = mock_jira_client
                 MockClient.return_value.__aexit__.return_value = None
 
-                with patch('agent.nodes.ticket_async._check_duplicates_async', new_callable=AsyncMock) as mock_dup:
+                with patch(
+                    "agent.nodes.ticket_async._check_duplicates_async",
+                    new_callable=AsyncMock,
+                ) as mock_dup:
                     mock_dup.return_value = DuplicateCheckResult(is_duplicate=False)
 
-                    with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
-                        with patch('agent.nodes.ticket_async._save_processed_fingerprints'):
+                    with patch(
+                        "agent.nodes.ticket_async._load_processed_fingerprints",
+                        return_value=set(),
+                    ):
+                        with patch(
+                            "agent.nodes.ticket_async._save_processed_fingerprints"
+                        ):
                             result = await create_ticket_async(sample_state)
 
         assert result["ticket_created"] is True
@@ -345,25 +387,30 @@ class TestCreateTicketAsync:
         """Test ticket creation fails with invalid state."""
         invalid_state = {"log_data": {}}  # Missing required fields
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             result = await create_ticket_async(invalid_state)
 
         assert result["ticket_created"] is True  # Still True to mark as processed
         assert "Missing" in result.get("message", "")
 
     @pytest.mark.asyncio
-    async def test_create_ticket_duplicate(self, mock_config, sample_state, mock_jira_client):
+    async def test_create_ticket_duplicate(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test ticket creation skipped for duplicate."""
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockClient:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockClient:
                 MockClient.return_value.__aenter__.return_value = mock_jira_client
                 MockClient.return_value.__aexit__.return_value = None
 
-                with patch('agent.nodes.ticket_async._check_duplicates_async', new_callable=AsyncMock) as mock_dup:
+                with patch(
+                    "agent.nodes.ticket_async._check_duplicates_async",
+                    new_callable=AsyncMock,
+                ) as mock_dup:
                     mock_dup.return_value = DuplicateCheckResult(
                         is_duplicate=True,
                         existing_ticket_key="TEST-999",
-                        message="Duplicate found"
+                        message="Duplicate found",
                     )
 
                     result = await create_ticket_async(sample_state)
@@ -373,16 +420,21 @@ class TestCreateTicketAsync:
         assert result.get("jira_response_key") is None
 
     @pytest.mark.asyncio
-    async def test_create_ticket_dry_run(self, mock_config, sample_state, mock_jira_client):
+    async def test_create_ticket_dry_run(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test ticket creation in dry-run mode."""
         mock_config.auto_create_ticket = False
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockClient:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockClient:
                 MockClient.return_value.__aenter__.return_value = mock_jira_client
                 MockClient.return_value.__aexit__.return_value = None
 
-                with patch('agent.nodes.ticket_async._check_duplicates_async', new_callable=AsyncMock) as mock_dup:
+                with patch(
+                    "agent.nodes.ticket_async._check_duplicates_async",
+                    new_callable=AsyncMock,
+                ) as mock_dup:
                     mock_dup.return_value = DuplicateCheckResult(is_duplicate=False)
 
                     result = await create_ticket_async(sample_state)
@@ -393,17 +445,22 @@ class TestCreateTicketAsync:
         mock_jira_client.create_issue.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_ticket_cap_reached(self, mock_config, sample_state, mock_jira_client):
+    async def test_create_ticket_cap_reached(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test ticket creation when cap is reached."""
         sample_state["_tickets_created_in_run"] = 10
         mock_config.max_tickets_per_run = 10
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockClient:
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockClient:
                 MockClient.return_value.__aenter__.return_value = mock_jira_client
                 MockClient.return_value.__aexit__.return_value = None
 
-                with patch('agent.nodes.ticket_async._check_duplicates_async', new_callable=AsyncMock) as mock_dup:
+                with patch(
+                    "agent.nodes.ticket_async._check_duplicates_async",
+                    new_callable=AsyncMock,
+                ) as mock_dup:
                     mock_dup.return_value = DuplicateCheckResult(is_duplicate=False)
 
                     result = await create_ticket_async(sample_state)
@@ -420,10 +477,12 @@ class TestCreateTicketsBatchAsync:
         """Test successful batch creation."""
         states = [sample_state.copy() for _ in range(3)]
 
-        with patch('agent.nodes.ticket_async.create_ticket_async', new_callable=AsyncMock) as mock_create:
+        with patch(
+            "agent.nodes.ticket_async.create_ticket_async", new_callable=AsyncMock
+        ) as mock_create:
             mock_create.return_value = {
                 "ticket_created": True,
-                "jira_response_key": "TEST-123"
+                "jira_response_key": "TEST-123",
             }
 
             results = await create_tickets_batch_async(states, max_concurrent=2)
@@ -445,7 +504,9 @@ class TestCreateTicketsBatchAsync:
                 raise RuntimeError("Creation failed")
             return {"ticket_created": True, "jira_response_key": "TEST-123"}
 
-        with patch('agent.nodes.ticket_async.create_ticket_async', side_effect=mock_create):
+        with patch(
+            "agent.nodes.ticket_async.create_ticket_async", side_effect=mock_create
+        ):
             results = await create_tickets_batch_async(states)
 
         assert len(results) == 3
@@ -477,7 +538,9 @@ class TestCreateTicketsBatchAsync:
 
             return {"ticket_created": True}
 
-        with patch('agent.nodes.ticket_async.create_ticket_async', side_effect=mock_create):
+        with patch(
+            "agent.nodes.ticket_async.create_ticket_async", side_effect=mock_create
+        ):
             await create_tickets_batch_async(states, max_concurrent=2)
 
         assert max_concurrent <= 2
@@ -487,25 +550,28 @@ class TestExecuteTicketCreationAsync:
     """Test ticket execution function."""
 
     @pytest.mark.asyncio
-    async def test_execute_real_creation(self, mock_config, sample_state, mock_jira_client):
+    async def test_execute_real_creation(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test real ticket creation execution."""
         payload = TicketPayload(
             payload={"fields": {}},
             title="Test Title",
             description="Test Description",
             labels=["test"],
-            fingerprint="abc123"
+            fingerprint="abc123",
         )
 
         mock_config.auto_create_ticket = True
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
-            with patch('agent.nodes.ticket_async._load_processed_fingerprints', return_value=set()):
-                with patch('agent.nodes.ticket_async._save_processed_fingerprints'):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.ticket_async._load_processed_fingerprints",
+                return_value=set(),
+            ):
+                with patch("agent.nodes.ticket_async._save_processed_fingerprints"):
                     result = await _execute_ticket_creation_async(
-                        sample_state,
-                        payload,
-                        mock_jira_client
+                        sample_state, payload, mock_jira_client
                     )
 
         assert result["ticket_created"] is True
@@ -513,23 +579,23 @@ class TestExecuteTicketCreationAsync:
         mock_jira_client.create_issue.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_simulation(self, mock_config, sample_state, mock_jira_client):
+    async def test_execute_simulation(
+        self, mock_config, sample_state, mock_jira_client
+    ):
         """Test simulated ticket creation."""
         payload = TicketPayload(
             payload={"fields": {}},
             title="Test Title",
             description="Test Description",
             labels=["test"],
-            fingerprint="abc123"
+            fingerprint="abc123",
         )
 
         mock_config.auto_create_ticket = False
 
-        with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             result = await _execute_ticket_creation_async(
-                sample_state,
-                payload,
-                mock_jira_client
+                sample_state, payload, mock_jira_client
             )
 
         assert result["ticket_created"] is True
