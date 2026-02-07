@@ -100,7 +100,7 @@ def _try_handle_duplicate(
 
     if state.get("log_fingerprint"):
         processed.add(state["log_fingerprint"])
-        save_processed_fingerprints(processed)
+        save_processed_fingerprints(processed, state.get("team_id"))
 
     state = {
         **state,
@@ -126,7 +126,7 @@ def _create_or_simulate(
             state["jira_response_raw"] = resp
             if state.get("log_fingerprint"):
                 processed.add(state["log_fingerprint"])
-                save_processed_fingerprints(processed)
+                save_processed_fingerprints(processed, state.get("team_id"))
         return state
 
     # Dry-run branch
@@ -135,7 +135,7 @@ def _create_or_simulate(
     persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
     if persist_sim and state.get("log_fingerprint"):
         processed.add(state["log_fingerprint"])
-        save_processed_fingerprints(processed)
+        save_processed_fingerprints(processed, state.get("team_id"))
     return state
 
 
@@ -163,7 +163,8 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Fingerprint
     fingerprint, fp_source = _compute_fingerprint(state)
-    processed = load_processed_fingerprints()
+    _tid = state.get("team_id")
+    processed = load_processed_fingerprints(_tid)
     if fingerprint in processed:
         log_info("Skipping ticket creation: fingerprint already processed", fingerprint=fingerprint)
         return {
@@ -208,12 +209,25 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
                 "priority": {"name": priority_name},
             }
         }
-        # Optional: inject team custom field via env
+        # Optional team custom field injection
+        # Multi-tenant: reads from TeamsConfig; single-tenant: falls back to env vars
         try:
-            team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
-            team_field_value = os.getenv("JIRA_TEAM_VALUE")
-            if team_field_id and team_field_value:
-                payload["fields"][team_field_id] = [{"value": team_field_value}]
+            _team_id = state.get("team_id")
+            if _team_id:
+                from agent.team_loader import load_teams_config
+
+                _tcfg = load_teams_config()
+                if _tcfg:
+                    _team = _tcfg.get_team(_team_id)
+                    _fid = _tcfg.jira_team_field_id
+                    _fval = _team.jira_team_field_value if _team else None
+                    if _fid and _fval:
+                        payload["fields"][_fid] = [{"value": _fval}]
+            else:
+                team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
+                team_field_value = os.getenv("JIRA_TEAM_VALUE")
+                if team_field_id and team_field_value:
+                    payload["fields"][team_field_id] = [{"value": team_field_value}]
         except Exception:
             pass
 

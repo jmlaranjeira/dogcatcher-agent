@@ -7,8 +7,22 @@ import pathlib
 import re
 from typing import Iterable, Set
 
-_CACHE_PATH = pathlib.Path(".agent_cache/processed_logs.json")
-_COMMENT_CACHE_PATH = pathlib.Path(".agent_cache/jira_comments.json")
+_CACHE_DIR = pathlib.Path(".agent_cache")
+
+
+def _get_cache_dir(team_id: str | None = None) -> pathlib.Path:
+    """Return the cache directory, scoped to team when in multi-tenant mode."""
+    if team_id:
+        return _CACHE_DIR / "teams" / team_id
+    return _CACHE_DIR
+
+
+def _cache_path(team_id: str | None = None) -> pathlib.Path:
+    return _get_cache_dir(team_id) / "processed_logs.json"
+
+
+def _comment_cache_path(team_id: str | None = None) -> pathlib.Path:
+    return _get_cache_dir(team_id) / "jira_comments.json"
 
 _RE_WS = re.compile(r"\s+")
 _RE_PUNCT = re.compile(r"[^a-z0-9]+")
@@ -130,18 +144,20 @@ def compute_fingerprint(error_type: str, raw_message: str) -> str:
     return hashlib.sha1(source.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
-def load_processed_fingerprints() -> Set[str]:
+def load_processed_fingerprints(team_id: str | None = None) -> Set[str]:
     try:
-        with open(_CACHE_PATH, "r", encoding="utf-8") as f:
+        path = _cache_path(team_id)
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return set(data) if isinstance(data, list) else set()
     except Exception:
         return set()
 
 
-def save_processed_fingerprints(fps: Iterable[str]) -> None:
-    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_CACHE_PATH, "w", encoding="utf-8") as f:
+def save_processed_fingerprints(fps: Iterable[str], team_id: str | None = None) -> None:
+    path = _cache_path(team_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(sorted(list(set(fps))), f, ensure_ascii=False, indent=2)
 
 
@@ -163,26 +179,28 @@ def priority_name_from_severity(sev: str | None) -> str:
 import datetime as _dt
 
 
-def _load_comment_cache() -> dict:
+def _load_comment_cache(team_id: str | None = None) -> dict:
     try:
-        with open(_COMMENT_CACHE_PATH, "r", encoding="utf-8") as f:
+        path = _comment_cache_path(team_id)
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
-def _save_comment_cache(data: dict) -> None:
-    _COMMENT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_COMMENT_CACHE_PATH, "w", encoding="utf-8") as f:
+def _save_comment_cache(data: dict, team_id: str | None = None) -> None:
+    path = _comment_cache_path(team_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def should_comment(issue_key: str, cooldown_minutes: int = 120) -> bool:
+def should_comment(issue_key: str, cooldown_minutes: int = 120, team_id: str | None = None) -> bool:
     """Return True if we should post a duplicate comment now (based on per-issue cool-down)."""
     if cooldown_minutes <= 0:
         return True
-    cache = _load_comment_cache()
+    cache = _load_comment_cache(team_id)
     last = cache.get(issue_key)
     if not last:
         return True
@@ -194,7 +212,7 @@ def should_comment(issue_key: str, cooldown_minutes: int = 120) -> bool:
     return (delta.total_seconds() / 60.0) >= cooldown_minutes
 
 
-def update_comment_timestamp(issue_key: str) -> None:
-    cache = _load_comment_cache()
+def update_comment_timestamp(issue_key: str, team_id: str | None = None) -> None:
+    cache = _load_comment_cache(team_id)
     cache[issue_key] = _dt.datetime.utcnow().isoformat() + "Z"
-    _save_comment_cache(cache)
+    _save_comment_cache(cache, team_id)

@@ -1,0 +1,51 @@
+# Multi-tenant team configuration for Dogcatcher Agent.
+#
+# Copy this file to config/teams.yaml and customise per your organisation.
+# When teams.yaml exists the agent runs in multi-tenant mode: it loops
+# through every team (and every service within each team), fetching logs
+# and creating Jira tickets in the correct project.
+#
+# Usage:
+#   python main.py --profile production                # process all teams
+#   python main.py --profile production --team team-vega  # single team
+
+# Shared Jira custom-field ID used to tag tickets with the owning team.
+# Leave empty if your Jira doesn't have a Team custom field.
+jira_team_field_id: null  # e.g. "customfield_10042"
+
+teams:
+  team-vega:
+    team_name: "Team Vega"
+    jira_project_key: "VEGA"
+    jira_team_field_value: "Vega"
+    datadog_services:
+      - vega-api
+      - vega-worker
+    datadog_env: prod
+    max_tickets_per_run: 5
+    severity_rules:
+      database-connection: high
+      integration-failure: high
+
+  team-solar:
+    team_name: "Team Solar"
+    jira_project_key: "SOLAR"
+    jira_team_field_value: "Solar"
+    datadog_services:
+      - solar-api
+      - solar-processor
+    datadog_env: prod
+
+  team-altair:
+    team_name: "Team Altair"
+    jira_project_key: "ALTAIR"
+    datadog_services:
+      - altair-service
+    datadog_env: staging
+
+  team-mercury:
+    team_name: "Team Mercury"
+    jira_project_key: "MERC"
+    datadog_services:
+      - mercury-api
+    datadog_env: prod
