@@ -238,21 +238,21 @@ class TestPerformanceOptimizations:
     
     def test_optimize_jira_search_params_high_volume(self, mock_config):
         """Test optimization for high-volume projects."""
-        mock_config.jira.search_window_days = 365  # High volume
-        
+        mock_config.jira_search_window_days = 365  # High volume
+
         with patch('agent.performance.get_config', return_value=mock_config):
             params = optimize_jira_search_params()
-            
+
             # Should optimize window for high-volume projects
             assert params["search_window_days"] <= 180
-    
+
     def test_optimize_jira_search_params_high_similarity(self, mock_config):
         """Test optimization for high similarity threshold."""
-        mock_config.jira.similarity_threshold = 0.95  # High similarity
-        
+        mock_config.jira_similarity_threshold = 0.95  # High similarity
+
         with patch('agent.performance.get_config', return_value=mock_config):
             params = optimize_jira_search_params()
-            
+
             # Should optimize max results for high similarity
             assert params["search_max_results"] <= 50
     
@@ -312,17 +312,17 @@ class TestPerformanceOptimizations:
         """Test performance recommendations."""
         with patch('agent.performance.get_config', return_value=mock_config):
             recommendations = get_performance_recommendations()
-            
+
             assert isinstance(recommendations, list)
-            
+
             # Check for specific recommendations based on config
-            if mock_config.jira.search_window_days > 180:
+            if mock_config.jira_search_window_days > 180:
                 assert any("JIRA_SEARCH_WINDOW_DAYS" in rec for rec in recommendations)
-            
-            if mock_config.jira.search_max_results > 200:
+
+            if mock_config.jira_search_max_results > 200:
                 assert any("JIRA_SEARCH_MAX_RESULTS" in rec for rec in recommendations)
-            
-            if mock_config.jira.similarity_threshold < 0.7:
+
+            if mock_config.jira_similarity_threshold < 0.7:
                 assert any("JIRA_SIMILARITY_THRESHOLD" in rec for rec in recommendations)
 
 

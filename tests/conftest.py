@@ -14,7 +14,9 @@ sys.path.insert(0, str(project_root))
 @pytest.fixture
 def mock_config():
     """Mock configuration for testing."""
-    with patch('agent.config.get_config') as mock_get_config:
+    with patch('agent.config.get_config') as mock_get_config, \
+         patch('agent.nodes.ticket.get_config') as mock_ticket_config, \
+         patch('agent.performance.get_config') as mock_perf_config:
         config = Mock()
         
         # OpenAI config
@@ -75,7 +77,30 @@ def mock_config():
         config.validate_configuration.return_value = []
         config.log_configuration.return_value = None
         
+        # Flat attributes (used by production code via Pydantic config)
+        config.jira_project_key = "TEST"
+        config.jira_search_max_results = 200
+        config.jira_search_window_days = 365
+        config.jira_similarity_threshold = 0.82
+        config.jira_direct_log_threshold = 0.90
+        config.jira_partial_log_threshold = 0.70
+        config.auto_create_ticket = False
+        config.persist_sim_fp = False
+        config.comment_on_duplicate = True
+        config.max_tickets_per_run = 3
+        config.comment_cooldown_minutes = 120
+        config.aggregate_email_not_found = False
+        config.aggregate_kafka_consumer = False
+        config.max_title_length = 120
+        config.datadog_service = "test-service"
+        config.datadog_limit = 50
+        config.datadog_max_pages = 3
+        config.datadog_timeout = 20
+        config.datadog_logs_url = "https://app.datadoghq.eu/logs"
+
         mock_get_config.return_value = config
+        mock_ticket_config.return_value = config
+        mock_perf_config.return_value = config
         yield config
 
 
