@@ -20,6 +20,7 @@ from .client import (
 from .match import find_similar_ticket
 from .utils import (
     normalize_log_message,
+    sanitize_for_jira,
     compute_loghash,
     load_processed_fingerprints,
     save_processed_fingerprints,
@@ -85,7 +86,7 @@ def _try_handle_duplicate(
             f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
             f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
             f"Occurrences in last {state.get('window_hours', 48)}h: {(state.get('fp_counts') or {}).get(fp_count_key, 1)}\n"
-            f"Original message: {log_data.get('message', 'N/A')}\n"
+            f"Original message: {sanitize_for_jira(log_data.get('message', 'N/A'))}\n"
         )
         jira_add_comment(key, comment)
 
@@ -195,7 +196,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
                             "type": "paragraph",
                             "content": [
                                 {
-                                    "text": state.get("ticket_description"),
+                                    "text": sanitize_for_jira(state.get("ticket_description") or ""),
                                     "type": "text",
                                 }
                             ],

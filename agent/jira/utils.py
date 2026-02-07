@@ -78,6 +78,35 @@ def normalize_log_message(text: str) -> str:
     return t
 
 
+def sanitize_for_jira(text: str) -> str:
+    """Sanitize a log message before injecting it into Jira content.
+
+    Unlike normalize_log_message (which also lowercases and strips punctuation
+    for hashing), this function preserves readability while masking PII:
+    emails, URLs, UUIDs, long hex strings, JWTs, and IP addresses.
+    """
+    if not text:
+        return ""
+    t = text
+    t = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "<email>", t)
+    t = re.sub(r"\bhttps?://[^\s]+", "<url>", t)
+    # JWTs and similar dot-separated tokens (3+ segments of base64-like chars)
+    t = re.sub(
+        r"\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b",
+        "<token>",
+        t,
+    )
+    t = re.sub(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        "<uuid>",
+        t,
+    )
+    t = re.sub(r"\b[0-9a-fA-F]{24,}\b", "<hex>", t)
+    # IPv4 addresses
+    t = re.sub(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "<ip>", t)
+    return t
+
+
 def compute_loghash(raw_message: str) -> str:
     """Compute a 12-char loghash from a raw log message.
 

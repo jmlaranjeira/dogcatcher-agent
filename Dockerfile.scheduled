@@ -20,18 +20,10 @@ COPY . /app
 # Create cache directory with proper permissions
 RUN mkdir -p /app/.agent_cache && chmod 777 /app/.agent_cache
 
-# Script de ejecución
-COPY <<'EOF' /app/run_agent.sh
-#!/bin/bash
-cd /app
-echo "=========================================="
-echo "[$(date)] Starting scheduled execution"
-echo "=========================================="
-python main.py --real
-echo "[$(date)] Execution completed"
-echo ""
-EOF
-RUN chmod +x /app/run_agent.sh
+# Copy scripts (extracted from inline heredocs for maintainability)
+COPY scripts/run_agent.sh /app/run_agent.sh
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/run_agent.sh /app/entrypoint.sh
 
 # Minimal healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
@@ -40,50 +32,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     AGENT_CACHE_DIR=/app/.agent_cache
-
-# Entrypoint script
-COPY <<'ENTRY' /app/entrypoint.sh
-#!/bin/bash
-set -e
-
-echo "🐕 Dogcatcher Agent starting..."
-echo "📅 Schedule: ${DOGCATCHER_SCHEDULE:-0 * * * *}"
-
-# Ejecutar una vez al arrancar
-echo "🚀 Running initial execution..."
-python main.py --real || echo "⚠️ Initial run failed, but continuing with scheduler"
-
-echo ""
-echo "⏰ Starting scheduler (cron: ${DOGCATCHER_SCHEDULE:-0 * * * *})"
-echo "   Next executions will run automatically."
-echo "   Use 'docker logs dogcatcher-agent -f' to monitor."
-echo ""
-
-# Exportar variables de entorno en formato compatible con shell
-printenv | sed 's/=\(.*\)/="\1"/' > /app/.env.cron
-
-# Crear script wrapper que carga las variables
-cat > /app/run_with_env.sh << 'WRAPPER'
-#!/bin/bash
-set -a
-source /app/.env.cron
-set +a
-cd /app
-echo "=========================================="
-echo "[$(date)] Starting scheduled execution"
-echo "=========================================="
-python main.py --real
-echo "[$(date)] Execution completed"
-echo ""
-WRAPPER
-chmod +x /app/run_with_env.sh
-
-# Crear crontab
-echo "${DOGCATCHER_SCHEDULE:-0 * * * *} /app/run_with_env.sh >> /proc/1/fd/1 2>&1" | crontab -
-
-# Ejecutar cron en foreground
-exec cron -f
-ENTRY
-RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]

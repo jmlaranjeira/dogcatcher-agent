@@ -13,3 +13,4 @@ agent/**/__pycache__/
 _agent_cache/
 .agent_cache/
 *.sh
+!scripts/*.sh

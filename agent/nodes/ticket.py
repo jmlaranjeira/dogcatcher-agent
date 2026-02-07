@@ -16,6 +16,7 @@ from agent.jira import (
 )
 from agent.jira.utils import (
     normalize_log_message,
+    sanitize_for_jira,
     compute_loghash,
     compute_fingerprint,
     should_comment,
@@ -466,7 +467,7 @@ def _maybe_comment_duplicate(
             f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
             f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
             f"Occurrences in last {win}h: {occ}\n"
-            f"Original message: {log_data.get('message', 'N/A')}\n"
+            f"Original message: {sanitize_for_jira(log_data.get('message', 'N/A'))}\n"
         )
         comment_on_issue(issue_key, comment)
         update_comment_timestamp(issue_key)
@@ -506,8 +507,8 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
 🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
 🧩 Logger: {log_data.get('logger', 'N/A')}
 🧵 Thread: {log_data.get('thread', 'N/A')}
-📝 Original Log: {log_data.get('message', 'N/A')}
-🔍 Detail: {log_data.get('detail', 'N/A')}
+📝 Original Log: {sanitize_for_jira(log_data.get('message', 'N/A'))}
+🔍 Detail: {sanitize_for_jira(log_data.get('detail', 'N/A'))}
 📈 Occurrences in last {win}h: {occ}"""
 
     # Add MDC context if available

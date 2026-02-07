@@ -4,10 +4,12 @@ This module provides centralized configuration management with validation,
 type safety, and sensible defaults for the dogcatcher-agent.
 """
 
+import json
+import threading
 from typing import Dict, List, Optional, Union
+
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
-import json
 
 
 class OpenAIConfig(BaseSettings):
@@ -707,20 +709,25 @@ class Config(BaseSettings):
         )
 
 
-# Global configuration instance (lazy loading)
-_config = None
+# Global configuration instance (lazy loading, thread-safe)
+_config: Optional[Config] = None
+_config_lock = threading.Lock()
 
 
 def get_config() -> Config:
-    """Get the global configuration instance."""
+    """Get the global configuration instance (thread-safe)."""
     global _config
     if _config is None:
-        _config = Config()
+        with _config_lock:
+            # Double-checked locking: re-check after acquiring lock
+            if _config is None:
+                _config = Config()
     return _config
 
 
 def reload_config() -> Config:
-    """Reload configuration from environment variables."""
+    """Reload configuration from environment variables (thread-safe)."""
     global _config
-    _config = Config()
-    return _config
+    with _config_lock:
+        _config = Config()
+        return _config

@@ -574,3 +574,50 @@ class TestConfigEnvironment:
         assert config.auto_create_ticket is True
         assert isinstance(config.max_tickets_per_run, int)
         assert config.max_tickets_per_run == 5
+
+
+class TestConfigThreadSafety:
+    """Test that the config singleton is thread-safe."""
+
+    def test_get_config_returns_same_instance(self):
+        """get_config() should always return the same instance."""
+        import agent.config as cfg_module
+
+        cfg_module._config = None  # Reset
+        c1 = get_config()
+        c2 = get_config()
+        assert c1 is c2
+
+    def test_get_config_concurrent_access(self):
+        """Multiple threads calling get_config() should all get the same instance."""
+        import threading
+        import agent.config as cfg_module
+
+        cfg_module._config = None  # Reset
+
+        results: list = []
+        barrier = threading.Barrier(10)
+
+        def worker():
+            barrier.wait()  # All threads start at the same time
+            results.append(get_config())
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All 10 threads must have received the exact same object
+        assert len(results) == 10
+        assert all(r is results[0] for r in results)
+
+    def test_reload_config_replaces_instance(self):
+        """reload_config() should create a new instance."""
+        import agent.config as cfg_module
+
+        cfg_module._config = None  # Reset
+        c1 = get_config()
+        c2 = reload_config()
+        assert c1 is not c2
+        assert get_config() is c2
