@@ -526,7 +526,7 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
     """Build labels for the ticket."""
     config = get_config()
     labels = ["datadog-log"]
-    
+
     # Add loghash label
     try:
         norm_msg = normalize_log_message((state.get("log_data") or {}).get("message", ""))
@@ -535,9 +535,13 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
             labels.append(f"loghash-{loghash}")
     except Exception:
         pass
-    
-    # Add aggregation labels based on error type
+
+    # Add error_type label (enables duplicate detection via error_type label search)
     etype = (state.get("error_type") or "").strip().lower()
+    if etype and etype != "unknown":
+        labels.append(etype)
+
+    # Add aggregation labels based on error type
     
     if config.aggregate_email_not_found and etype == "email-not-found":
         labels.append("aggregate-email-not-found")

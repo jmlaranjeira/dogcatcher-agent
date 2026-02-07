@@ -64,6 +64,13 @@ def normalize_log_message(text: str) -> str:
     t = re.sub(r"\[?\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,\.]\d+)?\]?", " ", t)
     t = re.sub(r"\b\d{5,}\b", " ", t)
     t = re.sub(r"\b[a-f0-9]{10,}\b", " ", t)
+    # Collapse SQL duplicate-entry values (Hibernate binary key representations)
+    # The binary value between 'duplicate entry' and 'for key' varies per row;
+    # it may contain escaped hex (\xHH), embedded quotes, and short ASCII fragments.
+    # e.g. "duplicate entry 'e\xBB\xB2'\x97lC[...' for key" → "duplicate entry for key"
+    t = re.sub(r"(duplicate entry\s+).*?(for key)", r"\1\2", t)
+    # Collapse remaining escaped hex byte sequences (\xHH) that may appear elsewhere
+    t = re.sub(r"\\x[0-9a-f]{2}", " ", t)
     t = _RE_PUNCT.sub(" ", t)
     t = _RE_WS.sub(" ", t).strip()
     return t
