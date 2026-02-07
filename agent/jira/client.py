@@ -1,6 +1,5 @@
-
-
 """HTTP client helpers for Jira API."""
+
 from __future__ import annotations
 import base64
 import os
@@ -13,33 +12,43 @@ from agent.config import get_config
 
 load_dotenv()
 
+
 # Export configuration constants for backward compatibility
 def get_jira_project_key() -> str:
     # Use flattened config fields (backward-compatible accessor)
     return get_config().jira_project_key
 
+
 def get_jira_domain() -> str:
     # Use flattened config fields (backward-compatible accessor)
     return get_config().jira_domain
 
+
 def is_configured() -> bool:
     config = get_config()
-    return all([
-        config.jira_domain,
-        config.jira_user,
-        config.jira_api_token,
-        config.jira_project_key,
-    ])
+    return all(
+        [
+            config.jira_domain,
+            config.jira_user,
+            config.jira_api_token,
+            config.jira_project_key,
+        ]
+    )
 
 
 def _headers() -> Dict[str, str]:
     config = get_config()
     auth_string = f"{config.jira_user}:{config.jira_api_token}"
     auth_encoded = base64.b64encode(auth_string.encode()).decode()
-    return {"Authorization": f"Basic {auth_encoded}", "Content-Type": "application/json"}
+    return {
+        "Authorization": f"Basic {auth_encoded}",
+        "Content-Type": "application/json",
+    }
 
 
-def search(jql: str, *, fields: str = "summary,description", max_results: int = None) -> Optional[Dict[str, Any]]:
+def search(
+    jql: str, *, fields: str = "summary,description", max_results: int = None
+) -> Optional[Dict[str, Any]]:
     if not is_configured():
         return None
     config = get_config()
@@ -48,11 +57,16 @@ def search(jql: str, *, fields: str = "summary,description", max_results: int = 
     # Use new /search/jql endpoint (old /search was deprecated Oct 2025)
     url = f"https://{config.jira_domain}/rest/api/3/search/jql"
     try:
-        resp = requests.post(url, headers=_headers(), json={
-            "jql": jql,
-            "maxResults": max_results,
-            "fields": [f.strip() for f in fields.split(",")],
-        })
+        resp = requests.post(
+            url,
+            headers=_headers(),
+            json={
+                "jql": jql,
+                "maxResults": max_results,
+                "fields": [f.strip() for f in fields.split(",")],
+            },
+            timeout=30,
+        )
         resp.raise_for_status()
         log_api_response("Jira search", resp.status_code)
         return resp.json()
@@ -67,7 +81,7 @@ def create_issue(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     config = get_config()
     url = f"https://{config.jira_domain}/rest/api/3/issue"
     try:
-        resp = requests.post(url, headers=_headers(), json=payload)
+        resp = requests.post(url, headers=_headers(), json=payload, timeout=30)
         resp.raise_for_status()
         response_data = resp.json()
         log_api_response("Jira issue creation", resp.status_code, response_data)
@@ -81,7 +95,9 @@ def create_issue(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         except Exception:
             resp_preview = None
         if resp_preview:
-            log_error("Failed to create Jira issue", error=str(e), response=resp_preview)
+            log_error(
+                "Failed to create Jira issue", error=str(e), response=resp_preview
+            )
         else:
             log_error("Failed to create Jira issue", error=str(e))
         return None
@@ -98,12 +114,15 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
             "type": "doc",
             "version": 1,
             "content": [
-                {"type": "paragraph", "content": [{"type": "text", "text": comment_text}]}
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": comment_text}],
+                }
             ],
         }
     }
     try:
-        resp = requests.post(url, headers=_headers(), json=body)
+        resp = requests.post(url, headers=_headers(), json=body, timeout=30)
         log_api_response("Jira comment addition", resp.status_code)
         return resp.status_code in (200, 201)
     except requests.RequestException as e:
@@ -118,11 +137,16 @@ def add_labels(issue_key: str, labels_to_add: list[str]) -> bool:
     url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}"
     body = {"update": {"labels": [{"add": lbl} for lbl in labels_to_add]}}
     try:
-        resp = requests.put(url, headers=_headers(), json=body)
+        resp = requests.put(url, headers=_headers(), json=body, timeout=30)
         log_api_response("Jira label addition", resp.status_code)
         return resp.status_code in (200, 204)
     except requests.RequestException as e:
-        log_error("Failed to add labels", error=str(e), issue_key=issue_key, labels=labels_to_add)
+        log_error(
+            "Failed to add labels",
+            error=str(e),
+            issue_key=issue_key,
+            labels=labels_to_add,
+        )
         return False
 
 
@@ -140,16 +164,18 @@ def get_transitions(issue_key: str) -> Optional[List[Dict[str, Any]]]:
     config = get_config()
     url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}/transitions"
     try:
-        resp = requests.get(url, headers=_headers())
+        resp = requests.get(url, headers=_headers(), timeout=30)
         resp.raise_for_status()
         data = resp.json()
         transitions = []
         for t in data.get("transitions", []):
-            transitions.append({
-                "id": t.get("id"),
-                "name": t.get("name", ""),
-                "to_status": t.get("to", {}).get("name", ""),
-            })
+            transitions.append(
+                {
+                    "id": t.get("id"),
+                    "name": t.get("name", ""),
+                    "to_status": t.get("to", {}).get("name", ""),
+                }
+            )
         log_api_response("Jira get transitions", resp.status_code)
         return transitions
     except requests.RequestException as e:
@@ -157,7 +183,9 @@ def get_transitions(issue_key: str) -> Optional[List[Dict[str, Any]]]:
         return None
 
 
-def transition_issue(issue_key: str, transition_id: str, resolution: Optional[str] = None) -> bool:
+def transition_issue(
+    issue_key: str, transition_id: str, resolution: Optional[str] = None
+) -> bool:
     """Transition a Jira issue to a new status.
 
     Args:
@@ -179,11 +207,16 @@ def transition_issue(issue_key: str, transition_id: str, resolution: Optional[st
         body["fields"] = {"resolution": {"name": resolution}}
 
     try:
-        resp = requests.post(url, headers=_headers(), json=body)
+        resp = requests.post(url, headers=_headers(), json=body, timeout=30)
         log_api_response("Jira transition", resp.status_code)
         return resp.status_code in (200, 204)
     except requests.RequestException as e:
-        log_error("Failed to transition issue", error=str(e), issue_key=issue_key, transition_id=transition_id)
+        log_error(
+            "Failed to transition issue",
+            error=str(e),
+            issue_key=issue_key,
+            transition_id=transition_id,
+        )
         return False
 
 
@@ -208,9 +241,11 @@ def link_issues(from_key: str, to_key: str, link_type: str = "Duplicate") -> boo
         "outwardIssue": {"key": to_key},
     }
     try:
-        resp = requests.post(url, headers=_headers(), json=body)
+        resp = requests.post(url, headers=_headers(), json=body, timeout=30)
         log_api_response("Jira issue link", resp.status_code)
         return resp.status_code in (200, 201)
     except requests.RequestException as e:
-        log_error("Failed to link issues", error=str(e), from_key=from_key, to_key=to_key)
+        log_error(
+            "Failed to link issues", error=str(e), from_key=from_key, to_key=to_key
+        )
         return False

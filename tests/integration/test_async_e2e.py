@@ -63,7 +63,7 @@ def sample_logs():
             "logger": f"com.example.service{i % 3}",
             "thread": f"thread-{i}",
             "detail": f"Stack trace for error {i}",
-            "timestamp": f"2025-01-01T10:{i:02d}:00Z"
+            "timestamp": f"2025-01-01T10:{i:02d}:00Z",
         }
         for i in range(10)
     ]
@@ -72,39 +72,51 @@ def sample_logs():
 @pytest.fixture
 def valid_llm_response():
     """Valid LLM response for mocking."""
-    return json.dumps({
-        "error_type": "service-error",
-        "create_ticket": True,
-        "ticket_title": "Fix service error",
-        "ticket_description": "## Problem\nService error occurred.\n## Actions\n- Investigate",
-        "severity": "medium"
-    })
+    return json.dumps(
+        {
+            "error_type": "service-error",
+            "create_ticket": True,
+            "ticket_title": "Fix service error",
+            "ticket_description": "## Problem\nService error occurred.\n## Actions\n- Investigate",
+            "severity": "medium",
+        }
+    )
 
 
 class TestAsyncPipelineE2E:
     """End-to-end tests for the async pipeline."""
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_dry_run(self, mock_config, sample_logs, valid_llm_response):
+    async def test_full_pipeline_dry_run(
+        self, mock_config, sample_logs, valid_llm_response
+    ):
         """Test complete pipeline in dry-run mode."""
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.get_config", return_value=mock_config
+                ):
                     # Mock LLM response
-                    with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
                         mock_response = MagicMock()
                         mock_response.content = valid_llm_response
                         mock_chain.ainvoke = AsyncMock(return_value=mock_response)
 
                         # Mock Jira client
-                        with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockJira:
+                        with patch(
+                            "agent.nodes.ticket_async.AsyncJiraClient"
+                        ) as MockJira:
                             mock_jira = AsyncMock()
                             mock_jira.is_configured.return_value = True
                             mock_jira.search.return_value = {"issues": []}
                             MockJira.return_value.__aenter__.return_value = mock_jira
                             MockJira.return_value.__aexit__.return_value = None
 
-                            with patch('agent.jira.async_match.AsyncJiraClient', MockJira):
+                            with patch(
+                                "agent.jira.async_match.AsyncJiraClient", MockJira
+                            ):
                                 processor = AsyncLogProcessor(max_workers=3)
                                 result = await processor.process_logs(sample_logs[:3])
 
@@ -112,7 +124,9 @@ class TestAsyncPipelineE2E:
         assert result["errors"] == 0
 
     @pytest.mark.asyncio
-    async def test_pipeline_with_duplicates(self, mock_config, sample_logs, valid_llm_response):
+    async def test_pipeline_with_duplicates(
+        self, mock_config, sample_logs, valid_llm_response
+    ):
         """Test pipeline correctly handles duplicate logs."""
         # Create logs with identical messages (should be deduplicated)
         duplicate_logs = [
@@ -121,14 +135,16 @@ class TestAsyncPipelineE2E:
                 "logger": "com.example.service",
                 "thread": f"thread-{i}",
                 "detail": "Same detail",
-                "timestamp": f"2025-01-01T10:{i:02d}:00Z"
+                "timestamp": f"2025-01-01T10:{i:02d}:00Z",
             }
             for i in range(5)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
@@ -145,7 +161,9 @@ class TestAsyncThroughput:
     """Throughput benchmark tests."""
 
     @pytest.mark.asyncio
-    async def test_throughput_baseline(self, mock_config, sample_logs, valid_llm_response):
+    async def test_throughput_baseline(
+        self, mock_config, sample_logs, valid_llm_response
+    ):
         """Test throughput with mocked components."""
         # Generate more logs for throughput testing
         many_logs = [
@@ -154,14 +172,18 @@ class TestAsyncThroughput:
                 "logger": f"com.example.service{i % 10}",
                 "thread": f"thread-{i}",
                 "detail": f"Detail {i}",
-                "timestamp": f"2025-01-01T{(i // 60):02d}:{(i % 60):02d}:00Z"
+                "timestamp": f"2025-01-01T{(i // 60):02d}:{(i % 60):02d}:00Z",
             }
             for i in range(50)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.get_config", return_value=mock_config
+                ):
                     # Mock fast LLM response
                     async def fast_llm_response(*args, **kwargs):
                         await asyncio.sleep(0.01)  # Simulate 10ms LLM latency
@@ -169,10 +191,12 @@ class TestAsyncThroughput:
                         mock_response.content = valid_llm_response
                         return mock_response
 
-                    with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
                         mock_chain.ainvoke = fast_llm_response
 
-                        with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockJira:
+                        with patch(
+                            "agent.nodes.ticket_async.AsyncJiraClient"
+                        ) as MockJira:
                             mock_jira = AsyncMock()
                             mock_jira.is_configured.return_value = True
                             mock_jira.search.return_value = {"issues": []}
@@ -180,8 +204,7 @@ class TestAsyncThroughput:
                             MockJira.return_value.__aexit__.return_value = None
 
                             processor = AsyncLogProcessor(
-                                max_workers=10,
-                                enable_rate_limiting=False
+                                max_workers=10, enable_rate_limiting=False
                             )
 
                             start = time.time()
@@ -198,7 +221,9 @@ class TestAsyncThroughput:
         assert logs_per_second > 0.1, f"Throughput too low: {logs_per_second} logs/sec"
 
     @pytest.mark.asyncio
-    async def test_parallel_faster_than_sequential(self, mock_config, valid_llm_response):
+    async def test_parallel_faster_than_sequential(
+        self, mock_config, valid_llm_response
+    ):
         """Test that parallel processing is faster than sequential."""
         logs = [
             {
@@ -206,32 +231,41 @@ class TestAsyncThroughput:
                 "logger": f"logger{i}",
                 "thread": f"thread-{i}",
                 "detail": f"Detail {i}",
-                "timestamp": "2025-01-01T10:00:00Z"
+                "timestamp": "2025-01-01T10:00:00Z",
             }
             for i in range(6)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.get_config", return_value=mock_config
+                ):
+
                     async def slow_analysis(*args, **kwargs):
                         await asyncio.sleep(0.1)  # 100ms per analysis
                         mock_response = MagicMock()
                         mock_response.content = valid_llm_response
                         return mock_response
 
-                    with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
                         mock_chain.ainvoke = slow_analysis
 
                         # Mock Jira client for ticket creation
-                        with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockJira:
+                        with patch(
+                            "agent.nodes.ticket_async.AsyncJiraClient"
+                        ) as MockJira:
                             mock_jira = AsyncMock()
                             mock_jira.is_configured.return_value = True
                             mock_jira.search.return_value = {"issues": []}
                             MockJira.return_value.__aenter__.return_value = mock_jira
                             MockJira.return_value.__aexit__.return_value = None
 
-                            with patch('agent.jira.async_match.AsyncJiraClient', MockJira):
+                            with patch(
+                                "agent.jira.async_match.AsyncJiraClient", MockJira
+                            ):
                                 # Parallel with 3 workers
                                 processor = AsyncLogProcessor(max_workers=3)
                                 start = time.time()
@@ -256,14 +290,16 @@ class TestAsyncRateLimiting:
                 "logger": f"logger{i}",
                 "thread": f"thread-{i}",
                 "detail": f"Detail {i}",
-                "timestamp": "2025-01-01T10:00:00Z"
+                "timestamp": "2025-01-01T10:00:00Z",
             }
             for i in range(15)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     call_times = []
 
                     async def tracked_llm(*args, **kwargs):
@@ -276,8 +312,7 @@ class TestAsyncRateLimiting:
 
                     # Rate limiter: 10 calls per second
                     processor = AsyncLogProcessor(
-                        max_workers=15,
-                        enable_rate_limiting=True
+                        max_workers=15, enable_rate_limiting=True
                     )
                     await processor.process_logs(logs)
 
@@ -303,13 +338,22 @@ class TestAsyncErrorHandling:
         mock_config.fallback_analysis_enabled = False
 
         logs = [
-            {"message": f"Error {i}", "logger": f"logger{i}", "thread": "t", "detail": "d"}
+            {
+                "message": f"Error {i}",
+                "logger": f"logger{i}",
+                "thread": "t",
+                "detail": "d",
+            }
             for i in range(5)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.ticket_async.get_config', return_value=mock_config):
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch(
+                    "agent.nodes.ticket_async.get_config", return_value=mock_config
+                ):
                     call_count = 0
 
                     async def sometimes_failing(*args, **kwargs):
@@ -321,18 +365,22 @@ class TestAsyncErrorHandling:
                         mock_response.content = valid_llm_response
                         return mock_response
 
-                    with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
                         mock_chain.ainvoke = sometimes_failing
 
                         # Mock Jira client for ticket creation
-                        with patch('agent.nodes.ticket_async.AsyncJiraClient') as MockJira:
+                        with patch(
+                            "agent.nodes.ticket_async.AsyncJiraClient"
+                        ) as MockJira:
                             mock_jira = AsyncMock()
                             mock_jira.is_configured.return_value = True
                             mock_jira.search.return_value = {"issues": []}
                             MockJira.return_value.__aenter__.return_value = mock_jira
                             MockJira.return_value.__aexit__.return_value = None
 
-                            with patch('agent.jira.async_match.AsyncJiraClient', MockJira):
+                            with patch(
+                                "agent.jira.async_match.AsyncJiraClient", MockJira
+                            ):
                                 processor = AsyncLogProcessor(max_workers=2)
                                 result = await processor.process_logs(logs)
 
@@ -343,8 +391,11 @@ class TestAsyncErrorHandling:
         assert result["successful"] == 5  # All processed successfully
 
         # Verify one result has the error state from analysis
-        error_results = [r for r in result["results"]
-                        if r.get("analysis", {}).get("error_type") == "analysis-error"]
+        error_results = [
+            r
+            for r in result["results"]
+            if r.get("analysis", {}).get("error_type") == "analysis-error"
+        ]
         assert len(error_results) == 1  # One log had analysis error
 
     @pytest.mark.asyncio
@@ -360,18 +411,24 @@ class TestAsyncErrorHandling:
             for i in range(5)
         ]
 
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
                 # Simulate all LLM calls failing
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     from openai import OpenAIError
+
                     mock_chain.ainvoke = AsyncMock(side_effect=OpenAIError("API Error"))
 
-                    with patch('agent.nodes.analysis_async._use_fallback_analysis_async', new_callable=AsyncMock) as mock_fallback:
+                    with patch(
+                        "agent.nodes.analysis_async._use_fallback_analysis_async",
+                        new_callable=AsyncMock,
+                    ) as mock_fallback:
                         mock_fallback.return_value = {
                             "error_type": "fallback",
                             "create_ticket": False,
-                            "severity": "low"
+                            "severity": "low",
                         }
 
                         processor = AsyncLogProcessor(max_workers=2)
@@ -385,19 +442,21 @@ class TestConvenienceFunction:
     """Test the convenience function."""
 
     @pytest.mark.asyncio
-    async def test_process_logs_parallel(self, mock_config, sample_logs, valid_llm_response):
+    async def test_process_logs_parallel(
+        self, mock_config, sample_logs, valid_llm_response
+    ):
         """Test process_logs_parallel convenience function."""
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
 
                     result = await process_logs_parallel(
-                        sample_logs[:3],
-                        max_workers=2,
-                        enable_rate_limiting=False
+                        sample_logs[:3], max_workers=2, enable_rate_limiting=False
                     )
 
         assert result["processed"] == 3
@@ -417,16 +476,16 @@ class TestDatadogFetchIntegration:
                         "timestamp": "2025-01-01T10:00:00Z",
                         "attributes": {
                             "logger": {"name": "dd.logger", "thread_name": "main"},
-                            "properties": {"Log": "Detail"}
-                        }
+                            "properties": {"Log": "Detail"},
+                        },
                     }
                 }
             ],
-            "meta": {"page": {"after": None}}
+            "meta": {"page": {"after": None}},
         }
 
-        with patch('agent.datadog_async.get_config', return_value=mock_config):
-            with patch('agent.datadog_async.AsyncDatadogClient') as MockDD:
+        with patch("agent.datadog_async.get_config", return_value=mock_config):
+            with patch("agent.datadog_async.AsyncDatadogClient") as MockDD:
                 mock_dd = AsyncMock()
                 mock_dd.__aenter__.return_value = mock_dd
                 mock_dd.__aexit__.return_value = None
@@ -440,9 +499,11 @@ class TestDatadogFetchIntegration:
         assert logs[0]["message"] == "Test error from Datadog"
 
         # Now process them
-        with patch('agent.async_processor.get_config', return_value=mock_config):
-            with patch('agent.nodes.analysis_async.get_config', return_value=mock_config):
-                with patch('agent.nodes.analysis_async.chain') as mock_chain:
+        with patch("agent.async_processor.get_config", return_value=mock_config):
+            with patch(
+                "agent.nodes.analysis_async.get_config", return_value=mock_config
+            ):
+                with patch("agent.nodes.analysis_async.chain") as mock_chain:
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)

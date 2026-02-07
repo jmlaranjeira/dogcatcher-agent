@@ -6,7 +6,7 @@ from agent.nodes.analysis import analyze_log, _use_fallback_analysis
 from agent.utils.circuit_breaker import (
     CircuitBreakerOpenError,
     get_circuit_breaker_registry,
-    CircuitState
+    CircuitState,
 )
 from agent.config import get_config
 
@@ -17,7 +17,7 @@ class TestAnalysisCircuitBreakerIntegration:
     @pytest.fixture(autouse=True)
     def setup_config(self):
         """Set up configuration for tests."""
-        with patch('agent.config.get_config') as mock_config:
+        with patch("agent.config.get_config") as mock_config:
             config = Mock()
             config.circuit_breaker_enabled = True
             config.circuit_breaker_failure_threshold = 3
@@ -32,6 +32,7 @@ class TestAnalysisCircuitBreakerIntegration:
         """Reset circuit breaker state between tests."""
         # Reset the initialization flag
         import agent.nodes.analysis as analysis_module
+
         analysis_module._circuit_breaker_initialized = False
 
         # Clear registry
@@ -50,7 +51,7 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Database connection failed",
                 "logger": "com.example.DatabaseService",
                 "thread": "main",
-                "detail": "Connection timeout after 30s"
+                "detail": "Connection timeout after 30s",
             }
         }
 
@@ -63,7 +64,7 @@ class TestAnalysisCircuitBreakerIntegration:
             "severity": "high"
         }"""
 
-        with patch('agent.nodes.analysis.chain') as mock_chain:
+        with patch("agent.nodes.analysis.chain") as mock_chain:
             mock_chain.invoke.return_value = mock_response
 
             result = analyze_log(state)
@@ -80,11 +81,11 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Test error",
                 "logger": "com.example.Service",
                 "thread": "main",
-                "detail": ""
+                "detail": "",
             }
         }
 
-        with patch('agent.nodes.analysis.chain') as mock_chain:
+        with patch("agent.nodes.analysis.chain") as mock_chain:
             from openai import OpenAIError
 
             # Simulate LLM failures
@@ -110,24 +111,32 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Database connection timeout error occurred",
                 "logger": "com.example.DatabaseService",
                 "thread": "worker-1",
-                "detail": "Could not connect to database after 30s"
+                "detail": "Could not connect to database after 30s",
             }
         }
 
         # Force circuit breaker open
         registry = get_circuit_breaker_registry()
 
-        with patch('agent.nodes.analysis._initialize_circuit_breaker'):
+        with patch("agent.nodes.analysis._initialize_circuit_breaker"):
             # Simulate circuit breaker being open
-            with patch('agent.nodes.analysis._call_llm_with_circuit_breaker') as mock_llm:
-                mock_llm.side_effect = CircuitBreakerOpenError("Circuit breaker is open")
+            with patch(
+                "agent.nodes.analysis._call_llm_with_circuit_breaker"
+            ) as mock_llm:
+                mock_llm.side_effect = CircuitBreakerOpenError(
+                    "Circuit breaker is open"
+                )
 
                 result = analyze_log(state)
 
                 # Should use fallback analysis
                 assert result["fallback_analysis"] is True
                 assert result["analysis_method"] == "rule_based"
-                assert result["error_type"] in ["database-connection", "timeout", "unknown"]
+                assert result["error_type"] in [
+                    "database-connection",
+                    "timeout",
+                    "unknown",
+                ]
                 assert "confidence" in result
 
     def test_fallback_analysis_disabled_returns_error(self):
@@ -137,21 +146,23 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Test error",
                 "logger": "com.example.Service",
                 "thread": "main",
-                "detail": ""
+                "detail": "",
             }
         }
 
         # Note: The current implementation still uses fallback even when circuit breaker
         # opens, as the config.fallback_analysis_enabled check happens in the exception handler
         # but the warning is logged first. The actual behavior falls back to rule-based analysis.
-        with patch('agent.nodes.analysis._call_llm_with_circuit_breaker') as mock_llm:
+        with patch("agent.nodes.analysis._call_llm_with_circuit_breaker") as mock_llm:
             mock_llm.side_effect = CircuitBreakerOpenError("Circuit breaker is open")
 
             result = analyze_log(state)
 
             # With current implementation, fallback analysis is used
             # Should use fallback (rule-based) analysis
-            assert result.get("fallback_analysis") is True or result.get("error_type") in ["unknown", "llm-unavailable"]
+            assert result.get("fallback_analysis") is True or result.get(
+                "error_type"
+            ) in ["unknown", "llm-unavailable"]
 
     def test_circuit_breaker_disabled_uses_llm_directly(self):
         """Test that disabling circuit breaker uses LLM directly."""
@@ -160,11 +171,11 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Test error",
                 "logger": "com.example.Service",
                 "thread": "main",
-                "detail": ""
+                "detail": "",
             }
         }
 
-        with patch('agent.config.get_config') as mock_config:
+        with patch("agent.config.get_config") as mock_config:
             config = Mock()
             config.circuit_breaker_enabled = False  # Disable circuit breaker
             config.fallback_analysis_enabled = True
@@ -179,7 +190,7 @@ class TestAnalysisCircuitBreakerIntegration:
                 "severity": "low"
             }"""
 
-            with patch('agent.nodes.analysis.chain') as mock_chain:
+            with patch("agent.nodes.analysis.chain") as mock_chain:
                 mock_chain.invoke.return_value = mock_response
 
                 result = analyze_log(state)
@@ -196,14 +207,14 @@ class TestAnalysisCircuitBreakerIntegration:
                 "message": "Database error with constraint violation",
                 "logger": "com.example.Service",
                 "thread": "main",
-                "detail": ""
+                "detail": "",
             }
         }
 
         mock_response = Mock()
         mock_response.content = "Invalid JSON response"
 
-        with patch('agent.nodes.analysis.chain') as mock_chain:
+        with patch("agent.nodes.analysis.chain") as mock_chain:
             mock_chain.invoke.return_value = mock_response
 
             result = analyze_log(state)
@@ -219,7 +230,7 @@ class TestAnalysisCircuitBreakerIntegration:
             "message": "timeout occurred during network request",
             "logger": "com.example.NetworkService",
             "thread": "worker-1",
-            "detail": "Request to external API timed out after 30 seconds"
+            "detail": "Request to external API timed out after 30 seconds",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -245,7 +256,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Database connection failed - connection timeout",
             "logger": "DatabaseService",
             "thread": "main",
-            "detail": "Could not connect to database server"
+            "detail": "Could not connect to database server",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -260,7 +271,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Request timeout occurred",
             "logger": "HttpClient",
             "thread": "main",
-            "detail": "Operation timed out after 30 seconds"
+            "detail": "Operation timed out after 30 seconds",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -275,7 +286,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Authentication failed - invalid credentials",
             "logger": "AuthService",
             "thread": "main",
-            "detail": "User authentication rejected"
+            "detail": "User authentication rejected",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -291,7 +302,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "HTTP 503 Service Unavailable error",
             "logger": "ApiClient",
             "thread": "main",
-            "detail": "External service returned 503"
+            "detail": "External service returned 503",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -306,7 +317,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Out of memory error - heap space exceeded",
             "logger": "Application",
             "thread": "main",
-            "detail": "Java heap space exhausted"
+            "detail": "Java heap space exhausted",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -321,7 +332,7 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Kafka consumer failed to consume message",
             "logger": "KafkaService",
             "thread": "consumer-1",
-            "detail": "Error processing message from topic"
+            "detail": "Error processing message from topic",
         }
 
         result = _use_fallback_analysis(state, log_data)
@@ -336,13 +347,17 @@ class TestFallbackAnalysisErrorPatterns:
             "message": "Something went wrong",
             "logger": "UnknownService",
             "thread": "main",
-            "detail": "Generic error occurred"
+            "detail": "Generic error occurred",
         }
 
         result = _use_fallback_analysis(state, log_data)
 
         # Should match generic "unknown" pattern
-        assert result["error_type"] in ["unknown", "configuration-error", "file-not-found"]
+        assert result["error_type"] in [
+            "unknown",
+            "configuration-error",
+            "file-not-found",
+        ]
         assert "severity" in result
 
 
@@ -355,7 +370,7 @@ class TestCircuitBreakerConfigFromEnv:
         registry = get_circuit_breaker_registry()
         registry._breakers.clear()
 
-        with patch('agent.nodes.analysis.get_config') as mock_config:
+        with patch("agent.nodes.analysis.get_config") as mock_config:
             config = Mock()
             config.circuit_breaker_enabled = True
             config.circuit_breaker_failure_threshold = 5  # Custom value
@@ -367,6 +382,7 @@ class TestCircuitBreakerConfigFromEnv:
             # Force initialization
             from agent.nodes.analysis import _initialize_circuit_breaker
             import agent.nodes.analysis as analysis_module
+
             analysis_module._circuit_breaker_initialized = False
 
             _initialize_circuit_breaker()

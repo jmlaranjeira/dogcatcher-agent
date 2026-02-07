@@ -7,11 +7,17 @@ Supports YAML profiles with the following precedence:
 3. Environment variable overrides
 4. CLI argument overrides
 """
+
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 import yaml
 
 from agent.utils.logger import log_info, log_warning, log_error
+
+if TYPE_CHECKING:
+    from agent.config import Config
 
 PROFILES_DIR = Path(__file__).parent.parent / "config" / "profiles"
 VALID_PROFILES = {"development", "staging", "production", "testing"}
@@ -45,7 +51,9 @@ def load_profile(profile_name: str) -> Dict[str, Any]:
     with open(profile_path, "r") as f:
         config = yaml.safe_load(f) or {}
 
-    log_info(f"Loaded configuration profile", profile=profile_name, path=str(profile_path))
+    log_info(
+        f"Loaded configuration profile", profile=profile_name, path=str(profile_path)
+    )
     return config
 
 

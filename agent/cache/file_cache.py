@@ -29,7 +29,7 @@ class FileCacheBackend(CacheBackend):
         """Load cache metadata from file."""
         try:
             if self.metadata_file.exists():
-                with open(self.metadata_file, 'r') as f:
+                with open(self.metadata_file, "r") as f:
                     return json.load(f)
         except Exception:
             pass
@@ -38,7 +38,7 @@ class FileCacheBackend(CacheBackend):
     def _save_metadata(self) -> None:
         """Save cache metadata to file."""
         try:
-            with open(self.metadata_file, 'w') as f:
+            with open(self.metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2, default=str)
         except Exception:
             pass
@@ -46,7 +46,7 @@ class FileCacheBackend(CacheBackend):
     def _get_file_path(self, key: str) -> Path:
         """Get file path for cache key."""
         # Hash the key to avoid filesystem issues
-        key_hash = hashlib.md5(key.encode()).hexdigest()
+        key_hash = hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
         return self.cache_dir / f"cache_{key_hash}.pkl"
 
     def _is_expired(self, key: str) -> bool:
@@ -79,12 +79,14 @@ class FileCacheBackend(CacheBackend):
                     return None
 
                 # Load data from file
-                with open(file_path, 'rb') as f:
-                    data = pickle.load(f)
+                with open(file_path, "rb") as f:
+                    data = pickle.load(f)  # nosec B301
 
                 # Update access count in metadata
                 if key in self.metadata:
-                    self.metadata[key]["access_count"] = self.metadata[key].get("access_count", 0) + 1
+                    self.metadata[key]["access_count"] = (
+                        self.metadata[key].get("access_count", 0) + 1
+                    )
                     self._save_metadata()
 
                 self._record_hit()
@@ -101,7 +103,7 @@ class FileCacheBackend(CacheBackend):
                 file_path = self._get_file_path(key)
 
                 # Save data to file
-                with open(file_path, 'wb') as f:
+                with open(file_path, "wb") as f:
                     pickle.dump(value, f)
 
                 # Update metadata
@@ -110,7 +112,7 @@ class FileCacheBackend(CacheBackend):
                     "ttl_seconds": ttl,
                     "access_count": 0,
                     "file_path": str(file_path),
-                    "size_bytes": file_path.stat().st_size
+                    "size_bytes": file_path.stat().st_size,
                 }
 
                 self._save_metadata()
@@ -233,7 +235,7 @@ class FileCacheBackend(CacheBackend):
                 "backend": self.name,
                 "cache_dir": str(self.cache_dir),
                 "disk_usage_bytes": stats.memory_usage,
-                "metadata_entries": len(self.metadata)
+                "metadata_entries": len(self.metadata),
             }
 
         except Exception:
@@ -242,7 +244,7 @@ class FileCacheBackend(CacheBackend):
                 "error": "Failed to collect stats",
                 "hits": self.hits,
                 "misses": self.misses,
-                "errors": self.errors
+                "errors": self.errors,
             }
 
     async def close(self) -> None:
@@ -266,7 +268,7 @@ class FileCacheBackend(CacheBackend):
                 # Sort by timestamp (oldest first)
                 sorted_keys = sorted(
                     self.metadata.keys(),
-                    key=lambda k: self.metadata[k].get("timestamp", "")
+                    key=lambda k: self.metadata[k].get("timestamp", ""),
                 )
 
                 removed_count = 0
@@ -291,8 +293,6 @@ class FileCacheBackend(CacheBackend):
     def get_disk_usage(self) -> int:
         """Get total disk usage in bytes."""
         try:
-            return sum(
-                entry.get("size_bytes", 0) for entry in self.metadata.values()
-            )
+            return sum(entry.get("size_bytes", 0) for entry in self.metadata.values())
         except Exception:
             return 0

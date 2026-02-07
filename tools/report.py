@@ -39,6 +39,7 @@ def parse_ts(value: str) -> Optional[datetime]:
 
 # -------- Load & filter -----------------------------------------------------
 
+
 def load_audit(path: str) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     if not os.path.exists(path):
@@ -57,7 +58,9 @@ def load_audit(path: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def filter_since(rows: Iterable[Dict[str, Any]], since_hours: int) -> List[Dict[str, Any]]:
+def filter_since(
+    rows: Iterable[Dict[str, Any]], since_hours: int
+) -> List[Dict[str, Any]]:
     if since_hours <= 0:
         return list(rows)
     cutoff = datetime.utcnow() - timedelta(hours=since_hours)
@@ -70,6 +73,7 @@ def filter_since(rows: Iterable[Dict[str, Any]], since_hours: int) -> List[Dict[
 
 
 # -------- Aggregations ------------------------------------------------------
+
 
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     total = len(rows)
@@ -85,18 +89,29 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     dupes = sum(1 for r in rows if _dec(r).startswith("duplicate"))
     simulated = sum(1 for r in rows if _dec(r) == "simulated")
     # How many would be created in dry-run (LLM decided create_ticket=True)
-    would_create = sum(1 for r in rows if _dec(r) == "simulated" and r.get("create_ticket") is True)
+    would_create = sum(
+        1 for r in rows if _dec(r) == "simulated" and r.get("create_ticket") is True
+    )
     cap_reached = sum(1 for r in rows if _dec(r) == "cap-reached")
     unknown_decisions = sum(1 for r in rows if not _dec(r))
 
     # Backward compatibility: if decision is missing, fall back to booleans
     if created == 0 and any(r.get("ticket_created") is True for r in rows):
         created = sum(1 for r in rows if r.get("ticket_created") is True)
-    if dupes == 0 and any((r.get("create_ticket") is False) or (r.get("duplicate") is True) for r in rows):
-        dupes = sum(1 for r in rows if (r.get("create_ticket") is False) or (r.get("duplicate") is True))
+    if dupes == 0 and any(
+        (r.get("create_ticket") is False) or (r.get("duplicate") is True) for r in rows
+    ):
+        dupes = sum(
+            1
+            for r in rows
+            if (r.get("create_ticket") is False) or (r.get("duplicate") is True)
+        )
 
     # Fingerprint frequency (top noise sources)
-    by_fp = Counter(r.get("fingerprint") or r.get("log_fingerprint") or r.get("log_key") for r in rows)
+    by_fp = Counter(
+        r.get("fingerprint") or r.get("log_fingerprint") or r.get("log_key")
+        for r in rows
+    )
 
     # Top Jira keys touched (created or commented)
     by_issue = Counter(r.get("jira_key") or r.get("existing_issue_key") for r in rows)
@@ -156,7 +171,9 @@ def print_summary(summary: Dict[str, Any], top_n: int = 10) -> None:
 
 
 # -------- Optional plotting -------------------------------------------------
-def try_plot(summary: Dict[str, Any], outdir: str = "reports", top_n: int = 10) -> Optional[str]:
+def try_plot(
+    summary: Dict[str, Any], outdir: str = "reports", top_n: int = 10
+) -> Optional[str]:
     try:
         import matplotlib.pyplot as plt  # type: ignore
     except Exception:
@@ -168,7 +185,11 @@ def try_plot(summary: Dict[str, Any], outdir: str = "reports", top_n: int = 10) 
     outfile = os.path.join(outdir, f"audit_{timestamp}.png")
 
     # Simple bar from error_type
-    labels, values = zip(*summary["by_error"].most_common(top_n)) if summary["by_error"] else ([], [])
+    labels, values = (
+        zip(*summary["by_error"].most_common(top_n))
+        if summary["by_error"]
+        else ([], [])
+    )
     if labels:
         plt.figure()
         plt.bar(range(len(values)), values)
@@ -185,11 +206,26 @@ def try_plot(summary: Dict[str, Any], outdir: str = "reports", top_n: int = 10) 
 
 # -------- CLI ---------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Audit reporter for the Datadog → Jira agent")
-    parser.add_argument("--since-hours", type=int, default=168, help="Only include entries in the last N hours (default: 168)")
-    parser.add_argument("--top", type=int, default=10, help="Top N rows for listings (default: 10)")
-    parser.add_argument("--audit-file", type=str, default=AUDIT_FILE, help="Path to audit JSONL file")
-    parser.add_argument("--plot", action="store_true", help="Generate a simple bar chart (requires matplotlib)")
+    parser = argparse.ArgumentParser(
+        description="Audit reporter for the Datadog → Jira agent"
+    )
+    parser.add_argument(
+        "--since-hours",
+        type=int,
+        default=168,
+        help="Only include entries in the last N hours (default: 168)",
+    )
+    parser.add_argument(
+        "--top", type=int, default=10, help="Top N rows for listings (default: 10)"
+    )
+    parser.add_argument(
+        "--audit-file", type=str, default=AUDIT_FILE, help="Path to audit JSONL file"
+    )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate a simple bar chart (requires matplotlib)",
+    )
     args = parser.parse_args()
 
     rows = load_audit(args.audit_file)

@@ -1,4 +1,5 @@
 """Tests for configuration profiles system."""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -202,14 +203,22 @@ class TestProfileYAMLStructure:
 
     def test_all_profiles_have_required_sections(self):
         """Test that all profiles have required configuration sections."""
-        required_sections = ["datadog", "jira", "agent", "cache", "circuit_breaker", "logging"]
+        required_sections = [
+            "datadog",
+            "jira",
+            "agent",
+            "cache",
+            "circuit_breaker",
+            "logging",
+        ]
 
         for profile_name in VALID_PROFILES:
             profile_config = load_profile(profile_name)
 
             for section in required_sections:
-                assert section in profile_config, \
-                    f"Profile '{profile_name}' missing required section: {section}"
+                assert (
+                    section in profile_config
+                ), f"Profile '{profile_name}' missing required section: {section}"
 
     def test_development_profile_is_safe(self):
         """Test that development profile has safe defaults."""

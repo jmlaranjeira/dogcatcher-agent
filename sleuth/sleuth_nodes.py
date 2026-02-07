@@ -24,32 +24,32 @@ class SleuthState(TypedDict, total=False):
     """State for the Sleuth investigation workflow."""
 
     # Input
-    query: str              # Natural language description
+    query: str  # Natural language description
     service: Optional[str]  # Service filter (optional, can be inferred)
-    env: str                # Environment (default: prod)
-    hours_back: int         # Time window (default: 24)
-    no_patchy: bool         # Disable Patchy suggestions
-    all_status: bool        # Search all statuses, not just errors
+    env: str  # Environment (default: prod)
+    hours_back: int  # Time window (default: 24)
+    no_patchy: bool  # Disable Patchy suggestions
+    all_status: bool  # Search all statuses, not just errors
 
     # Generated
-    dd_query: str           # Query built for Datadog
-    logs: List[Dict]        # Logs found
+    dd_query: str  # Query built for Datadog
+    logs: List[Dict]  # Logs found
 
     # Correlation
     related_tickets: List[Dict]  # Related Jira tickets
 
     # Analysis
-    summary: str            # LLM summary
-    root_cause: str         # Identified root cause (if applicable)
-    suggested_fix: str      # Fix suggestion (if applicable)
+    summary: str  # LLM summary
+    root_cause: str  # Identified root cause (if applicable)
+    suggested_fix: str  # Fix suggestion (if applicable)
 
     # Action
-    can_auto_fix: bool      # Whether Patchy could fix it
-    patchy_invoked: bool    # Whether Patchy was invoked
-    patchy_result: str      # Patchy result
+    can_auto_fix: bool  # Whether Patchy could fix it
+    patchy_invoked: bool  # Whether Patchy was invoked
+    patchy_result: str  # Patchy result
 
     # Status
-    error: Optional[str]    # Error message if something failed
+    error: Optional[str]  # Error message if something failed
 
 
 def parse_query(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,10 +69,12 @@ def parse_query(state: Dict[str, Any]) -> Dict[str, Any]:
         service = entities["services"][0]
         log_info("Service inferred from query", service=service)
 
-    log_info("Query parsed",
-             query=query,
-             service=service,
-             entities_found=len(entities.get("keywords", [])))
+    log_info(
+        "Query parsed",
+        query=query,
+        service=service,
+        entities_found=len(entities.get("keywords", [])),
+    )
 
     return {
         **state,
@@ -149,10 +151,7 @@ def search_logs(state: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         resp = requests.post(
-            base_url,
-            json=payload,
-            headers=headers,
-            timeout=config.datadog_timeout
+            base_url, json=payload, headers=headers, timeout=config.datadog_timeout
         )
         resp.raise_for_status()
         data = resp.json()
@@ -160,14 +159,16 @@ def search_logs(state: Dict[str, Any]) -> Dict[str, Any]:
         logs = []
         for log in data.get("data", []):
             attr = log.get("attributes", {})
-            logs.append({
-                "message": attr.get("message", "<no message>"),
-                "timestamp": attr.get("timestamp"),
-                "service": attr.get("service"),
-                "status": attr.get("status"),
-                "logger": attr.get("attributes", {}).get("logger", {}).get("name"),
-                "host": attr.get("host"),
-            })
+            logs.append(
+                {
+                    "message": attr.get("message", "<no message>"),
+                    "timestamp": attr.get("timestamp"),
+                    "service": attr.get("service"),
+                    "status": attr.get("status"),
+                    "logger": attr.get("attributes", {}).get("logger", {}).get("name"),
+                    "host": attr.get("host"),
+                }
+            )
 
         log_info("Logs fetched from Datadog", count=len(logs))
         return {**state, "logs": logs}
@@ -204,7 +205,9 @@ def correlate_jira(state: Dict[str, Any]) -> Dict[str, Any]:
             unique_messages[norm_msg] = log
 
     # Search for similar tickets for each unique log pattern
-    for norm_msg, log in list(unique_messages.items())[:10]:  # Limit to 10 unique patterns
+    for norm_msg, log in list(unique_messages.items())[
+        :10
+    ]:  # Limit to 10 unique patterns
         msg = log.get("message", "")
 
         # Create a pseudo state for find_similar_ticket
@@ -213,23 +216,27 @@ def correlate_jira(state: Dict[str, Any]) -> Dict[str, Any]:
         key, score, summary = find_similar_ticket(
             msg,
             state=pseudo_state,
-            similarity_threshold=0.5  # Lower threshold for investigation
+            similarity_threshold=0.5,  # Lower threshold for investigation
         )
 
         if key and key not in seen_keys:
             seen_keys.add(key)
-            related_tickets.append({
-                "key": key,
-                "summary": summary,
-                "score": round(score, 2),
-                "matched_log": msg[:100],
-            })
+            related_tickets.append(
+                {
+                    "key": key,
+                    "summary": summary,
+                    "score": round(score, 2),
+                    "matched_log": msg[:100],
+                }
+            )
 
     # Also do a direct JQL search for recent related tickets
     query = state.get("query", "")
     keywords = query.split()[:5]  # Use first 5 words
     if keywords:
-        keyword_clauses = " OR ".join([f'summary ~ "{kw}"' for kw in keywords if len(kw) >= 3])
+        keyword_clauses = " OR ".join(
+            [f'summary ~ "{kw}"' for kw in keywords if len(kw) >= 3]
+        )
         if keyword_clauses:
             jql = f"project = {config.jira_project_key} AND ({keyword_clauses}) ORDER BY created DESC"
             try:
@@ -239,13 +246,15 @@ def correlate_jira(state: Dict[str, Any]) -> Dict[str, Any]:
                     if key and key not in seen_keys:
                         seen_keys.add(key)
                         fields = issue.get("fields", {})
-                        related_tickets.append({
-                            "key": key,
-                            "summary": fields.get("summary", ""),
-                            "status": fields.get("status", {}).get("name", ""),
-                            "created": fields.get("created", "")[:10],  # Date only
-                            "score": 0.0,  # JQL match, no similarity score
-                        })
+                        related_tickets.append(
+                            {
+                                "key": key,
+                                "summary": fields.get("summary", ""),
+                                "status": fields.get("status", {}).get("name", ""),
+                                "created": fields.get("created", "")[:10],  # Date only
+                                "score": 0.0,  # JQL match, no similarity score
+                            }
+                        )
             except Exception as e:
                 log_warning("JQL search for related tickets failed", error=str(e))
 
@@ -281,15 +290,21 @@ def analyze_results(state: Dict[str, Any]) -> Dict[str, Any]:
     # Prepare logs summary for LLM
     logs_summary = []
     for i, log in enumerate(logs[:20], 1):  # Limit to 20 logs
-        logs_summary.append(f"{i}. [{log.get('status', 'unknown')}] {log.get('message', '')[:200]}")
+        logs_summary.append(
+            f"{i}. [{log.get('status', 'unknown')}] {log.get('message', '')[:200]}"
+        )
     logs_text = "\n".join(logs_summary)
 
     # Prepare tickets summary
     tickets_summary = []
     for t in tickets[:5]:
         status = t.get("status", "")
-        tickets_summary.append(f"- {t['key']}: {t.get('summary', '')} (Score: {t.get('score', 0)}, Status: {status})")
-    tickets_text = "\n".join(tickets_summary) if tickets_summary else "No related tickets found."
+        tickets_summary.append(
+            f"- {t['key']}: {t.get('summary', '')} (Score: {t.get('score', 0)}, Status: {status})"
+        )
+    tickets_text = (
+        "\n".join(tickets_summary) if tickets_summary else "No related tickets found."
+    )
 
     prompt = f"""Analyze these error logs and related Jira tickets.
 User asked: "{query}"
@@ -323,11 +338,14 @@ Focus on:
         )
 
         import json
+
         result = json.loads(response.choices[0].message.content)
 
-        log_info("Analysis completed",
-                 can_auto_fix=result.get("can_auto_fix", False),
-                 has_root_cause=bool(result.get("root_cause")))
+        log_info(
+            "Analysis completed",
+            can_auto_fix=result.get("can_auto_fix", False),
+            has_root_cause=bool(result.get("root_cause")),
+        )
 
         return {
             **state,
@@ -353,7 +371,9 @@ def _basic_analysis(state: Dict[str, Any]) -> Dict[str, Any]:
         msg = log.get("message", "")[:50]
         error_patterns[msg] = error_patterns.get(msg, 0) + 1
 
-    top_pattern = max(error_patterns.items(), key=lambda x: x[1]) if error_patterns else ("", 0)
+    top_pattern = (
+        max(error_patterns.items(), key=lambda x: x[1]) if error_patterns else ("", 0)
+    )
 
     summary = f"Found {len(logs)} error logs. "
     if top_pattern[1] > 1:
@@ -457,7 +477,9 @@ def invoke_patchy(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def search_jira_direct(state: Dict[str, Any], status_filter: Optional[str] = None) -> Dict[str, Any]:
+def search_jira_direct(
+    state: Dict[str, Any], status_filter: Optional[str] = None
+) -> Dict[str, Any]:
     """Search Jira directly for tickets matching the query.
 
     Used with --jira flag to skip Datadog and find duplicate tickets directly.
@@ -482,7 +504,9 @@ def search_jira_direct(state: Dict[str, Any], status_filter: Optional[str] = Non
         return {**state, "related_tickets": [], "error": "Query too short"}
 
     # Search by summary OR description containing keywords
-    keyword_clauses = " OR ".join([f'(summary ~ "{kw}" OR description ~ "{kw}")' for kw in keywords[:5]])
+    keyword_clauses = " OR ".join(
+        [f'(summary ~ "{kw}" OR description ~ "{kw}")' for kw in keywords[:5]]
+    )
     jql = f"project = {config.jira_project_key} AND ({keyword_clauses})"
 
     # Add status filter if provided
@@ -506,14 +530,16 @@ def search_jira_direct(state: Dict[str, Any], status_filter: Optional[str] = Non
         tickets = []
         for issue in (resp or {}).get("issues", []):
             fields = issue.get("fields", {})
-            tickets.append({
-                "key": issue.get("key"),
-                "summary": fields.get("summary", ""),
-                "status": fields.get("status", {}).get("name", ""),
-                "created": fields.get("created", "")[:10],
-                "labels": fields.get("labels", []),
-                "score": 0.0,  # JQL match, no similarity score
-            })
+            tickets.append(
+                {
+                    "key": issue.get("key"),
+                    "summary": fields.get("summary", ""),
+                    "status": fields.get("status", {}).get("name", ""),
+                    "created": fields.get("created", "")[:10],
+                    "labels": fields.get("labels", []),
+                    "score": 0.0,  # JQL match, no similarity score
+                }
+            )
 
         log_info("Jira direct search completed", tickets_found=len(tickets))
         return {
@@ -538,7 +564,16 @@ def _find_close_transition(transitions: List[Dict]) -> Optional[str]:
         Transition ID if found, None otherwise
     """
     # Priority order: look for transitions to these target statuses (case-insensitive)
-    close_statuses = ["done", "closed", "resolved", "complete", "completed", "fixed", "won't do", "won't fix"]
+    close_statuses = [
+        "done",
+        "closed",
+        "resolved",
+        "complete",
+        "completed",
+        "fixed",
+        "won't do",
+        "won't fix",
+    ]
 
     if not transitions:
         return None
@@ -551,7 +586,15 @@ def _find_close_transition(transitions: List[Dict]) -> Optional[str]:
                 return t.get("id")
 
     # Second pass: match transition name (e.g., "Close", "Done", "Resolve")
-    close_names = ["close", "done", "resolve", "complete", "finish", "won't do", "won't fix"]
+    close_names = [
+        "close",
+        "done",
+        "resolve",
+        "complete",
+        "finish",
+        "won't do",
+        "won't fix",
+    ]
     for name in close_names:
         for t in transitions:
             t_name = t.get("name", "").lower()
@@ -573,7 +616,12 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Updated state with consolidation results
     """
-    from agent.jira.client import add_comment, transition_issue, link_issues, get_transitions
+    from agent.jira.client import (
+        add_comment,
+        transition_issue,
+        link_issues,
+        get_transitions,
+    )
 
     tickets = state.get("related_tickets", [])
 
@@ -599,7 +647,15 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
     duplicates = sorted_tickets[1:]
 
     # Filter out already-closed tickets
-    closed_statuses = {"done", "closed", "resolved", "tested", "won't do", "won't fix", "cancelled"}
+    closed_statuses = {
+        "done",
+        "closed",
+        "resolved",
+        "tested",
+        "won't do",
+        "won't fix",
+        "cancelled",
+    }
     open_duplicates = []
     already_closed = []
     for dup in duplicates:
@@ -610,7 +666,10 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
             open_duplicates.append(dup)
 
     if already_closed:
-        log_info(f"Skipping {len(already_closed)} already-closed tickets", tickets=already_closed)
+        log_info(
+            f"Skipping {len(already_closed)} already-closed tickets",
+            tickets=already_closed,
+        )
 
     if not open_duplicates:
         log_info("No open duplicates to consolidate")
@@ -626,7 +685,7 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
         "Consolidating tickets",
         primary=primary.get("key"),
         duplicates=[d.get("key") for d in open_duplicates],
-        skipped_closed=len(already_closed)
+        skipped_closed=len(already_closed),
     )
 
     consolidated = []
@@ -652,28 +711,43 @@ def consolidate_duplicates(state: Dict[str, Any]) -> Dict[str, Any]:
 
             # 3. Get available transitions and find one that closes the ticket
             transitions = get_transitions(dup_key)
-            close_transition_id = _find_close_transition(transitions) if transitions else None
+            close_transition_id = (
+                _find_close_transition(transitions) if transitions else None
+            )
 
             transitioned = False
             if close_transition_id:
                 # Pass resolution="Duplicate" since we're closing as duplicate
-                transitioned = transition_issue(dup_key, close_transition_id, resolution="Duplicate")
+                transitioned = transition_issue(
+                    dup_key, close_transition_id, resolution="Duplicate"
+                )
                 if transitioned:
-                    log_info(f"Closed ticket using transition",
-                             duplicate=dup_key,
-                             transition_id=close_transition_id,
-                             resolution="Duplicate")
+                    log_info(
+                        f"Closed ticket using transition",
+                        duplicate=dup_key,
+                        transition_id=close_transition_id,
+                        resolution="Duplicate",
+                    )
 
             if transitioned:
                 consolidated.append(dup_key)
-                log_info(f"Consolidated duplicate ticket", duplicate=dup_key, primary=primary["key"])
+                log_info(
+                    f"Consolidated duplicate ticket",
+                    duplicate=dup_key,
+                    primary=primary["key"],
+                )
             else:
                 # Could not transition but comment was added
                 consolidated.append(dup_key)
-                available = [f"{t.get('name')} -> {t.get('to_status')}" for t in (transitions or [])]
-                log_warning(f"Added comment but could not close ticket",
-                           duplicate=dup_key,
-                           available_transitions=available)
+                available = [
+                    f"{t.get('name')} -> {t.get('to_status')}"
+                    for t in (transitions or [])
+                ]
+                log_warning(
+                    f"Added comment but could not close ticket",
+                    duplicate=dup_key,
+                    available_transitions=available,
+                )
 
         except Exception as e:
             log_error(f"Failed to consolidate ticket", duplicate=dup_key, error=str(e))

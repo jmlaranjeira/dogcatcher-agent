@@ -18,20 +18,20 @@ def sample_logs():
             "message": "Error connecting to database",
             "logger": "database.connection",
             "status": "error",
-            "timestamp": "2025-01-01T10:00:00Z"
+            "timestamp": "2025-01-01T10:00:00Z",
         },
         {
             "message": "API timeout after 30 seconds",
             "logger": "api.client",
             "status": "error",
-            "timestamp": "2025-01-01T10:01:00Z"
+            "timestamp": "2025-01-01T10:01:00Z",
         },
         {
             "message": "Null pointer exception in handler",
             "logger": "request.handler",
             "status": "error",
-            "timestamp": "2025-01-01T10:02:00Z"
-        }
+            "timestamp": "2025-01-01T10:02:00Z",
+        },
     ]
 
 
@@ -44,7 +44,7 @@ def sample_analysis():
         "description": "Error connecting to database",
         "severity": "high",
         "create_ticket": True,
-        "fingerprint": "test-fingerprint-123"
+        "fingerprint": "test-fingerprint-123",
     }
 
 
@@ -97,7 +97,7 @@ class TestAsyncLogProcessorBasic:
         processor = AsyncLogProcessor()
 
         # Mock the deduplicator to return duplicate
-        with patch.object(processor.deduplicator, 'is_duplicate', return_value=True):
+        with patch.object(processor.deduplicator, "is_duplicate", return_value=True):
             result = await processor.process_logs([sample_logs[0]])
 
         assert result["processed"] == 1
@@ -128,11 +128,13 @@ class TestAsyncLogProcessorBasic:
             {
                 "message": "Same error message",
                 "logger": "same.logger",
-                "status": "error"
+                "status": "error",
             }
         ] * 5
 
-        with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor, "_analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = {"create_ticket": False}
 
             result = await processor.process_logs(identical_logs)
@@ -170,8 +172,10 @@ class TestAsyncLogProcessorConcurrency:
 
             return {"create_ticket": False}
 
-        with patch.object(processor, '_analyze_log_async', side_effect=mock_analyze):
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+        with patch.object(processor, "_analyze_log_async", side_effect=mock_analyze):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 await processor.process_logs(sample_logs)
 
         # Should never exceed max_workers
@@ -186,9 +190,12 @@ class TestAsyncLogProcessorConcurrency:
             await asyncio.sleep(0.1)
             return {"create_ticket": False}
 
-        with patch.object(processor, '_analyze_log_async', side_effect=slow_analyze):
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+        with patch.object(processor, "_analyze_log_async", side_effect=slow_analyze):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 import time
+
                 start = time.time()
                 await processor.process_logs(sample_logs)
                 duration = time.time() - start
@@ -215,8 +222,10 @@ class TestAsyncLogProcessorErrorHandling:
                 raise ValueError("Simulated error")
             return {"create_ticket": False}
 
-        with patch.object(processor, '_analyze_log_async', side_effect=mock_analyze):
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+        with patch.object(processor, "_analyze_log_async", side_effect=mock_analyze):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 result = await processor.process_logs(sample_logs)
 
         # Should process all 3, with 1 error
@@ -233,8 +242,10 @@ class TestAsyncLogProcessorErrorHandling:
         async def mock_analyze(log):
             raise RuntimeError("Custom error message")
 
-        with patch.object(processor, '_analyze_log_async', side_effect=mock_analyze):
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+        with patch.object(processor, "_analyze_log_async", side_effect=mock_analyze):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 result = await processor.process_logs([sample_logs[0]])
 
         assert result["errors"] == 1
@@ -249,9 +260,13 @@ class TestAsyncLogProcessorStatistics:
         """Test that statistics are tracked correctly."""
         processor = AsyncLogProcessor(max_workers=2)
 
-        with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor, "_analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = {"create_ticket": False}
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 await processor.process_logs(sample_logs)
 
         summary = await processor.get_summary()
@@ -279,11 +294,15 @@ class TestAsyncLogProcessorStatistics:
 
         logs = [
             {"message": "Error 1", "logger": "test"},
-            {"message": "Error 2", "logger": "test"}
+            {"message": "Error 2", "logger": "test"},
         ]
 
-        with patch.object(processor.deduplicator, 'is_duplicate', side_effect=mock_is_dup):
-            with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor.deduplicator, "is_duplicate", side_effect=mock_is_dup
+        ):
+            with patch.object(
+                processor, "_analyze_log_async", new_callable=AsyncMock
+            ) as mock_analyze:
                 mock_analyze.return_value = {"create_ticket": False}
                 await processor.process_logs(logs)
 
@@ -299,10 +318,16 @@ class TestAsyncLogProcessorRateLimiting:
         """Test that rate limiter is called when enabled."""
         processor = AsyncLogProcessor(enable_rate_limiting=True)
 
-        with patch.object(processor.rate_limiter, 'acquire', new_callable=AsyncMock) as mock_acquire:
-            with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor.rate_limiter, "acquire", new_callable=AsyncMock
+        ) as mock_acquire:
+            with patch.object(
+                processor, "_analyze_log_async", new_callable=AsyncMock
+            ) as mock_analyze:
                 mock_analyze.return_value = {"create_ticket": False}
-                with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+                with patch.object(
+                    processor.deduplicator, "is_duplicate", return_value=False
+                ):
                     await processor.process_logs(sample_logs)
 
         # Rate limiter should be called for each log
@@ -313,9 +338,13 @@ class TestAsyncLogProcessorRateLimiting:
         """Test that rate limiter is not called when disabled."""
         processor = AsyncLogProcessor(enable_rate_limiting=False)
 
-        with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor, "_analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = {"create_ticket": False}
-            with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+            with patch.object(
+                processor.deduplicator, "is_duplicate", return_value=False
+            ):
                 await processor.process_logs(sample_logs)
 
         # No rate limiter, so no errors
@@ -331,19 +360,25 @@ class TestAsyncLogProcessorIntegration:
         processor = AsyncLogProcessor()
 
         # Mock analysis to return create_ticket=True
-        with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor, "_analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = sample_analysis
 
             # Mock the ticket creation handler
-            with patch.object(processor, '_handle_ticket_creation', new_callable=AsyncMock) as mock_ticket:
+            with patch.object(
+                processor, "_handle_ticket_creation", new_callable=AsyncMock
+            ) as mock_ticket:
                 mock_ticket.return_value = {
                     "action": "simulated",
                     "ticket_key": None,
                     "decision": "dry_run",
-                    "reason": "Dry-run mode"
+                    "reason": "Dry-run mode",
                 }
 
-                with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+                with patch.object(
+                    processor.deduplicator, "is_duplicate", return_value=False
+                ):
                     result = await processor.process_logs([sample_logs[0]])
 
         # Should have called ticket creation
@@ -355,18 +390,24 @@ class TestAsyncLogProcessorIntegration:
         """Test handling of duplicate ticket detection."""
         processor = AsyncLogProcessor()
 
-        with patch.object(processor, '_analyze_log_async', new_callable=AsyncMock) as mock_analyze:
+        with patch.object(
+            processor, "_analyze_log_async", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = sample_analysis
 
-            with patch.object(processor, '_handle_ticket_creation', new_callable=AsyncMock) as mock_ticket:
+            with patch.object(
+                processor, "_handle_ticket_creation", new_callable=AsyncMock
+            ) as mock_ticket:
                 mock_ticket.return_value = {
                     "action": "duplicate",
                     "ticket_key": "PROJ-123",
                     "decision": "similar_found",
-                    "reason": "Similar ticket found"
+                    "reason": "Similar ticket found",
                 }
 
-                with patch.object(processor.deduplicator, 'is_duplicate', return_value=False):
+                with patch.object(
+                    processor.deduplicator, "is_duplicate", return_value=False
+                ):
                     result = await processor.process_logs([sample_logs[0]])
 
         assert result["successful"] == 1
@@ -379,12 +420,12 @@ class TestProcessLogsParallelConvenience:
     @pytest.mark.asyncio
     async def test_convenience_function(self, sample_logs):
         """Test process_logs_parallel convenience function."""
-        with patch('agent.async_processor.AsyncLogProcessor') as MockProcessor:
+        with patch("agent.async_processor.AsyncLogProcessor") as MockProcessor:
             mock_processor = AsyncMock()
             mock_processor.process_logs.return_value = {
                 "processed": 3,
                 "successful": 3,
-                "errors": 0
+                "errors": 0,
             }
             MockProcessor.return_value = mock_processor
 

@@ -6,6 +6,7 @@ Provides intelligent fixes for common Java error patterns:
 - Duplicate key violations: existence checks
 - General errors: try-catch, logging
 """
+
 from __future__ import annotations
 
 import re
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 @dataclass
 class FixResult:
     """Result of applying a fix."""
+
     changed: bool
     strategy: str
     message: str
@@ -40,7 +42,27 @@ def _extract_receiver_token(line: str) -> Optional[str]:
         return None
 
     matches = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\.", line)
-    skip_tokens = {"this", "super", "class", "new", "return", "throw", "if", "else", "for", "while", "package", "import", "org", "com", "java", "javax", "io", "net", "util"}
+    skip_tokens = {
+        "this",
+        "super",
+        "class",
+        "new",
+        "return",
+        "throw",
+        "if",
+        "else",
+        "for",
+        "while",
+        "package",
+        "import",
+        "org",
+        "com",
+        "java",
+        "javax",
+        "io",
+        "net",
+        "util",
+    }
     for tok in matches:
         if tok.lower() not in skip_tokens:
             return tok
@@ -58,7 +80,9 @@ def _extract_method_params(lines: List[str], line_idx: int) -> List[str]:
         if match:
             param_str = match.group(1)
             # Extract parameter names (last word before comma or end)
-            param_matches = re.findall(r"(?:final\s+)?[\w<>\[\],\s]+\s+(\w+)\s*(?:,|$)", param_str)
+            param_matches = re.findall(
+                r"(?:final\s+)?[\w<>\[\],\s]+\s+(\w+)\s*(?:,|$)", param_str
+            )
             params.extend(param_matches)
             break
     return params
@@ -78,8 +102,8 @@ def _is_inside_try_block(lines: List[str], line_idx: int) -> bool:
     brace_count = 0
     for i in range(line_idx, -1, -1):
         line = lines[i]
-        brace_count += line.count('}') - line.count('{')
-        if 'try' in line and '{' in line:
+        brace_count += line.count("}") - line.count("{")
+        if "try" in line and "{" in line:
             return brace_count <= 0
     return False
 
@@ -96,7 +120,7 @@ def _is_safe_insertion_point(lines: List[str], idx: int) -> bool:
             if i >= idx:
                 return False  # We're at or before a package/import
         # Found a class/interface/enum declaration - we're past the header
-        if re.search(r'\b(class|interface|enum)\s+\w+', stripped):
+        if re.search(r"\b(class|interface|enum)\s+\w+", stripped):
             return True
 
     return True
@@ -111,21 +135,23 @@ def _find_first_method_body(lines: List[str]) -> Optional[int]:
         stripped = line.strip()
 
         # Track when we enter a class
-        if re.search(r'\b(class|interface|enum)\s+\w+', stripped):
+        if re.search(r"\b(class|interface|enum)\s+\w+", stripped):
             in_class = True
 
         if not in_class:
             continue
 
         # Track braces
-        brace_depth += line.count('{') - line.count('}')
+        brace_depth += line.count("{") - line.count("}")
 
         # Look for method signature followed by opening brace
-        if re.search(r'\)\s*\{', line) or (re.search(r'\)\s*$', line) and i + 1 < len(lines) and '{' in lines[i + 1]):
+        if re.search(r"\)\s*\{", line) or (
+            re.search(r"\)\s*$", line) and i + 1 < len(lines) and "{" in lines[i + 1]
+        ):
             # Found a method, return the line after the opening brace
-            if '{' in line:
+            if "{" in line:
                 return i + 1
-            elif i + 1 < len(lines) and '{' in lines[i + 1]:
+            elif i + 1 < len(lines) and "{" in lines[i + 1]:
                 return i + 2
 
     return None
@@ -135,7 +161,10 @@ def _find_first_method_body(lines: List[str]) -> Optional[int]:
 # Fix Strategy: NPE Guard
 # ============================================================================
 
-def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
+
+def apply_npe_guard(
+    file_path: Path, fault_line: int, context: dict = None
+) -> FixResult:
     """Insert a null-guard using Objects.requireNonNull.
 
     Strategy: detect receiver token and insert requireNonNull above.
@@ -191,7 +220,7 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
         todo_parts.append(f"See {jira_key}")
     todo_comment = f"{indent}// {' | '.join(todo_parts)}"
 
-    guard = f"{indent}java.util.Objects.requireNonNull({token}, \"{token} must not be null\");"
+    guard = f'{indent}java.util.Objects.requireNonNull({token}, "{token} must not be null");'
 
     # Avoid duplicate
     for lookback in range(1, 4):
@@ -206,14 +235,19 @@ def apply_npe_guard(file_path: Path, fault_line: int, context: dict = None) -> F
     lines.insert(idx, guard)
     lines.insert(idx, todo_comment)
     _write_file(file_path, lines, text)
-    return FixResult(True, "npe_guard", f"Inserted null guard for '{token}' at line {idx + 1}", 2)
+    return FixResult(
+        True, "npe_guard", f"Inserted null guard for '{token}' at line {idx + 1}", 2
+    )
 
 
 # ============================================================================
 # Fix Strategy: Optional Wrapping
 # ============================================================================
 
-def apply_optional_wrap(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
+
+def apply_optional_wrap(
+    file_path: Path, fault_line: int, context: dict = None
+) -> FixResult:
     """Wrap a potentially null value with Optional.ofNullable.
 
     Useful for method returns or variable assignments.
@@ -237,11 +271,15 @@ def apply_optional_wrap(file_path: Path, fault_line: int, context: dict = None) 
             expr = match.group(1)
             token = _extract_receiver_token(expr)
             if token:
-                new_line = f"{indent}// TODO: Consider using Optional to handle null safely"
+                new_line = (
+                    f"{indent}// TODO: Consider using Optional to handle null safely"
+                )
                 lines.insert(idx, new_line)
                 lines.insert(idx + 1, f"{indent}// Original: {line.strip()}")
                 _write_file(file_path, lines, text)
-                return FixResult(True, "optional_wrap", f"Added Optional suggestion for '{token}'", 2)
+                return FixResult(
+                    True, "optional_wrap", f"Added Optional suggestion for '{token}'", 2
+                )
 
     return FixResult(False, "optional_wrap", "no_suitable_pattern_found")
 
@@ -250,7 +288,10 @@ def apply_optional_wrap(file_path: Path, fault_line: int, context: dict = None) 
 # Fix Strategy: Validation Check
 # ============================================================================
 
-def apply_validation_check(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
+
+def apply_validation_check(
+    file_path: Path, fault_line: int, context: dict = None
+) -> FixResult:
     """Add input validation at method entry.
 
     Useful for IllegalArgumentException errors.
@@ -273,7 +314,9 @@ def apply_validation_check(file_path: Path, fault_line: int, context: dict = Non
     # Find method opening brace
     method_start = idx
     for i in range(idx, max(0, idx - 20), -1):
-        if '{' in lines[i] and ('void' in lines[i] or 'public' in lines[i] or 'private' in lines[i]):
+        if "{" in lines[i] and (
+            "void" in lines[i] or "public" in lines[i] or "private" in lines[i]
+        ):
             method_start = i
             break
 
@@ -282,20 +325,30 @@ def apply_validation_check(file_path: Path, fault_line: int, context: dict = Non
     validations = []
     for param in params[:3]:  # Limit to first 3 params
         validations.append(f"{indent}// TODO: Validate {param} before use")
-        validations.append(f"{indent}// if ({param} == null) throw new IllegalArgumentException(\"{param} must not be null\");")
+        validations.append(
+            f'{indent}// if ({param} == null) throw new IllegalArgumentException("{param} must not be null");'
+        )
 
     for i, v in enumerate(validations):
         lines.insert(insert_idx + i, v)
 
     _write_file(file_path, lines, text)
-    return FixResult(True, "validation", f"Added validation TODOs for {len(params)} parameters", len(validations))
+    return FixResult(
+        True,
+        "validation",
+        f"Added validation TODOs for {len(params)} parameters",
+        len(validations),
+    )
 
 
 # ============================================================================
 # Fix Strategy: Duplicate Check
 # ============================================================================
 
-def apply_duplicate_check(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
+
+def apply_duplicate_check(
+    file_path: Path, fault_line: int, context: dict = None
+) -> FixResult:
     """Add existence check before insert/save operations.
 
     Useful for duplicate key/constraint violations.
@@ -311,12 +364,16 @@ def apply_duplicate_check(file_path: Path, fault_line: int, context: dict = None
     indent = _get_indentation(line)
 
     # Detect save/persist/insert patterns
-    is_persist_op = any(kw in line.lower() for kw in ['save', 'persist', 'insert', 'create', 'add'])
+    is_persist_op = any(
+        kw in line.lower() for kw in ["save", "persist", "insert", "create", "add"]
+    )
 
     if not is_persist_op:
         # Search nearby lines
         for i in range(max(0, idx - 5), min(len(lines), idx + 5)):
-            if any(kw in lines[i].lower() for kw in ['save', 'persist', 'insert', 'create']):
+            if any(
+                kw in lines[i].lower() for kw in ["save", "persist", "insert", "create"]
+            ):
                 is_persist_op = True
                 idx = i
                 line = lines[i]
@@ -337,14 +394,19 @@ def apply_duplicate_check(file_path: Path, fault_line: int, context: dict = None
         lines.insert(idx + i, check)
 
     _write_file(file_path, lines, text)
-    return FixResult(True, "duplicate_check", "Added duplicate check TODO", len(check_lines))
+    return FixResult(
+        True, "duplicate_check", "Added duplicate check TODO", len(check_lines)
+    )
 
 
 # ============================================================================
 # Fix Strategy: Try-Catch Wrapper
 # ============================================================================
 
-def apply_try_catch(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
+
+def apply_try_catch(
+    file_path: Path, fault_line: int, context: dict = None
+) -> FixResult:
     """Wrap code in try-catch with logging.
 
     Useful for general exception handling.
@@ -397,12 +459,18 @@ def apply_try_catch(file_path: Path, fault_line: int, context: dict = None) -> F
         lines.insert(idx + i, catch)
 
     _write_file(file_path, lines, text)
-    return FixResult(True, "try_catch", f"Added error handling suggestion at line {idx + 1}", len(catch_lines))
+    return FixResult(
+        True,
+        "try_catch",
+        f"Added error handling suggestion at line {idx + 1}",
+        len(catch_lines),
+    )
 
 
 # ============================================================================
 # Fix Strategy: Logging Enhancement
 # ============================================================================
+
 
 def apply_logging(file_path: Path, fault_line: int, context: dict = None) -> FixResult:
     """Add debug logging before the problematic line.
@@ -420,8 +488,24 @@ def apply_logging(file_path: Path, fault_line: int, context: dict = None) -> Fix
     indent = _get_indentation(line)
 
     # Extract variables from the line
-    variables = re.findall(r'\b([a-z][a-zA-Z0-9]*)\b', line)
-    variables = [v for v in variables if v not in {'if', 'else', 'for', 'while', 'return', 'new', 'this', 'null', 'true', 'false'}][:3]
+    variables = re.findall(r"\b([a-z][a-zA-Z0-9]*)\b", line)
+    variables = [
+        v
+        for v in variables
+        if v
+        not in {
+            "if",
+            "else",
+            "for",
+            "while",
+            "return",
+            "new",
+            "this",
+            "null",
+            "true",
+            "false",
+        }
+    ][:3]
 
     if not variables:
         return FixResult(False, "logging", "no_variables_found")
@@ -433,14 +517,19 @@ def apply_logging(file_path: Path, fault_line: int, context: dict = None) -> Fix
 
     lines.insert(idx, log_line)
     _write_file(file_path, lines, text)
-    return FixResult(True, "logging", f"Added debug logging for {len(variables)} variables", 1)
+    return FixResult(
+        True, "logging", f"Added debug logging for {len(variables)} variables", 1
+    )
 
 
 # ============================================================================
 # Main Entry Point
 # ============================================================================
 
-def apply_java_fix(file_path: Path, fault_line: int, error_type: str = "", context: dict = None) -> FixResult:
+
+def apply_java_fix(
+    file_path: Path, fault_line: int, error_type: str = "", context: dict = None
+) -> FixResult:
     """Apply the most appropriate fix based on error type.
 
     Args:
@@ -456,19 +545,24 @@ def apply_java_fix(file_path: Path, fault_line: int, error_type: str = "", conte
     context = context or {}
 
     # Map error types to fix strategies
-    if any(kw in error_type for kw in ['npe', 'null', 'nullpointer']):
+    if any(kw in error_type for kw in ["npe", "null", "nullpointer"]):
         return apply_npe_guard(file_path, fault_line, context)
 
-    elif any(kw in error_type for kw in ['duplicate', 'constraint', 'unique', 'key']):
+    elif any(kw in error_type for kw in ["duplicate", "constraint", "unique", "key"]):
         return apply_duplicate_check(file_path, fault_line, context)
 
-    elif any(kw in error_type for kw in ['illegal', 'argument', 'validation', 'invalid']):
+    elif any(
+        kw in error_type for kw in ["illegal", "argument", "validation", "invalid"]
+    ):
         return apply_validation_check(file_path, fault_line, context)
 
-    elif any(kw in error_type for kw in ['persist', 'prepersist', 'save', 'insert']):
+    elif any(kw in error_type for kw in ["persist", "prepersist", "save", "insert"]):
         return apply_duplicate_check(file_path, fault_line, context)
 
-    elif any(kw in error_type for kw in ['optimistic', 'locking', 'concurrent', 'stale', 'version']):
+    elif any(
+        kw in error_type
+        for kw in ["optimistic", "locking", "concurrent", "stale", "version"]
+    ):
         # Optimistic locking / concurrent modification errors
         return apply_try_catch(file_path, fault_line, context)
 

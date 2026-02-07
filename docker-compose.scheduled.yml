@@ -1,0 +1,29 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduled
+    image: dogcatcher-agent:scheduled
+    container_name: dogcatcher-agent
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    # Sobreescribir variables para producción local
+    environment:
+      - AUTO_CREATE_TICKET=true
+      - MAX_TICKETS_PER_RUN=5
+      - DATADOG_SERVICE=dehnlicense
+      - DATADOG_ENV=prod
+      # Schedule: cron expression (cada hora por defecto)
+      - DOGCATCHER_SCHEDULE=0 * * * *
+
+    volumes:
+      - ./.agent_cache:/app/.agent_cache
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G

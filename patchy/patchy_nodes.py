@@ -9,7 +9,10 @@ from typing import Any, Dict, TypedDict
 from .utils.audit import append_audit
 from .utils.git_tools import RepoConfig, clone_repo, git_create_branch, git_commit_push
 from .utils.gh_api import create_pull_request, find_existing_pr, add_labels
-from agent.jira.client import add_comment as jira_add_comment, is_configured as jira_is_configured
+from agent.jira.client import (
+    add_comment as jira_add_comment,
+    is_configured as jira_is_configured,
+)
 
 
 class PatchyState(TypedDict, total=False):
@@ -50,6 +53,7 @@ def _allowed(service: str) -> bool:
 
 def _to_camel(text: str) -> str:
     import re
+
     tokens = re.split(r"[^A-Za-z0-9]+", text or "")
     tokens = [t for t in tokens if t]
     if not tokens:
@@ -60,7 +64,11 @@ def _to_camel(text: str) -> str:
 
 
 def _pr_title(hint: str, error_type: str) -> str:
-    base = hint.strip() if hint else (error_type.replace("-", " ") if error_type else "auto fix")
+    base = (
+        hint.strip()
+        if hint
+        else (error_type.replace("-", " ") if error_type else "auto fix")
+    )
     base = base.strip().rstrip(".")
     if not base:
         base = "auto fix"
@@ -105,7 +113,9 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
         return {**state, "message": msg}
 
     repo_dir = clone_repo(service, cfg)
-    append_audit({"service": service, "status": "repo_cloned", "repo": f"{cfg.owner}/{cfg.name}"})
+    append_audit(
+        {"service": service, "status": "repo_cloned", "repo": f"{cfg.owner}/{cfg.name}"}
+    )
     return {
         **state,
         "repo_dir": str(repo_dir),
@@ -118,7 +128,9 @@ def resolve_repo(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _logger_to_filepath(logger_name: str, repo_dir: Path) -> tuple[str | None, int | None]:
+def _logger_to_filepath(
+    logger_name: str, repo_dir: Path
+) -> tuple[str | None, int | None]:
     """Convert a Java/Kotlin logger name to a file path.
 
     Examples:
@@ -130,13 +142,14 @@ def _logger_to_filepath(logger_name: str, repo_dir: Path) -> tuple[str | None, i
 
     # Clean up logger name (remove line numbers, method names)
     import re
+
     # Remove trailing method/line info like .methodName or :123
-    clean = re.sub(r'[:\.][\w]+\(\)$', '', logger_name)
-    clean = re.sub(r':\d+$', '', clean)
+    clean = re.sub(r"[:\.][\w]+\(\)$", "", logger_name)
+    clean = re.sub(r":\d+$", "", clean)
     clean = clean.strip()
 
     # Convert dots to path separators
-    path_part = clean.replace('.', '/')
+    path_part = clean.replace(".", "/")
 
     # Try common source directories and extensions
     source_dirs = [
@@ -157,22 +170,23 @@ def _logger_to_filepath(logger_name: str, repo_dir: Path) -> tuple[str | None, i
                 return rel_path, 1
 
     # Try to find by class name only (last part)
-    class_name = clean.split('.')[-1]
+    class_name = clean.split(".")[-1]
     for ext in extensions:
         try:
             import subprocess
+
             # Use find to locate the file
             proc = subprocess.run(
                 ["find", ".", "-name", f"{class_name}{ext}", "-type", "f"],
                 cwd=str(repo_dir),
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if proc.returncode == 0 and proc.stdout.strip():
                 # Take the first match
-                found = proc.stdout.strip().split('\n')[0]
-                if found.startswith('./'):
+                found = proc.stdout.strip().split("\n")[0]
+                if found.startswith("./"):
                     found = found[2:]
                 return found, 1
         except Exception:
@@ -195,7 +209,7 @@ def _search_with_ripgrep(hint: str, repo_dir: Path) -> tuple[str | None, int | N
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         for line in proc.stdout.splitlines():
@@ -213,9 +227,9 @@ def _search_with_ripgrep(hint: str, repo_dir: Path) -> tuple[str | None, int | N
                     return path, lno
 
         # If no exact match, try searching for class/method name patterns
-        if '.' in hint:
+        if "." in hint:
             # Try last part (class name)
-            class_name = hint.split('.')[-1]
+            class_name = hint.split(".")[-1]
             return _search_with_ripgrep(class_name, repo_dir)
 
     except Exception:
@@ -259,37 +273,42 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
         if m:
             stacktrace_filename = m.group(1)
             fault_line = int(m.group(2))
-            append_audit({
-                "service": state.get("service"),
-                "status": "fault_line_from_stacktrace",
-                "file": stacktrace_filename,
-                "line": fault_line,
-                "pattern": pat,
-            })
+            append_audit(
+                {
+                    "service": state.get("service"),
+                    "status": "fault_line_from_stacktrace",
+                    "file": stacktrace_filename,
+                    "line": fault_line,
+                    "pattern": pat,
+                }
+            )
             break
 
     # If stacktrace gave just a filename, find the full path
-    if stacktrace_filename and '/' not in stacktrace_filename:
+    if stacktrace_filename and "/" not in stacktrace_filename:
         try:
             import subprocess
+
             proc = subprocess.run(
                 ["find", ".", "-name", stacktrace_filename, "-type", "f"],
                 cwd=str(repo_dir),
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if proc.returncode == 0 and proc.stdout.strip():
-                found = proc.stdout.strip().split('\n')[0]
-                if found.startswith('./'):
+                found = proc.stdout.strip().split("\n")[0]
+                if found.startswith("./"):
                     found = found[2:]
                 fault_file = found
-                append_audit({
-                    "service": state.get("service"),
-                    "status": "fault_file_found_by_search",
-                    "filename": stacktrace_filename,
-                    "full_path": fault_file,
-                })
+                append_audit(
+                    {
+                        "service": state.get("service"),
+                        "status": "fault_file_found_by_search",
+                        "filename": stacktrace_filename,
+                        "full_path": fault_file,
+                    }
+                )
         except Exception:
             pass
     elif stacktrace_filename:
@@ -299,59 +318,69 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
     if not fault_file and logger:
         fault_file, fault_line = _logger_to_filepath(logger, repo_dir)
         if fault_file:
-            append_audit({
-                "service": state.get("service"),
-                "status": "fault_located_by_logger",
-                "logger": logger,
-                "file": fault_file,
-            })
+            append_audit(
+                {
+                    "service": state.get("service"),
+                    "status": "fault_located_by_logger",
+                    "logger": logger,
+                    "file": fault_file,
+                }
+            )
 
     # Strategy 3: Try to extract logger from hint if it looks like a fully qualified class name
-    if not fault_file and hint and '.' in hint and hint[0].islower():
+    if not fault_file and hint and "." in hint and hint[0].islower():
         # Looks like a package name (e.g., com.example.myservice.controller.LicensePurchaseController)
         fault_file, fault_line = _logger_to_filepath(hint, repo_dir)
         if fault_file:
-            append_audit({
-                "service": state.get("service"),
-                "status": "fault_located_by_hint_as_logger",
-                "hint": hint,
-                "file": fault_file,
-            })
+            append_audit(
+                {
+                    "service": state.get("service"),
+                    "status": "fault_located_by_hint_as_logger",
+                    "hint": hint,
+                    "file": fault_file,
+                }
+            )
 
     # Strategy 4: Search with ripgrep
     if not fault_file and hint:
         fault_file, fault_line = _search_with_ripgrep(hint, repo_dir)
         if fault_file:
-            append_audit({
-                "service": state.get("service"),
-                "status": "fault_located_by_ripgrep",
-                "hint": hint,
-                "file": fault_file,
-                "line": fault_line,
-            })
+            append_audit(
+                {
+                    "service": state.get("service"),
+                    "status": "fault_located_by_ripgrep",
+                    "hint": hint,
+                    "file": fault_file,
+                    "line": fault_line,
+                }
+            )
 
     # Strategy 5: Try logger name with ripgrep (search for class name)
     if not fault_file and logger:
-        class_name = logger.split('.')[-1]
+        class_name = logger.split(".")[-1]
         fault_file, fault_line = _search_with_ripgrep(f"class {class_name}", repo_dir)
         if fault_file:
-            append_audit({
-                "service": state.get("service"),
-                "status": "fault_located_by_class_search",
-                "class": class_name,
-                "file": fault_file,
-            })
+            append_audit(
+                {
+                    "service": state.get("service"),
+                    "status": "fault_located_by_class_search",
+                    "class": class_name,
+                    "file": fault_file,
+                }
+            )
 
     if fault_file:
         # Track if we have a real fault_line from stacktrace or just a fallback
         has_valid_fault_line = fault_line is not None and fault_line > 0
-        append_audit({
-            "service": state.get("service"),
-            "status": "fault_located",
-            "file": fault_file,
-            "line": fault_line,
-            "has_valid_fault_line": has_valid_fault_line,
-        })
+        append_audit(
+            {
+                "service": state.get("service"),
+                "status": "fault_located",
+                "file": fault_file,
+                "line": fault_line,
+                "has_valid_fault_line": has_valid_fault_line,
+            }
+        )
         return {
             **state,
             "fault_file": fault_file,
@@ -359,11 +388,17 @@ def locate_fault(state: Dict[str, Any]) -> Dict[str, Any]:
             "has_valid_fault_line": has_valid_fault_line,
         }
 
-    append_audit({
-        "service": state.get("service"),
-        "status": "fault_not_found",
-        "tried": {"stacktrace": bool(st), "logger": bool(logger), "hint": bool(hint)},
-    })
+    append_audit(
+        {
+            "service": state.get("service"),
+            "status": "fault_not_found",
+            "tried": {
+                "stacktrace": bool(st),
+                "logger": bool(logger),
+                "hint": bool(hint),
+            },
+        }
+    )
     return state
 
 
@@ -391,13 +426,20 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     existing = find_existing_pr(owner, repo, branch)
     if existing:
         url = existing.get("html_url")
-        append_audit({
-            "service": service,
-            "status": "duplicate_pr",
+        append_audit(
+            {
+                "service": service,
+                "status": "duplicate_pr",
+                "branch": branch,
+                "pr_url": url,
+            }
+        )
+        return {
+            **state,
             "branch": branch,
             "pr_url": url,
-        })
-        return {**state, "branch": branch, "pr_url": url, "message": "PR already exists"}
+            "message": "PR already exists",
+        }
 
     # Create branch and minimal change (restricted to allowed_paths if provided)
     git_create_branch(repo_dir, branch)
@@ -406,7 +448,9 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     fault_file = state.get("fault_file")
     allowed = state.get("allowed_paths") or []
     chosen_rel: str
-    if fault_file and (not allowed or any(str(fault_file).startswith(a) for a in allowed)):
+    if fault_file and (
+        not allowed or any(str(fault_file).startswith(a) for a in allowed)
+    ):
         chosen_rel = fault_file
     else:
         chosen_rel = (allowed or ["PATCHY_TOUCH.md"])[0]
@@ -436,24 +480,64 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         try:
             if suffix == ".java":
                 from .utils.fix_java import apply_java_fix  # type: ignore
-                result = apply_java_fix(touch_path, fault_line, error_type=error_type, context=fix_context)
+
+                result = apply_java_fix(
+                    touch_path, fault_line, error_type=error_type, context=fix_context
+                )
                 if result.changed:
                     fix_applied = True
-                    append_audit({"service": service, "status": "fix_applied", "branch": branch, "strategy": result.strategy, "lines_added": result.lines_added, "message": result.message})
+                    append_audit(
+                        {
+                            "service": service,
+                            "status": "fix_applied",
+                            "branch": branch,
+                            "strategy": result.strategy,
+                            "lines_added": result.lines_added,
+                            "message": result.message,
+                        }
+                    )
                 else:
-                    append_audit({"service": service, "status": "fix_skipped", "branch": branch, "strategy": result.strategy, "message": result.message})
+                    append_audit(
+                        {
+                            "service": service,
+                            "status": "fix_skipped",
+                            "branch": branch,
+                            "strategy": result.strategy,
+                            "message": result.message,
+                        }
+                    )
             elif suffix in (".py",) and has_valid_fault_line:
-                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
-                new_content = "# Patchy: add None checks/guard clauses as needed\n" + content
+                content = (
+                    touch_path.read_text(encoding="utf-8")
+                    if touch_path.exists()
+                    else ""
+                )
+                new_content = (
+                    "# Patchy: add None checks/guard clauses as needed\n" + content
+                )
                 touch_path.write_text(new_content, encoding="utf-8")
                 fix_applied = True
             elif suffix in (".ts", ".tsx", ".js") and has_valid_fault_line:
-                content = touch_path.read_text(encoding="utf-8") if touch_path.exists() else ""
-                new_content = "// Patchy: add optional chaining/guard clauses as needed\n" + content
+                content = (
+                    touch_path.read_text(encoding="utf-8")
+                    if touch_path.exists()
+                    else ""
+                )
+                new_content = (
+                    "// Patchy: add optional chaining/guard clauses as needed\n"
+                    + content
+                )
                 touch_path.write_text(new_content, encoding="utf-8")
                 fix_applied = True
         except Exception as e:
-            append_audit({"service": service, "status": "fix_error", "branch": branch, "message": str(e)})
+            append_audit(
+                {
+                    "service": service,
+                    "status": "fix_error",
+                    "branch": branch,
+                    "message": str(e),
+                }
+            )
             # In auto mode, continue to note fallback; in fix mode, fail
             if mode == "fix":
                 return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}
@@ -470,7 +554,9 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         if jira:
             note_lines.append(f"Jira: {jira}")
         if not fix_applied and mode == "auto":
-            note_lines.append("Note: Auto-fix could not be applied; manual review needed")
+            note_lines.append(
+                "Note: Auto-fix could not be applied; manual review needed"
+            )
 
         # Format note based on file type
         if suffix in (".java", ".kt", ".scala", ".groovy"):
@@ -499,7 +585,14 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         else:
             touch_path.write_text(note_content, encoding="utf-8")
 
-        append_audit({"service": service, "status": "note_applied", "branch": branch, "mode": mode})
+        append_audit(
+            {
+                "service": service,
+                "status": "note_applied",
+                "branch": branch,
+                "mode": mode,
+            }
+        )
 
     title = _pr_title(hint, error_type)
     commit_msg = title
@@ -509,27 +602,56 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     if lint_cmd:
         try:
             import subprocess
-            subprocess.run(lint_cmd, cwd=str(repo_dir), shell=True, check=True)
+
+            subprocess.run(
+                lint_cmd, cwd=str(repo_dir), shell=True, check=True
+            )  # nosec B602
         except Exception as e:
-            append_audit({"service": service, "status": "lint_failed", "branch": branch, "message": str(e)})
+            append_audit(
+                {
+                    "service": service,
+                    "status": "lint_failed",
+                    "branch": branch,
+                    "message": str(e),
+                }
+            )
             return {**state, "branch": branch, "message": f"Lint failed: {e}"}
     if test_cmd:
         try:
             import subprocess
-            subprocess.run(test_cmd, cwd=str(repo_dir), shell=True, check=True)
+
+            subprocess.run(
+                test_cmd, cwd=str(repo_dir), shell=True, check=True
+            )  # nosec B602
         except Exception as e:
-            append_audit({"service": service, "status": "tests_failed", "branch": branch, "message": str(e)})
+            append_audit(
+                {
+                    "service": service,
+                    "status": "tests_failed",
+                    "branch": branch,
+                    "message": str(e),
+                }
+            )
             return {**state, "branch": branch, "message": f"Tests failed: {e}"}
 
     try:
         git_commit_push(repo_dir, commit_msg)
     except Exception as e:
-        append_audit({"service": service, "status": "commit_failed", "branch": branch, "message": str(e)})
+        append_audit(
+            {
+                "service": service,
+                "status": "commit_failed",
+                "branch": branch,
+                "message": str(e),
+            }
+        )
         return {**state, "branch": branch, "message": f"Commit failed: {e}"}
 
     # Build descriptive PR body template
     pr_lines = []
-    pr_lines.append("This update introduces an automated fix to improve reliability and maintainability:")
+    pr_lines.append(
+        "This update introduces an automated fix to improve reliability and maintainability:"
+    )
     pr_lines.append("")
     pr_lines.append("1. **Change overview**")
     pr_lines.append(f"   - Service: `{service}`")
@@ -540,19 +662,28 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         pr_lines.append(f"   - Target file: `{state.get('fault_file')}`")
     pr_lines.append("")
     pr_lines.append("2. **Reasoning**")
-    pr_lines.append("   - Small, low-risk change generated by Patchy (🩹🤖) to address the detected issue.")
-    pr_lines.append("   - Guardrails: allow-list, per-run cap, duplicate branch check, and pre-push lint/tests.")
+    pr_lines.append(
+        "   - Small, low-risk change generated by Patchy (🩹🤖) to address the detected issue."
+    )
+    pr_lines.append(
+        "   - Guardrails: allow-list, per-run cap, duplicate branch check, and pre-push lint/tests."
+    )
     pr_lines.append("")
-    pr_lines.append("These improvements aim to keep the system stable and provide safer, incremental fixes.")
+    pr_lines.append(
+        "These improvements aim to keep the system stable and provide safer, incremental fixes."
+    )
     pr_lines.append("")
     if jira:
         from agent.jira.client import get_jira_domain
+
         jira_domain = get_jira_domain()
         pr_lines.append(f"Refs: [#{jira}](https://{jira_domain}/browse/{jira})")
     pr_text = "\n".join(pr_lines)
 
     try:
-        pr = create_pull_request(owner, repo, head=branch, base=base, title=title, body=pr_text, draft=draft)
+        pr = create_pull_request(
+            owner, repo, head=branch, base=base, title=title, body=pr_text, draft=draft
+        )
         url = pr.get("html_url")
         number = int(pr.get("number", 0) or 0)
         # Label PR
@@ -566,27 +697,38 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
                 jira_add_comment(jira, f"Refs: ({jira}) {url}")
             except Exception:
                 pass
-        append_audit({
-            "service": service,
-            "status": "draft_opened" if draft else "opened",
-            "branch": branch,
-            "pr_url": url,
-        })
+        append_audit(
+            {
+                "service": service,
+                "status": "draft_opened" if draft else "opened",
+                "branch": branch,
+                "pr_url": url,
+            }
+        )
         # Bump in-process cap counter
-        os.environ["_PATCHY_CREATED_SO_FAR"] = str(int(os.getenv("_PATCHY_CREATED_SO_FAR", "0")) + 1)
+        os.environ["_PATCHY_CREATED_SO_FAR"] = str(
+            int(os.getenv("_PATCHY_CREATED_SO_FAR", "0")) + 1
+        )
         return {**state, "branch": branch, "pr_url": url}
     except Exception as e:
-        append_audit({"service": service, "status": "pr_failed", "branch": branch, "message": str(e)})
+        append_audit(
+            {
+                "service": service,
+                "status": "pr_failed",
+                "branch": branch,
+                "message": str(e),
+            }
+        )
         return {**state, "branch": branch, "message": f"PR failed: {e}"}
 
 
 def finish(state: Dict[str, Any]) -> Dict[str, Any]:
-    append_audit({
-        "service": state.get("service"),
-        "branch": state.get("branch"),
-        "pr_url": state.get("pr_url"),
-        "status": "done",
-    })
+    append_audit(
+        {
+            "service": state.get("service"),
+            "branch": state.get("branch"),
+            "pr_url": state.get("pr_url"),
+            "status": "done",
+        }
+    )
     return state
-
-

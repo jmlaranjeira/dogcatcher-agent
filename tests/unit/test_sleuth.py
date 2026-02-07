@@ -71,9 +71,7 @@ class TestQueryBuilder:
         from sleuth.utils.query_builder import _build_query_rules
 
         query = _build_query_rules(
-            user_query="user registration failed",
-            service="user-api",
-            env="prod"
+            user_query="user registration failed", service="user-api", env="prod"
         )
 
         assert "service:user-api" in query
@@ -85,9 +83,7 @@ class TestQueryBuilder:
         from sleuth.utils.query_builder import _build_query_rules
 
         query = _build_query_rules(
-            user_query="timeout in payment-service",
-            service=None,
-            env="prod"
+            user_query="timeout in payment-service", service=None, env="prod"
         )
 
         assert "service:payment-service" in query
@@ -139,8 +135,7 @@ class TestSleuthNodes:
         from sleuth.sleuth_nodes import build_dd_query
 
         mock_config.return_value = MagicMock(
-            datadog_env="staging",
-            openai_api_key=None  # Disable LLM
+            datadog_env="staging", openai_api_key=None  # Disable LLM
         )
 
         state = {"query": "test errors", "service": "test-svc"}
@@ -160,7 +155,7 @@ class TestSleuthNodes:
             datadog_app_key="test-app-key",
             datadog_site="datadoghq.eu",
             datadog_limit=50,
-            datadog_timeout=20
+            datadog_timeout=20,
         )
 
         mock_response = MagicMock()
@@ -191,10 +186,7 @@ class TestSleuthNodes:
         """Test log search fails gracefully with missing credentials."""
         from sleuth.sleuth_nodes import search_logs
 
-        mock_config.return_value = MagicMock(
-            datadog_api_key="",
-            datadog_app_key=""
-        )
+        mock_config.return_value = MagicMock(datadog_api_key="", datadog_app_key="")
 
         state = {"dd_query": "service:test status:error", "hours_back": 24}
         result = search_logs(state)
@@ -246,7 +238,7 @@ class TestSleuthNodes:
                 {"message": "NullPointerException in UserService"},
                 {"message": "NullPointerException in UserService"},
             ],
-            "related_tickets": []
+            "related_tickets": [],
         }
         result = _basic_analysis(state)
 
@@ -404,10 +396,12 @@ class TestSleuthIntegration:
         mock_post.return_value = mock_response
 
         graph = build_graph()
-        result = graph.invoke({
-            "query": "test errors",
-            "hours_back": 24,
-        })
+        result = graph.invoke(
+            {
+                "query": "test errors",
+                "hours_back": 24,
+            }
+        )
 
         assert result["logs"] == []
         assert "No logs found" in result.get("summary", "")
@@ -445,10 +439,12 @@ class TestSleuthIntegration:
         mock_post.return_value = mock_response
 
         graph = build_graph()
-        result = graph.invoke({
-            "query": "null pointer errors",
-            "hours_back": 24,
-        })
+        result = graph.invoke(
+            {
+                "query": "null pointer errors",
+                "hours_back": 24,
+            }
+        )
 
         assert len(result["logs"]) == 1
         assert "1 error logs" in result.get("summary", "")

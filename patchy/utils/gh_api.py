@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def _headers() -> Dict[str, str]:
     token = os.getenv("GITHUB_TOKEN")
     if not token:
@@ -50,7 +51,9 @@ def create_pull_request(
     return resp.json()
 
 
-def add_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> Dict[str, Any]:
+def add_labels(
+    owner: str, repo: str, issue_number: int, labels: List[str]
+) -> Dict[str, Any]:
     """Add labels to an issue/PR (PRs are issues in GitHub API).
 
     No-op if labels is empty.
@@ -62,5 +65,3 @@ def add_labels(owner: str, repo: str, issue_number: int, labels: List[str]) -> D
     resp = requests.post(url, headers=_headers(), json=payload, timeout=20)
     resp.raise_for_status()
     return resp.json()
-
-

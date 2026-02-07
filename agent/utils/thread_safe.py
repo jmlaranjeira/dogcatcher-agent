@@ -72,11 +72,7 @@ class ThreadSafeDeduplicator:
         self._seen_logs: Set[str] = set()
         self._created_fingerprints: Set[str] = set()
         self._lock = asyncio.Lock()
-        self._stats = {
-            "total_checked": 0,
-            "duplicates_found": 0,
-            "unique_logs": 0
-        }
+        self._stats = {"total_checked": 0, "duplicates_found": 0, "unique_logs": 0}
 
     async def is_duplicate(self, log_key: str) -> bool:
         """Check if log has been seen. Registers new logs automatically.
@@ -144,20 +140,26 @@ class ProcessingStats:
             "errors": 0,
             "start_time": None,
             "end_time": None,
-            "processing_times": []
+            "processing_times": [],
         }
 
     async def record_start(self):
         """Record processing start time."""
         async with self._lock:
             self._stats["start_time"] = datetime.now()
-            log_info("Async processing started", timestamp=self._stats["start_time"].isoformat())
+            log_info(
+                "Async processing started",
+                timestamp=self._stats["start_time"].isoformat(),
+            )
 
     async def record_end(self):
         """Record processing end time."""
         async with self._lock:
             self._stats["end_time"] = datetime.now()
-            log_info("Async processing completed", timestamp=self._stats["end_time"].isoformat())
+            log_info(
+                "Async processing completed",
+                timestamp=self._stats["end_time"].isoformat(),
+            )
 
     async def record_log_processed(self, processing_time: float):
         """Record a log being processed."""
@@ -199,10 +201,14 @@ class ProcessingStats:
             if stats["start_time"] and stats["end_time"]:
                 duration = (stats["end_time"] - stats["start_time"]).total_seconds()
                 stats["duration_seconds"] = duration
-                stats["logs_per_second"] = stats["processed"] / duration if duration > 0 else 0
+                stats["logs_per_second"] = (
+                    stats["processed"] / duration if duration > 0 else 0
+                )
 
             if stats["processing_times"]:
-                stats["avg_processing_time"] = sum(stats["processing_times"]) / len(stats["processing_times"])
+                stats["avg_processing_time"] = sum(stats["processing_times"]) / len(
+                    stats["processing_times"]
+                )
                 stats["min_processing_time"] = min(stats["processing_times"])
                 stats["max_processing_time"] = max(stats["processing_times"])
             else:
@@ -235,7 +241,7 @@ class ProcessingStats:
                 percent=f"{percent:.1f}%",
                 tickets_created=self._stats["tickets_created"],
                 duplicates=self._stats["duplicates"],
-                errors=self._stats["errors"]
+                errors=self._stats["errors"],
             )
 
 

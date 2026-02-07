@@ -20,7 +20,10 @@ from agent.config import get_config
 from agent.nodes.analysis_async import analyze_log_async
 from agent.nodes.ticket_async import create_ticket_async
 from agent.jira.async_client import AsyncJiraClient
-from agent.jira.async_match import find_similar_ticket_async, check_fingerprint_duplicate_async
+from agent.jira.async_match import (
+    find_similar_ticket_async,
+    check_fingerprint_duplicate_async,
+)
 
 
 class AsyncLogProcessor:
@@ -48,7 +51,7 @@ class AsyncLogProcessor:
         log_info(
             "Async processor initialized",
             max_workers=max_workers,
-            rate_limiting=enable_rate_limiting
+            rate_limiting=enable_rate_limiting,
         )
 
     async def process_logs(self, logs: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -70,14 +73,11 @@ class AsyncLogProcessor:
         log_info(
             "Starting async parallel processing",
             total_logs=len(logs),
-            workers=self.max_workers
+            workers=self.max_workers,
         )
 
         # Create tasks for all logs
-        tasks = [
-            self._process_log_with_tracking(i, log)
-            for i, log in enumerate(logs)
-        ]
+        tasks = [self._process_log_with_tracking(i, log) for i, log in enumerate(logs)]
 
         # Process all logs concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -103,7 +103,7 @@ class AsyncLogProcessor:
             total_logs=len(logs),
             successful=len(successful_results),
             errors=len(errors),
-            duration_seconds=summary.get("duration_seconds", 0)
+            duration_seconds=summary.get("duration_seconds", 0),
         )
 
         return {
@@ -112,10 +112,12 @@ class AsyncLogProcessor:
             "errors": len(errors),
             "results": successful_results,
             "error_details": errors,
-            "stats": summary
+            "stats": summary,
         }
 
-    async def _process_log_with_tracking(self, index: int, log: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_log_with_tracking(
+        self, index: int, log: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Process a single log with time tracking.
 
         Args:
@@ -143,11 +145,13 @@ class AsyncLogProcessor:
             log_error(
                 f"Error processing log {index}",
                 error=str(e),
-                processing_time=processing_time
+                processing_time=processing_time,
             )
             raise
 
-    async def _process_single_log(self, index: int, log: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_single_log(
+        self, index: int, log: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Process a single log with semaphore control.
 
         Args:
@@ -173,7 +177,7 @@ class AsyncLogProcessor:
                     "index": index,
                     "action": "skipped",
                     "reason": "duplicate",
-                    "log_key": log_key
+                    "log_key": log_key,
                 }
 
             # Step 2: Analyze log (will be replaced with actual async analysis)
@@ -189,17 +193,13 @@ class AsyncLogProcessor:
                 elif ticket_result["action"] == "simulated":
                     await self.stats.record_ticket_simulated()
 
-                return {
-                    "index": index,
-                    **ticket_result,
-                    "analysis": analysis_result
-                }
+                return {"index": index, **ticket_result, "analysis": analysis_result}
 
             return {
                 "index": index,
                 "action": "analyzed",
                 "create_ticket": False,
-                "analysis": analysis_result
+                "analysis": analysis_result,
             }
 
     def _generate_log_key(self, log: Dict[str, Any]) -> str:
@@ -211,9 +211,9 @@ class AsyncLogProcessor:
         Returns:
             Unique key string
         """
-        raw_msg = log.get('message', '<no message>')
+        raw_msg = log.get("message", "<no message>")
         norm_msg = normalize_log_message(raw_msg)
-        logger = log.get('logger', 'unknown')
+        logger = log.get("logger", "unknown")
 
         return f"{logger}|{norm_msg or raw_msg}"
 
@@ -229,10 +229,7 @@ class AsyncLogProcessor:
         Returns:
             Analysis result with error_type, create_ticket, ticket_title, etc.
         """
-        state = {
-            "log_data": log,
-            "log_message": log.get("message", "")
-        }
+        state = {"log_data": log, "log_message": log.get("message", "")}
 
         # True async analysis (Phase 2.1)
         result = await analyze_log_async(state)
@@ -240,9 +237,7 @@ class AsyncLogProcessor:
         return result
 
     async def _handle_ticket_creation(
-        self,
-        log: Dict[str, Any],
-        analysis: Dict[str, Any]
+        self, log: Dict[str, Any], analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Handle ticket creation with true async Jira operations.
 
@@ -257,10 +252,7 @@ class AsyncLogProcessor:
             Ticket creation result
         """
         # Build state for ticket creation
-        state = {
-            "log_data": log,
-            **analysis
-        }
+        state = {"log_data": log, **analysis}
 
         # True async ticket creation (Phase 2.1)
         # Handles duplicate detection and ticket creation in one async flow
@@ -270,9 +262,10 @@ class AsyncLogProcessor:
         if result.get("jira_response_key") or result.get("ticket_key"):
             return {
                 "action": "created",
-                "ticket_key": result.get("jira_response_key") or result.get("ticket_key"),
+                "ticket_key": result.get("jira_response_key")
+                or result.get("ticket_key"),
                 "decision": "ticket_created",
-                "reason": "Ticket created successfully"
+                "reason": "Ticket created successfully",
             }
         elif "duplicate" in result.get("message", "").lower():
             await self.stats.record_duplicate()
@@ -280,21 +273,21 @@ class AsyncLogProcessor:
                 "action": "duplicate",
                 "ticket_key": None,
                 "decision": "duplicate_found",
-                "reason": result.get("message", "Duplicate detected")
+                "reason": result.get("message", "Duplicate detected"),
             }
         elif "simulated" in result.get("message", "").lower():
             return {
                 "action": "simulated",
                 "ticket_key": None,
                 "decision": "dry_run",
-                "reason": result.get("message", "Ticket creation simulated")
+                "reason": result.get("message", "Ticket creation simulated"),
             }
         else:
             return {
                 "action": "skipped",
                 "ticket_key": None,
                 "decision": result.get("message", "unknown"),
-                "reason": result.get("message", "Unknown result")
+                "reason": result.get("message", "Unknown result"),
             }
 
     async def get_summary(self) -> Dict[str, Any]:
@@ -315,9 +308,7 @@ class AsyncLogProcessor:
 
 
 async def process_logs_parallel(
-    logs: List[Dict[str, Any]],
-    max_workers: int = 5,
-    enable_rate_limiting: bool = True
+    logs: List[Dict[str, Any]], max_workers: int = 5, enable_rate_limiting: bool = True
 ) -> Dict[str, Any]:
     """Convenience function to process logs in parallel.
 
@@ -330,8 +321,7 @@ async def process_logs_parallel(
         Processing results and statistics
     """
     processor = AsyncLogProcessor(
-        max_workers=max_workers,
-        enable_rate_limiting=enable_rate_limiting
+        max_workers=max_workers, enable_rate_limiting=enable_rate_limiting
     )
 
     return await processor.process_logs(logs)

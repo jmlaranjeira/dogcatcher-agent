@@ -53,10 +53,7 @@ class MemoryCacheBackend(CacheBackend):
 
                 # Create new entry
                 entry = CacheEntry(
-                    key=key,
-                    data=value,
-                    timestamp=datetime.now(),
-                    ttl_seconds=ttl
+                    key=key, data=value, timestamp=datetime.now(), ttl_seconds=ttl
                 )
 
                 # Add to cache
@@ -144,6 +141,7 @@ class MemoryCacheBackend(CacheBackend):
             if self.cache:
                 # Calculate memory usage (rough estimate)
                 import sys
+
                 stats.memory_usage = sum(
                     sys.getsizeof(entry.data) + sys.getsizeof(entry)
                     for entry in self.cache.values()
@@ -158,7 +156,7 @@ class MemoryCacheBackend(CacheBackend):
                 **stats.to_dict(),
                 "backend": self.name,
                 "max_size": self.max_size,
-                "eviction_policy": "LRU"
+                "eviction_policy": "LRU",
             }
 
         except Exception:
@@ -167,7 +165,7 @@ class MemoryCacheBackend(CacheBackend):
                 "error": "Failed to collect stats",
                 "hits": self.hits,
                 "misses": self.misses,
-                "errors": self.errors
+                "errors": self.errors,
             }
 
     async def close(self) -> None:
@@ -201,6 +199,7 @@ class MemoryCacheBackend(CacheBackend):
         """Get approximate memory usage in bytes."""
         try:
             import sys
+
             return sum(
                 sys.getsizeof(entry.data) + sys.getsizeof(entry)
                 for entry in self.cache.values()

@@ -25,6 +25,7 @@ ormsgpack==1.10.0
 packaging==25.0
 pydantic==2.11.7
 pydantic_core==2.33.2
+pydantic-settings>=2.0.0
 python-dotenv==1.1.1
 PyYAML==6.0.2
 regex==2025.7.34
@@ -43,7 +44,6 @@ zstandard==0.23.0
 rapidfuzz==3.9.6
 # Phase 1 improvements - persistent caching and resilience
 redis>=5.0.0
-aioredis>=2.0.0
 PyYAML>=6.0.0
 # Phase 2 improvements - async parallel processing
 aiofiles>=24.0.0

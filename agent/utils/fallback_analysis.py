@@ -23,7 +23,7 @@ class FallbackAnalyzer:
             "unknown_errors": 0,
             "high_severity_count": 0,
             "medium_severity_count": 0,
-            "low_severity_count": 0
+            "low_severity_count": 0,
         }
 
     def _load_error_patterns(self) -> Dict[str, Dict[str, Any]]:
@@ -37,13 +37,12 @@ class FallbackAnalyzer:
                     r"could not connect.*database",
                     r"database.*unavailable",
                     r"connection.*refused.*database",
-                    r"sql.*connection.*error"
+                    r"sql.*connection.*error",
                 ],
                 "severity": "high",
                 "title_template": "Database Connection Error",
-                "keywords": ["database", "connection", "sql", "db"]
+                "keywords": ["database", "connection", "sql", "db"],
             },
-
             "database-constraint": {
                 "patterns": [
                     r"constraint.*violation",
@@ -51,13 +50,12 @@ class FallbackAnalyzer:
                     r"foreign.*key.*constraint",
                     r"check.*constraint.*failed",
                     r"duplicate.*key.*value",
-                    r"violates.*constraint"
+                    r"violates.*constraint",
                 ],
                 "severity": "medium",
                 "title_template": "Database Constraint Violation",
-                "keywords": ["constraint", "violation", "duplicate", "key"]
+                "keywords": ["constraint", "violation", "duplicate", "key"],
             },
-
             # Network errors
             "timeout": {
                 "patterns": [
@@ -66,13 +64,12 @@ class FallbackAnalyzer:
                     r"connection.*timeout",
                     r"read.*timeout",
                     r"socket.*timeout",
-                    r"operation.*timed.*out"
+                    r"operation.*timed.*out",
                 ],
                 "severity": "medium",
                 "title_template": "Operation Timeout",
-                "keywords": ["timeout", "timed out"]
+                "keywords": ["timeout", "timed out"],
             },
-
             "network-error": {
                 "patterns": [
                     r"network.*error",
@@ -80,13 +77,12 @@ class FallbackAnalyzer:
                     r"no.*route.*to.*host",
                     r"network.*unreachable",
                     r"connection.*refused",
-                    r"host.*not.*found"
+                    r"host.*not.*found",
                 ],
                 "severity": "high",
                 "title_template": "Network Error",
-                "keywords": ["network", "connection", "host", "unreachable"]
+                "keywords": ["network", "connection", "host", "unreachable"],
             },
-
             # HTTP errors
             "http-client-error": {
                 "patterns": [
@@ -95,26 +91,24 @@ class FallbackAnalyzer:
                     r"unauthorized",
                     r"forbidden",
                     r"not.*found.*404",
-                    r"method.*not.*allowed"
+                    r"method.*not.*allowed",
                 ],
                 "severity": "low",
                 "title_template": "HTTP Client Error",
-                "keywords": ["400", "401", "403", "404", "405"]
+                "keywords": ["400", "401", "403", "404", "405"],
             },
-
             "http-server-error": {
                 "patterns": [
                     r"5\d{2}.*error",
                     r"internal.*server.*error",
                     r"service.*unavailable",
                     r"gateway.*timeout",
-                    r"bad.*gateway"
+                    r"bad.*gateway",
                 ],
                 "severity": "high",
                 "title_template": "HTTP Server Error",
-                "keywords": ["500", "502", "503", "504"]
+                "keywords": ["500", "502", "503", "504"],
             },
-
             # Authentication errors
             "authentication-error": {
                 "patterns": [
@@ -123,13 +117,12 @@ class FallbackAnalyzer:
                     r"access.*denied",
                     r"unauthorized.*access",
                     r"token.*expired",
-                    r"permission.*denied"
+                    r"permission.*denied",
                 ],
                 "severity": "medium",
                 "title_template": "Authentication Error",
-                "keywords": ["auth", "credentials", "token", "permission"]
+                "keywords": ["auth", "credentials", "token", "permission"],
             },
-
             # File system errors
             "file-not-found": {
                 "patterns": [
@@ -137,26 +130,24 @@ class FallbackAnalyzer:
                     r"no.*such.*file",
                     r"path.*does.*not.*exist",
                     r"cannot.*find.*file",
-                    r"missing.*file"
+                    r"missing.*file",
                 ],
                 "severity": "low",
                 "title_template": "File Not Found",
-                "keywords": ["file", "path", "missing", "not found"]
+                "keywords": ["file", "path", "missing", "not found"],
             },
-
             "disk-space": {
                 "patterns": [
                     r"disk.*full",
                     r"no.*space.*left",
                     r"disk.*space.*exceeded",
                     r"storage.*quota.*exceeded",
-                    r"insufficient.*disk.*space"
+                    r"insufficient.*disk.*space",
                 ],
                 "severity": "high",
                 "title_template": "Disk Space Error",
-                "keywords": ["disk", "space", "full", "quota"]
+                "keywords": ["disk", "space", "full", "quota"],
             },
-
             # Memory errors
             "out-of-memory": {
                 "patterns": [
@@ -164,13 +155,12 @@ class FallbackAnalyzer:
                     r"memory.*allocation.*failed",
                     r"insufficient.*memory",
                     r"heap.*space.*exceeded",
-                    r"memory.*limit.*exceeded"
+                    r"memory.*limit.*exceeded",
                 ],
                 "severity": "high",
                 "title_template": "Memory Error",
-                "keywords": ["memory", "heap", "allocation", "oom"]
+                "keywords": ["memory", "heap", "allocation", "oom"],
             },
-
             # Configuration errors
             "configuration-error": {
                 "patterns": [
@@ -178,13 +168,12 @@ class FallbackAnalyzer:
                     r"missing.*configuration",
                     r"invalid.*configuration",
                     r"config.*not.*found",
-                    r"property.*not.*found"
+                    r"property.*not.*found",
                 ],
                 "severity": "medium",
                 "title_template": "Configuration Error",
-                "keywords": ["config", "configuration", "property", "setting"]
+                "keywords": ["config", "configuration", "property", "setting"],
             },
-
             # Kafka/messaging errors
             "kafka-consumer": {
                 "patterns": [
@@ -192,38 +181,31 @@ class FallbackAnalyzer:
                     r"failed.*to.*consume.*message",
                     r"consumer.*group.*error",
                     r"offset.*commit.*failed",
-                    r"partition.*assignment.*failed"
+                    r"partition.*assignment.*failed",
                 ],
                 "severity": "medium",
                 "title_template": "Kafka Consumer Error",
-                "keywords": ["kafka", "consumer", "message", "partition"]
+                "keywords": ["kafka", "consumer", "message", "partition"],
             },
-
             "message-queue": {
                 "patterns": [
                     r"message.*queue.*error",
                     r"queue.*not.*found",
                     r"failed.*to.*publish.*message",
                     r"message.*processing.*failed",
-                    r"dead.*letter.*queue"
+                    r"dead.*letter.*queue",
                 ],
                 "severity": "medium",
                 "title_template": "Message Queue Error",
-                "keywords": ["queue", "message", "publish", "processing"]
+                "keywords": ["queue", "message", "publish", "processing"],
             },
-
             # Generic errors (catch-all)
             "unknown": {
-                "patterns": [
-                    r"error",
-                    r"exception",
-                    r"failed",
-                    r"failure"
-                ],
+                "patterns": [r"error", r"exception", r"failed", r"failure"],
                 "severity": "medium",
                 "title_template": "System Error",
-                "keywords": ["error", "exception", "failed"]
-            }
+                "keywords": ["error", "exception", "failed"],
+            },
         }
 
     def _load_severity_rules(self) -> Dict[str, str]:
@@ -235,16 +217,14 @@ class FallbackAnalyzer:
             "severe": "high",
             "urgent": "high",
             "emergency": "high",
-
             # Medium severity keywords
             "warning": "medium",
             "warn": "medium",
             "deprecated": "medium",
-
             # Low severity keywords
             "info": "low",
             "debug": "low",
-            "trace": "low"
+            "trace": "low",
         }
 
     def analyze_log(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -283,14 +263,16 @@ class FallbackAnalyzer:
             "severity": severity,
             "fallback_analysis": True,
             "confidence": confidence,
-            "analysis_method": "rule_based"
+            "analysis_method": "rule_based",
         }
 
-        log_info("Fallback analysis completed",
-                error_type=error_type,
-                severity=severity,
-                confidence=confidence,
-                create_ticket=create_ticket)
+        log_info(
+            "Fallback analysis completed",
+            error_type=error_type,
+            severity=severity,
+            confidence=confidence,
+            create_ticket=create_ticket,
+        )
 
         return result
 
@@ -311,7 +293,9 @@ class FallbackAnalyzer:
 
         # If no specific pattern matched, use generic patterns
         if best_confidence < 0.3:
-            confidence = self._calculate_pattern_confidence(text, self.error_patterns["unknown"])
+            confidence = self._calculate_pattern_confidence(
+                text, self.error_patterns["unknown"]
+            )
             if confidence > 0:
                 best_match = "unknown"
                 best_confidence = confidence
@@ -351,7 +335,9 @@ class FallbackAnalyzer:
 
         return confidence
 
-    def _determine_severity(self, error_type: str, text: str, log_data: Dict[str, Any]) -> str:
+    def _determine_severity(
+        self, error_type: str, text: str, log_data: Dict[str, Any]
+    ) -> str:
         """Determine severity based on error type and content."""
         # Start with default severity from pattern
         pattern_config = self.error_patterns.get(error_type, {})
@@ -370,7 +356,10 @@ class FallbackAnalyzer:
         logger = log_data.get("logger", "")
 
         # Critical system components
-        if any(critical in logger.lower() for critical in ["payment", "security", "auth", "billing"]):
+        if any(
+            critical in logger.lower()
+            for critical in ["payment", "security", "auth", "billing"]
+        ):
             if severity == "low":
                 severity = "medium"
             elif severity == "medium":
@@ -396,14 +385,14 @@ class FallbackAnalyzer:
                 title = "Database Connection Failed"
         elif error_type == "http-client-error":
             # Try to extract HTTP status code
-            status_match = re.search(r'\b(4\d{2})\b', message)
+            status_match = re.search(r"\b(4\d{2})\b", message)
             if status_match:
                 title = f"HTTP {status_match.group(1)} Error"
             else:
                 title = base_title
         elif error_type == "http-server-error":
             # Try to extract HTTP status code
-            status_match = re.search(r'\b(5\d{2})\b', message)
+            status_match = re.search(r"\b(5\d{2})\b", message)
             if status_match:
                 title = f"HTTP {status_match.group(1)} Error"
             else:
@@ -419,7 +408,9 @@ class FallbackAnalyzer:
         # Truncate to reasonable length
         return title[:120]
 
-    def _generate_description(self, error_type: str, log_data: Dict[str, Any], confidence: float) -> str:
+    def _generate_description(
+        self, error_type: str, log_data: Dict[str, Any], confidence: float
+    ) -> str:
         """Generate ticket description."""
         message = log_data.get("message", "")
         logger = log_data.get("logger", "unknown")
@@ -459,9 +450,13 @@ class FallbackAnalyzer:
     def _sanitize_message(self, message: str) -> str:
         """Basic message sanitization."""
         # Remove potential sensitive information
-        sanitized = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '<EMAIL>', message)
-        sanitized = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '<IP_ADDRESS>', sanitized)
-        sanitized = re.sub(r'\b[A-Za-z0-9]{20,}\b', '<TOKEN>', sanitized)
+        sanitized = re.sub(
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "<EMAIL>", message
+        )
+        sanitized = re.sub(
+            r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b", "<IP_ADDRESS>", sanitized
+        )
+        sanitized = re.sub(r"\b[A-Za-z0-9]{20,}\b", "<TOKEN>", sanitized)
 
         return sanitized
 
@@ -474,42 +469,41 @@ class FallbackAnalyzer:
 - Connection pool exhausted
 - Database authentication problems
 - Firewall blocking database connections""",
-
             "timeout": """
 - External service is slow or unresponsive
 - Network latency issues
 - Resource contention
 - Configuration timeout values too low
 - System overload""",
-
             "authentication-error": """
 - Invalid or expired credentials
 - Permission configuration issues
 - Token expiration
 - Authentication service unavailable
 - User account locked or disabled""",
-
             "file-not-found": """
 - File was moved or deleted
 - Incorrect file path configuration
 - Permission issues accessing file
 - File system corruption
 - Network drive disconnected""",
-
             "out-of-memory": """
 - Memory leak in application
 - Insufficient system memory
 - Memory configuration too low
 - Large data processing without proper handling
-- Memory fragmentation"""
+- Memory fragmentation""",
         }
 
-        return causes_map.get(error_type, """
+        return causes_map.get(
+            error_type,
+            """
 - System configuration issues
 - External dependency problems
 - Resource constraints
 - Network connectivity issues
-- Application logic errors""")
+- Application logic errors""",
+        )
 
     def _get_suggested_actions(self, error_type: str) -> str:
         """Get suggested actions for error type."""
@@ -520,44 +514,45 @@ class FallbackAnalyzer:
 - Review connection pool configuration
 - Check database authentication credentials
 - Monitor database performance metrics""",
-
             "timeout": """
 - Check external service status
 - Review timeout configuration values
 - Monitor system resource usage
 - Investigate network latency
 - Consider implementing retry mechanisms""",
-
             "authentication-error": """
 - Verify user credentials and permissions
 - Check token expiration and renewal
 - Review authentication service logs
 - Validate configuration settings
 - Test authentication flow manually""",
-
             "file-not-found": """
 - Verify file existence and location
 - Check file permissions and ownership
 - Review file path configuration
 - Monitor file system health
 - Implement file existence checks""",
-
             "out-of-memory": """
 - Review application memory usage patterns
 - Increase available system memory
 - Optimize memory-intensive operations
 - Implement proper resource cleanup
-- Monitor memory usage trends"""
+- Monitor memory usage trends""",
         }
 
-        return actions_map.get(error_type, """
+        return actions_map.get(
+            error_type,
+            """
 - Review system logs for additional context
 - Check configuration settings
 - Monitor system resource usage
 - Verify external dependencies
-- Implement proper error handling""")
+- Implement proper error handling""",
+        )
 
-    def _should_create_ticket(self, error_type: str, severity: str, confidence: float) -> bool:
+    def _should_create_ticket(
+        self, error_type: str, severity: str, confidence: float
+    ) -> bool:
         """Determine if a ticket should be created."""
         # Don't create tickets for very low confidence matches
         if confidence < 0.2:
@@ -589,15 +584,26 @@ class FallbackAnalyzer:
 
         stats = {
             **self.fallback_stats,
-            "pattern_match_rate": (self.fallback_stats["pattern_matches"] / total * 100) if total > 0 else 0,
-            "unknown_error_rate": (self.fallback_stats["unknown_errors"] / total * 100) if total > 0 else 0
+            "pattern_match_rate": (
+                (self.fallback_stats["pattern_matches"] / total * 100)
+                if total > 0
+                else 0
+            ),
+            "unknown_error_rate": (
+                (self.fallback_stats["unknown_errors"] / total * 100)
+                if total > 0
+                else 0
+            ),
         }
 
         return {
             "analyzer": "fallback_rule_based",
             "statistics": stats,
             "supported_error_types": list(self.error_patterns.keys()),
-            "total_patterns": sum(len(config.get("patterns", [])) for config in self.error_patterns.values())
+            "total_patterns": sum(
+                len(config.get("patterns", []))
+                for config in self.error_patterns.values()
+            ),
         }
 
     def reset_stats(self) -> None:

@@ -32,28 +32,49 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
     }
 
     # Email pattern
-    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
     entities["emails"] = emails
 
     # UUID pattern
     uuids = re.findall(
-        r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
         text,
-        re.IGNORECASE
+        re.IGNORECASE,
     )
     entities["uuids"] = uuids
 
     # Common service name patterns (e.g., user-service, api-gateway)
-    services = re.findall(r'\b[a-z]+-(?:service|api|gateway|worker|processor)\b', text, re.IGNORECASE)
+    services = re.findall(
+        r"\b[a-z]+-(?:service|api|gateway|worker|processor)\b", text, re.IGNORECASE
+    )
     entities["services"] = services
 
     # Extract significant keywords (4+ chars, no common words)
     stopwords = {
-        "that", "this", "with", "from", "have", "been", "were", "what",
-        "when", "where", "which", "while", "about", "after", "before",
-        "error", "errors", "logs", "find", "search", "show", "investigate"
+        "that",
+        "this",
+        "with",
+        "from",
+        "have",
+        "been",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "about",
+        "after",
+        "before",
+        "error",
+        "errors",
+        "logs",
+        "find",
+        "search",
+        "show",
+        "investigate",
     }
-    words = re.findall(r'\b[a-zA-Z]{4,}\b', text)
+    words = re.findall(r"\b[a-zA-Z]{4,}\b", text)
     keywords = [w.lower() for w in words if w.lower() not in stopwords]
     # Deduplicate while preserving order
     seen = set()
@@ -149,7 +170,7 @@ Query:"""
 
     query = response.choices[0].message.content.strip()
     # Clean up any markdown or quotes
-    query = query.strip('`"\'')
+    query = query.strip("`\"'")
     # Validate and fix query syntax
     query = _validate_and_fix_query(query)
 
@@ -173,9 +194,7 @@ def _validate_and_fix_query(query: str) -> str:
     # Fix email followed directly by a word (no space)
     # e.g., "user@example.comaccedido" -> "user@example.com" "accedido"
     query = re.sub(
-        r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})([a-zA-Z])',
-        r'\1" "\2',
-        query
+        r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})([a-zA-Z])", r'\1" "\2', query
     )
 
     # Count quotes - if unbalanced, close or remove the last one
@@ -183,7 +202,7 @@ def _validate_and_fix_query(query: str) -> str:
     if quote_count % 2 != 0:
         # Find the last quote and check if it should be closed or removed
         last_quote_idx = query.rfind('"')
-        after_quote = query[last_quote_idx + 1:].strip()
+        after_quote = query[last_quote_idx + 1 :].strip()
         if after_quote:
             # There's content after the unclosed quote, close it
             query = query + '"'
@@ -192,10 +211,10 @@ def _validate_and_fix_query(query: str) -> str:
             query = query + '"'
 
     # Remove truly empty quoted strings (just "")
-    query = re.sub(r'""', '', query)
+    query = re.sub(r'""', "", query)
 
     # Clean up excess whitespace
-    query = re.sub(r'\s+', ' ', query).strip()
+    query = re.sub(r"\s+", " ", query).strip()
 
     return query
 
@@ -247,7 +266,9 @@ QUERY_TEMPLATES = {
 }
 
 
-def get_template_query(pattern_type: str, service: Optional[str] = None, env: str = "prod") -> Optional[str]:
+def get_template_query(
+    pattern_type: str, service: Optional[str] = None, env: str = "prod"
+) -> Optional[str]:
     """Get a predefined query template for common error patterns.
 
     Args:

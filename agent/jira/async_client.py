@@ -3,6 +3,7 @@
 This module provides async Jira API operations for parallel processing.
 Uses connection pooling for optimal performance.
 """
+
 from __future__ import annotations
 import base64
 from typing import Optional, Dict, Any
@@ -24,10 +25,7 @@ class AsyncJiraClient:
         """Context manager entry - creates HTTP client."""
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0),
-            limits=httpx.Limits(
-                max_keepalive_connections=10,
-                max_connections=20
-            )
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
         )
         return self
 
@@ -47,7 +45,7 @@ class AsyncJiraClient:
         auth_encoded = base64.b64encode(auth_string.encode()).decode()
         return {
             "Authorization": f"Basic {auth_encoded}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     def is_configured(self) -> bool:
@@ -56,19 +54,17 @@ class AsyncJiraClient:
         Returns:
             True if all required config present
         """
-        return all([
-            self.config.jira_domain,
-            self.config.jira_user,
-            self.config.jira_api_token,
-            self.config.jira_project_key,
-        ])
+        return all(
+            [
+                self.config.jira_domain,
+                self.config.jira_user,
+                self.config.jira_api_token,
+                self.config.jira_project_key,
+            ]
+        )
 
     async def search(
-        self,
-        jql: str,
-        *,
-        fields: str = "summary,description",
-        max_results: int = None
+        self, jql: str, *, fields: str = "summary,description", max_results: int = None
     ) -> Optional[Dict[str, Any]]:
         """Search Jira issues with JQL.
 
@@ -102,7 +98,7 @@ class AsyncJiraClient:
                     "jql": jql,
                     "maxResults": max_results,
                     "fields": [f.strip() for f in fields.split(",")],
-                }
+                },
             )
             resp.raise_for_status()
             log_api_response("Jira search (async)", resp.status_code)
@@ -132,14 +128,12 @@ class AsyncJiraClient:
         url = f"https://{self.config.jira_domain}/rest/api/3/issue"
 
         try:
-            resp = await self._client.post(
-                url,
-                headers=self._headers(),
-                json=payload
-            )
+            resp = await self._client.post(url, headers=self._headers(), json=payload)
             resp.raise_for_status()
             response_data = resp.json()
-            log_api_response("Jira issue creation (async)", resp.status_code, response_data)
+            log_api_response(
+                "Jira issue creation (async)", resp.status_code, response_data
+            )
             return response_data
 
         except httpx.HTTPError as e:
@@ -152,7 +146,11 @@ class AsyncJiraClient:
                 resp_preview = None
 
             if resp_preview:
-                log_error("Failed to create Jira issue (async)", error=str(e), response=resp_preview)
+                log_error(
+                    "Failed to create Jira issue (async)",
+                    error=str(e),
+                    response=resp_preview,
+                )
             else:
                 log_error("Failed to create Jira issue (async)", error=str(e))
             return None
@@ -181,22 +179,23 @@ class AsyncJiraClient:
                 "type": "doc",
                 "version": 1,
                 "content": [
-                    {"type": "paragraph", "content": [{"type": "text", "text": comment_text}]}
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": comment_text}],
+                    }
                 ],
             }
         }
 
         try:
-            resp = await self._client.post(
-                url,
-                headers=self._headers(),
-                json=body
-            )
+            resp = await self._client.post(url, headers=self._headers(), json=body)
             log_api_response("Jira comment addition (async)", resp.status_code)
             return resp.status_code in (200, 201)
 
         except httpx.HTTPError as e:
-            log_error("Failed to add comment (async)", error=str(e), issue_key=issue_key)
+            log_error(
+                "Failed to add comment (async)", error=str(e), issue_key=issue_key
+            )
             return False
 
     async def add_labels(self, issue_key: str, labels_to_add: list[str]) -> bool:
@@ -220,16 +219,17 @@ class AsyncJiraClient:
         body = {"update": {"labels": [{"add": lbl} for lbl in labels_to_add]}}
 
         try:
-            resp = await self._client.put(
-                url,
-                headers=self._headers(),
-                json=body
-            )
+            resp = await self._client.put(url, headers=self._headers(), json=body)
             log_api_response("Jira label addition (async)", resp.status_code)
             return resp.status_code in (200, 204)
 
         except httpx.HTTPError as e:
-            log_error("Failed to add labels (async)", error=str(e), issue_key=issue_key, labels=labels_to_add)
+            log_error(
+                "Failed to add labels (async)",
+                error=str(e),
+                issue_key=issue_key,
+                labels=labels_to_add,
+            )
             return False
 
 
@@ -250,10 +250,7 @@ async def get_client() -> AsyncJiraClient:
 
 
 async def search_async(
-    jql: str,
-    *,
-    fields: str = "summary,description",
-    max_results: int = None
+    jql: str, *, fields: str = "summary,description", max_results: int = None
 ) -> Optional[Dict[str, Any]]:
     """Async Jira search convenience function.
 
