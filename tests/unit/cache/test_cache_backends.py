@@ -235,9 +235,7 @@ class TestRedisCacheBackend:
         """Create Redis cache backend for testing."""
         # Use database 15 for testing to avoid conflicts
         cache = RedisCacheBackend(
-            redis_url="redis://localhost:6379/15",
-            key_prefix="test:",
-            name="test_redis"
+            redis_url="redis://localhost:6379/15", key_prefix="test:", name="test_redis"
         )
 
         # Clear test database before test
@@ -308,7 +306,7 @@ class TestRedisCacheBackend:
         items = {
             "bulk_key1": {"data": "value1"},
             "bulk_key2": {"data": "value2"},
-            "bulk_key3": {"data": "value3"}
+            "bulk_key3": {"data": "value3"},
         }
 
         result = await redis_cache.set_with_pipeline(items, ttl=3600)
@@ -367,13 +365,11 @@ class TestCacheBackendErrors:
             # Without aioredis, the constructor raises ImportError
             with pytest.raises(ImportError):
                 RedisCacheBackend(
-                    redis_url="redis://nonexistent:6379",
-                    name="test_redis_fail"
+                    redis_url="redis://nonexistent:6379", name="test_redis_fail"
                 )
         else:
             cache = RedisCacheBackend(
-                redis_url="redis://nonexistent:6379",
-                name="test_redis_fail"
+                redis_url="redis://nonexistent:6379", name="test_redis_fail"
             )
             result = await cache.set("test_key", "test_value")
             assert result is False
@@ -385,6 +381,7 @@ class TestCacheBackendErrors:
 
 # Integration test utilities
 
+
 @pytest.fixture
 def cache_test_data():
     """Common test data for cache tests."""
@@ -395,10 +392,10 @@ def cache_test_data():
             "nested": {"data": [1, 2, 3]},
             "timestamp": "2025-12-09T10:30:00Z",
             "boolean": True,
-            "float": 3.14159
+            "float": 3.14159,
         },
         "list_data": [1, "two", {"three": 3}],
-        "unicode_data": "Test with üñîçödé characters 🚀"
+        "unicode_data": "Test with üñîçödé characters 🚀",
     }
 
 
@@ -407,14 +404,14 @@ async def test_cache_data_integrity(cache_test_data):
     """Test data integrity across different cache backends."""
     backends = [
         MemoryCacheBackend(max_size=100, name="integrity_memory"),
-        FileCacheBackend(cache_dir=tempfile.mkdtemp(), name="integrity_file")
+        FileCacheBackend(cache_dir=tempfile.mkdtemp(), name="integrity_file"),
     ]
 
     if REDIS_AVAILABLE:
         redis_backend = RedisCacheBackend(
             redis_url="redis://localhost:6379/15",
             key_prefix="integrity:",
-            name="integrity_redis"
+            name="integrity_redis",
         )
         if await redis_backend._ensure_connected():
             backends.append(redis_backend)
@@ -425,7 +422,9 @@ async def test_cache_data_integrity(cache_test_data):
             for key, expected_value in cache_test_data.items():
                 await backend.set(f"test_{key}", expected_value, ttl=3600)
                 result = await backend.get(f"test_{key}")
-                assert result == expected_value, f"Data integrity failed for {key} in {backend.name}"
+                assert (
+                    result == expected_value
+                ), f"Data integrity failed for {key} in {backend.name}"
 
         finally:
             await backend.close()
