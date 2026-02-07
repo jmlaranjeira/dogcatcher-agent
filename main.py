@@ -189,6 +189,12 @@ def _run_for_service(graph, team_id=None, team_service=None):
     if team_service:
         initial_state["team_service"] = team_service
 
+    import time as _time
+
+    from agent.metrics import gauge as _m_gauge, incr as _m_incr
+
+    _run_start = _time.time()
+
     if config.async_enabled:
         log_info("Running in ASYNC mode", max_workers=config.async_max_workers)
         import asyncio
@@ -212,6 +218,10 @@ def _run_for_service(graph, team_id=None, team_service=None):
     else:
         log_info("Running in SYNC mode (sequential processing)")
         graph.invoke(initial_state, {"recursion_limit": 2000})
+
+    _run_duration = _time.time() - _run_start
+    _m_gauge("run.duration", _run_duration, team_id=team_id)
+    _m_incr("logs.processed", value=len(logs), team_id=team_id)
 
 
 # --- Multi-tenant support ---

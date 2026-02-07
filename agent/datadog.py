@@ -265,6 +265,13 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         total_logs=len(results),
         duration_ms=round(duration * 1000, 2),
     )
+
+    # Emit observability metrics
+    from agent.metrics import incr as _m_incr, timing as _m_timing
+
+    _m_incr("logs.fetched", value=len(results))
+    _m_timing("api.datadog_duration", value_ms=round(duration * 1000, 2))
+
     return results
 
 

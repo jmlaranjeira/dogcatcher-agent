@@ -586,6 +586,30 @@ class Config(BaseSettings):
         description="Enable rate limiting for API calls",
     )
 
+    # Observability / Metrics Configuration
+    datadog_metrics_enabled: bool = Field(
+        False,
+        env="DATADOG_METRICS_ENABLED",
+        description="Enable custom metric emission to Datadog via DogStatsD",
+    )
+    dd_agent_host: str = Field(
+        "localhost",
+        env="DD_AGENT_HOST",
+        description="DogStatsD agent host",
+    )
+    dd_agent_port: int = Field(
+        8125,
+        env="DD_AGENT_PORT",
+        ge=1,
+        le=65535,
+        description="DogStatsD agent port",
+    )
+    metrics_prefix: str = Field(
+        "dogcatcher",
+        env="METRICS_PREFIX",
+        description="Prefix for all custom metrics",
+    )
+
     # Profile Configuration (Phase 1.3 - Configuration Profiles)
     profile: Optional[str] = Field(
         None,

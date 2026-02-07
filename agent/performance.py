@@ -205,6 +205,13 @@ def log_performance_summary() -> None:
     cache_stats = similarity_cache.get_stats()
     log_info("Similarity cache statistics", **cache_stats)
 
+    # Emit cache observability metrics
+    from agent.metrics import gauge as _m_gauge, incr as _m_incr
+
+    _m_gauge("cache.hit_rate", cache_stats.get("hit_rate_percent", 0.0))
+    _m_incr("cache.hit", value=cache_stats.get("hits", 0))
+    _m_incr("cache.miss", value=cache_stats.get("misses", 0))
+
     # Performance metrics
     performance_metrics.log_performance_summary()
 

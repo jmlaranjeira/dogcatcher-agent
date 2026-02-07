@@ -200,6 +200,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
             create=False,
             message="Duplicate log skipped (fingerprint cache)",
         )
+        from agent.metrics import incr as _m_incr
+
+        _m_incr("duplicates.fingerprint", team_id=state.get("team_id"))
         return DuplicateCheckResult(
             is_duplicate=True,
             message="Log already processed previously (fingerprint match)",
@@ -251,6 +254,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
                     create=False,
                     message=f"Duplicate by error_type '{error_type}': {existing_key}",
                 )
+                from agent.metrics import incr as _m_incr
+
+                _m_incr("duplicates.jira", team_id=state.get("team_id"))
                 return DuplicateCheckResult(
                     is_duplicate=True,
                     existing_ticket_key=existing_key,
@@ -289,6 +295,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
                 message=f"Duplicate in Jira: {key} — {existing_summary}",
             )
 
+            from agent.metrics import incr as _m_incr
+
+            _m_incr("duplicates.jira", team_id=state.get("team_id"))
             return DuplicateCheckResult(
                 is_duplicate=True,
                 existing_ticket_key=key,
@@ -420,6 +429,9 @@ def _execute_ticket_creation(
             create=False,
             message=cap_msg,
         )
+        from agent.metrics import incr as _m_incr
+
+        _m_incr("tickets.cap_reached", team_id=state.get("team_id"))
         return {**state, "message": cap_msg, "ticket_created": True}
 
     # Create or simulate based on configuration
@@ -735,6 +747,9 @@ def _create_real_ticket(
                 create=True,
                 message="Ticket created successfully",
             )
+            from agent.metrics import incr as _m_incr
+
+            _m_incr("tickets.created", team_id=state.get("team_id"))
 
             # Invoke Patchy if enabled
             _invoke_patchy(result_state, issue_key)
@@ -793,6 +808,9 @@ def _simulate_ticket_creation(
         create=False,
         message="Ticket creation simulated (dry run)",
     )
+    from agent.metrics import incr as _m_incr
+
+    _m_incr("tickets.simulated", team_id=state.get("team_id"))
     return {
         **state,
         "ticket_created": True,
