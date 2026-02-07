@@ -46,6 +46,12 @@ langgraph dev --studio-url http://127.0.0.1:8123
 # Generate audit reports
 python tools/report.py --since-hours 24
 
+# Validate teams.yaml configuration
+python -m tools.validate_teams                              # validate default path
+python -m tools.validate_teams config/teams.yaml.example    # validate specific file
+python -m tools.validate_teams --schema                     # emit JSON Schema
+python -m tools.validate_teams --schema -o schema/teams.schema.json
+
 # Run Patchy (self-healing PR bot)
 python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49
 
