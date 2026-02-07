@@ -71,10 +71,35 @@ flake8 .
 
 ### Docker
 ```bash
-# Build and run
+# Build and run (local)
 docker build -t dd-jira-agent:latest .
 docker compose up --build
+
+# Build AWS image
+docker build -f Dockerfile.aws -t dogcatcher-agent:latest .
 ```
+
+### AWS Deployment
+```bash
+# Deploy infrastructure (one-time setup)
+cd infra/aws
+cp terraform.tfvars.example terraform.tfvars  # fill in values
+terraform init
+terraform plan -var-file=environments/prod.tfvars
+terraform apply -var-file=environments/prod.tfvars
+
+# Push image to ECR
+ECR_URL=$(terraform output -raw ecr_repository_url)
+docker build -f ../../Dockerfile.aws -t $ECR_URL:latest ../../
+aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URL
+docker push $ECR_URL:latest
+
+# Manual test run
+aws ecs run-task --cluster dogcatcher-prod --task-definition dogcatcher-prod --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=DISABLED}"
+```
+
+See `infra/aws/README.md` for full setup guide and cost breakdown.
 
 ## Architecture Overview
 

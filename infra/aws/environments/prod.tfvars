@@ -1,0 +1,8 @@
+environment         = "prod"
+schedule_expression = "cron(0 * * * ? *)"  # Every hour
+task_cpu            = 1024
+task_memory         = 2048
+redis_node_type     = "cache.t3.micro"
+log_retention_days  = 7
+agent_profile       = "production"
+datadog_env         = "prod"
