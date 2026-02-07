@@ -223,11 +223,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 "filter": {
                     "from": start.isoformat() + "Z",
                     "to": now.isoformat() + "Z",
-                    "query": (
-                        f"service:{service} env:{env} {extra_clause}".strip()
-                        if not extra_clause
-                        else f"service:{service} env:{env} {extra_clause}".strip()
-                    ),
+                    "query": f"service:{service} env:{env}".strip(),
                 },
                 "page": {"limit": limit},
             }

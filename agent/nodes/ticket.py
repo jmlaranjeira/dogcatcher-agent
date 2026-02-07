@@ -7,7 +7,6 @@ with proper separation of validation, duplicate checking, payload building, and 
 from typing import Dict, Any, Tuple, Optional
 import os
 import json
-import hashlib
 from dataclasses import dataclass
 
 from agent.jira import (
@@ -17,10 +16,12 @@ from agent.jira import (
 )
 from agent.jira.utils import (
     normalize_log_message,
+    compute_loghash,
+    compute_fingerprint,
     should_comment,
     update_comment_timestamp,
+    priority_name_from_severity,
 )
-from agent.jira.utils import priority_name_from_severity
 from agent.utils.logger import (
     log_info,
     log_error,
@@ -174,7 +175,7 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
         log_data = state.get("log_data", {})
         raw_msg = log_data.get("message", "")
         norm_msg = normalize_log_message(raw_msg)
-        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+        fp_source = f"{log_data.get('logger','')}|{raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
         _append_audit(
             decision="duplicate-fingerprint",
@@ -262,7 +263,7 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
             log_data = state.get("log_data", {})
             raw_msg = log_data.get("message", "")
             norm_msg = normalize_log_message(raw_msg)
-            fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+            fp_source = f"{log_data.get('logger','')}|{raw_msg}"
             occ = (state.get("fp_counts") or {}).get(fp_source, 1)
             _append_audit(
                 decision="duplicate-jira",
@@ -406,22 +407,11 @@ def _execute_ticket_creation(
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> str:
-    """Compute a stable fingerprint for the log entry.
-
-    Uses error_type (from LLM analysis) + normalized message to group
-    similar errors regardless of which logger produced them.
-    """
+    """Compute a stable fingerprint for the log entry."""
     log_data = state.get("log_data", {})
     raw_msg = log_data.get("message", "")
-    norm_msg = normalize_log_message(raw_msg)
-
-    # Use error_type from LLM analysis (more stable than logger name)
     error_type = state.get("error_type", "unknown")
-
-    fp_source = f"{error_type}|{norm_msg or raw_msg}"
-    return hashlib.sha1(fp_source.encode("utf-8"), usedforsecurity=False).hexdigest()[
-        :12
-    ]
+    return compute_fingerprint(error_type, raw_msg)
 
 
 def _load_processed_fingerprints() -> set[str]:
@@ -469,7 +459,7 @@ def _maybe_comment_duplicate(
         win = state.get("window_hours", 48)
         raw_msg = log_data.get("message", "")
         norm_msg = normalize_log_message(raw_msg)
-        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+        fp_source = f"{log_data.get('logger','')}|{raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
 
         comment = (
@@ -489,7 +479,7 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
     win = state.get("window_hours", 48)
     raw_msg = log_data.get("message", "")
     norm_msg = normalize_log_message(raw_msg)
-    fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+    fp_source = f"{log_data.get('logger','')}|{raw_msg}"
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
 
     # Extract MDC fields from log attributes (if available)
@@ -583,13 +573,8 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
 
     # Add loghash label
     try:
-        norm_msg = normalize_log_message(
-            (state.get("log_data") or {}).get("message", "")
-        )
-        if norm_msg:
-            loghash = hashlib.sha1(
-                norm_msg.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()[:12]
+        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        if loghash:
             labels.append(f"loghash-{loghash}")
     except Exception:
         pass

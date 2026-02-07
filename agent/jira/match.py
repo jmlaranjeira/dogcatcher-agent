@@ -11,6 +11,7 @@ from . import client
 from .utils import (
     normalize_text,
     normalize_log_message,
+    compute_loghash,
     extract_text_from_description,
 )
 from agent.config import get_config
@@ -120,9 +121,7 @@ def find_similar_ticket(
 
     # Fast path: exact label via loghash
     if norm_current_log:
-        loghash = hashlib.sha1(
-            norm_current_log.encode("utf-8"), usedforsecurity=False
-        ).hexdigest()[:12]
+        loghash = compute_loghash(current_log_msg)
         jql_hash = (
             f"project = {config.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"

@@ -1,6 +1,7 @@
-"""Utilities for normalization and local fingerprint cache."""
+"""Utilities for normalization, fingerprinting, and local fingerprint cache."""
 
 from __future__ import annotations
+import hashlib
 import json
 import pathlib
 import re
@@ -75,6 +76,29 @@ def normalize_log_message(text: str) -> str:
     t = _RE_PUNCT.sub(" ", t)
     t = _RE_WS.sub(" ", t).strip()
     return t
+
+
+def compute_loghash(raw_message: str) -> str:
+    """Compute a 12-char loghash from a raw log message.
+
+    Normalizes the message first, then hashes. Used as a Jira label
+    for fast duplicate lookup.
+    """
+    norm = normalize_log_message(raw_message)
+    if not norm:
+        return ""
+    return hashlib.sha1(norm.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+
+
+def compute_fingerprint(error_type: str, raw_message: str) -> str:
+    """Compute a 12-char fingerprint for a log entry.
+
+    Combines error_type (from LLM analysis) with normalized message
+    to group similar errors regardless of which logger produced them.
+    """
+    norm = normalize_log_message(raw_message)
+    source = f"{error_type}|{norm or raw_message}"
+    return hashlib.sha1(source.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 def load_processed_fingerprints() -> Set[str]:

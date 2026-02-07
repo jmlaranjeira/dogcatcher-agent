@@ -20,10 +20,12 @@ from .client import (
 from .match import find_similar_ticket
 from .utils import (
     normalize_log_message,
+    compute_loghash,
     load_processed_fingerprints,
     save_processed_fingerprints,
     priority_name_from_severity,
 )
+from agent.utils.logger import log_info, log_warning
 
 __all__ = [
     "find_similar_ticket",
@@ -42,15 +44,9 @@ def _cap_reached(state: Dict[str, Any]) -> tuple[bool, str | None]:
 
 def _compute_fingerprint(state: Dict[str, Any]) -> tuple[str, str]:
     log_data = state.get("log_data", {})
-    try:
-        from .utils import normalize_log_message as _norm
-
-        raw_msg = log_data.get("message", "")
-        norm_msg = _norm(raw_msg)
-        base = norm_msg or raw_msg
-    except Exception:
-        base = log_data.get("message", "")
-    # Ignore thread to avoid per-thread duplicates
+    raw_msg = log_data.get("message", "")
+    norm_msg = normalize_log_message(raw_msg)
+    base = norm_msg or raw_msg
     fp_source = f"{log_data.get('logger','')}|{base}"
     fingerprint = hashlib.sha1(
         fp_source.encode("utf-8"), usedforsecurity=False
@@ -61,17 +57,8 @@ def _compute_fingerprint(state: Dict[str, Any]) -> tuple[str, str]:
 def _base_labels(state: Dict[str, Any]) -> list[str]:
     labels: list[str] = ["datadog-log"]
     try:
-        from .utils import (
-            normalize_log_message,
-        )  # local import to avoid cycles in some IDEs
-
-        norm_msg = normalize_log_message(
-            (state.get("log_data") or {}).get("message", "")
-        )
-        if norm_msg:
-            loghash = hashlib.sha1(
-                norm_msg.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()[:12]
+        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        if loghash:
             labels.append(f"loghash-{loghash}")
     except Exception:
         pass
@@ -89,27 +76,23 @@ def _try_handle_duplicate(
     if not key:
         return state, False
 
-    print(f"⚠️ Duplicate detected → {key} ({existing_summary}) with score {score:.2f}")
+    log_warning("Duplicate detected", jira_key=key, existing_summary=existing_summary, score=f"{score:.2f}")
 
     if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
         log_data = state.get("log_data", {})
+        fp_count_key = f"{log_data.get('logger','')}|{log_data.get('message','')}"
         comment = (
             f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
             f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
-            f"Occurrences in last {state.get('window_hours', 48)}h: {(state.get('fp_counts') or {}).get(fp_source, 1)}\n"
+            f"Occurrences in last {state.get('window_hours', 48)}h: {(state.get('fp_counts') or {}).get(fp_count_key, 1)}\n"
             f"Original message: {log_data.get('message', 'N/A')}\n"
         )
         jira_add_comment(key, comment)
 
     # Seed loghash label to accelerate future lookups
     try:
-        norm_msg = normalize_log_message(
-            (state.get("log_data") or {}).get("message", "")
-        )
-        if norm_msg:
-            loghash = hashlib.sha1(
-                norm_msg.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()[:12]
+        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        if loghash:
             jira_add_labels(key, [f"loghash-{loghash}"])
     except Exception:
         pass
@@ -131,14 +114,12 @@ def _create_or_simulate(
 ) -> Dict[str, Any]:
     auto = os.getenv("AUTO_CREATE_TICKET", "").lower() in ("1", "true", "yes")
     if auto:
-        print(f"🚀 Creating ticket in project: {get_jira_project_key()}")
-        print(f"🧾 Summary sent to Jira: {payload['fields']['summary']}")
+        log_info("Creating ticket", project=get_jira_project_key(), summary=payload['fields']['summary'])
         resp = jira_create_issue(payload)
         if resp:
             issue_key = resp.get("key", "UNKNOWN")
             jira_url = f"https://{get_jira_domain()}/browse/{issue_key}"
-            print(f"✅ Jira ticket created: {issue_key}")
-            print(f"🔗 {jira_url}")
+            log_info("Jira ticket created", issue_key=issue_key, url=jira_url)
             state["jira_response_key"] = issue_key
             state["jira_response_url"] = jira_url
             state["jira_response_raw"] = resp
@@ -148,8 +129,7 @@ def _create_or_simulate(
         return state
 
     # Dry-run branch
-    print(f"ℹ️ Simulated ticket creation: {payload['fields']['summary']}")
-    print("✅ Ticket creation skipped (simulation mode enabled)\n")
+    log_info("Simulated ticket creation", summary=payload['fields']['summary'])
     state["ticket_created"] = True
     persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
     if persist_sim and state.get("log_fingerprint"):
@@ -163,9 +143,7 @@ def comment_on_issue(issue_key: str, comment_text: str) -> bool:
 
 
 def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
-    print(
-        f"🛠️ Entered create_ticket() | AUTO_CREATE_TICKET={os.getenv('AUTO_CREATE_TICKET')}"
-    )
+    log_info("Entered create_ticket", auto_create=os.getenv('AUTO_CREATE_TICKET'))
 
     assert (
         "ticket_title" in state and "ticket_description" in state
@@ -173,10 +151,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     description = state.get("ticket_description")
     title = state.get("ticket_title")
 
-    print(f"🧾 Title to create: {title}")
-    print(
-        f"📝 Description to create: {description[:160]}{'...' if description and len(description) > 160 else ''}"
-    )
+    log_info("Ticket details", title=title, description_preview=description[:160] if description else "")
 
     # Cap is enforced in agent.nodes.ticket._execute_ticket_creation
 
@@ -189,9 +164,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     fingerprint, fp_source = _compute_fingerprint(state)
     processed = load_processed_fingerprints()
     if fingerprint in processed:
-        print(
-            f"🔁 Skipping ticket creation: fingerprint already processed: {fingerprint}"
-        )
+        log_info("Skipping ticket creation: fingerprint already processed", fingerprint=fingerprint)
         return {
             **state,
             "message": "⚠️ Log already processed previously (fingerprint match).",

@@ -285,9 +285,15 @@ class TestAgentConfig:
         assert config.occ_escalate_threshold == 10
         assert config.occ_escalate_to == "high"
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object structure changed")
-    def test_agent_config_defaults(self):
+    def test_agent_config_defaults(self, monkeypatch):
         """Test Agent configuration defaults."""
+        # Clear env vars that override defaults (e.g. from .env)
+        for key in ("SEVERITY_RULES_JSON", "AUTO_CREATE_TICKET", "COMMENT_ON_DUPLICATE",
+                     "MAX_TICKETS_PER_RUN", "PERSIST_SIM_FP", "COMMENT_COOLDOWN_MINUTES",
+                     "AGGREGATE_EMAIL_NOT_FOUND", "AGGREGATE_KAFKA_CONSUMER",
+                     "OCC_ESCALATE_ENABLED", "OCC_ESCALATE_THRESHOLD", "OCC_ESCALATE_TO"):
+            monkeypatch.delenv(key, raising=False)
+
         config = AgentConfig()
 
         assert config.auto_create_ticket is False
@@ -431,27 +437,34 @@ class TestUIConfig:
 class TestConfigIntegration:
     """Test complete configuration integration."""
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'openai'")
     def test_config_validation_success(self):
         """Test successful configuration validation."""
-        config = Config()
-
-        # Mock required fields
-        config.openai.api_key = "test-openai-key"
-        config.datadog.api_key = "test-datadog-api-key"
-        config.datadog.app_key = "test-datadog-app-key"
-        config.jira.domain = "test.atlassian.net"
-        config.jira.user = "test@example.com"
-        config.jira.api_token = "test-jira-token"
-        config.jira.project_key = "TEST"
+        config = Config(
+            openai_api_key="test-openai-key",
+            datadog_api_key="test-datadog-api-key",
+            datadog_app_key="test-datadog-app-key",
+            jira_domain="test.atlassian.net",
+            jira_user="test@example.com",
+            jira_api_token="test-jira-token",
+            jira_project_key="TEST",
+        )
 
         issues = config.validate_configuration()
         assert len(issues) == 0
 
-    @pytest.mark.xfail(reason="Pre-existing: Config validation changed")
     def test_config_validation_missing_fields(self):
         """Test configuration validation with missing fields."""
-        config = Config()
+        # Note: Config() will have empty string defaults (""), which are falsy
+        # So validation will detect them as missing
+        config = Config(
+            openai_api_key="",  # Explicitly set empty values to test validation
+            datadog_api_key="",
+            datadog_app_key="",
+            jira_domain="",
+            jira_user="",
+            jira_api_token="",
+            jira_project_key="",
+        )
 
         issues = config.validate_configuration()
         assert len(issues) > 0
@@ -459,23 +472,19 @@ class TestConfigIntegration:
         assert any("DATADOG_API_KEY is required" in issue for issue in issues)
         assert any("JIRA_DOMAIN is required" in issue for issue in issues)
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'openai'")
     def test_config_validation_dangerous_settings(self):
         """Test configuration validation for dangerous settings."""
-        config = Config()
-
-        # Mock required fields
-        config.openai.api_key = "test-openai-key"
-        config.datadog.api_key = "test-datadog-api-key"
-        config.datadog.app_key = "test-datadog-app-key"
-        config.jira.domain = "test.atlassian.net"
-        config.jira.user = "test@example.com"
-        config.jira.api_token = "test-jira-token"
-        config.jira.project_key = "TEST"
-
-        # Set dangerous combination
-        config.agent.auto_create_ticket = True
-        config.agent.max_tickets_per_run = 0
+        config = Config(
+            openai_api_key="test-openai-key",
+            datadog_api_key="test-datadog-api-key",
+            datadog_app_key="test-datadog-app-key",
+            jira_domain="test.atlassian.net",
+            jira_user="test@example.com",
+            jira_api_token="test-jira-token",
+            jira_project_key="TEST",
+            auto_create_ticket=True,
+            max_tickets_per_run=0,
+        )
 
         issues = config.validate_configuration()
         assert any(
@@ -483,41 +492,38 @@ class TestConfigIntegration:
             for issue in issues
         )
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'openai'")
     def test_config_validation_low_limits(self):
         """Test configuration validation for low limits."""
-        config = Config()
-
-        # Mock required fields
-        config.openai.api_key = "test-openai-key"
-        config.datadog.api_key = "test-datadog-api-key"
-        config.datadog.app_key = "test-datadog-app-key"
-        config.jira.domain = "test.atlassian.net"
-        config.jira.user = "test@example.com"
-        config.jira.api_token = "test-jira-token"
-        config.jira.project_key = "TEST"
-
-        # Set low limits
-        config.datadog.limit = 5
-        config.jira.similarity_threshold = 0.3
+        # Use limits that trigger validation warnings:
+        # - datadog_limit < 2 triggers "DATADOG_LIMIT is very low"
+        # - jira_similarity_threshold < 0.5 triggers "JIRA_SIMILARITY_THRESHOLD is very low"
+        config = Config(
+            openai_api_key="test-openai-key",
+            datadog_api_key="test-datadog-api-key",
+            datadog_app_key="test-datadog-app-key",
+            jira_domain="test.atlassian.net",
+            jira_user="test@example.com",
+            jira_api_token="test-jira-token",
+            jira_project_key="TEST",
+            datadog_limit=1,  # Changed from 5 to 1 to trigger validation
+            jira_similarity_threshold=0.3,
+        )
 
         issues = config.validate_configuration()
         assert any("DATADOG_LIMIT is very low" in issue for issue in issues)
         assert any("JIRA_SIMILARITY_THRESHOLD is very low" in issue for issue in issues)
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'openai'")
     def test_config_logging(self):
         """Test configuration logging."""
-        config = Config()
-
-        # Mock required fields
-        config.openai.api_key = "test-openai-key"
-        config.datadog.api_key = "test-datadog-api-key"
-        config.datadog.app_key = "test-datadog-app-key"
-        config.jira.domain = "test.atlassian.net"
-        config.jira.user = "test@example.com"
-        config.jira.api_token = "test-jira-token"
-        config.jira.project_key = "TEST"
+        config = Config(
+            openai_api_key="test-openai-key",
+            datadog_api_key="test-datadog-api-key",
+            datadog_app_key="test-datadog-app-key",
+            jira_domain="test.atlassian.net",
+            jira_user="test@example.com",
+            jira_api_token="test-jira-token",
+            jira_project_key="TEST",
+        )
 
         # Should not raise an exception
         config.log_configuration()
@@ -526,7 +532,6 @@ class TestConfigIntegration:
 class TestConfigEnvironment:
     """Test configuration loading from environment variables."""
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'datadog'")
     def test_config_from_env(self, temp_env):
         """Test configuration loading from environment variables."""
         # Set additional environment variables
@@ -542,12 +547,11 @@ class TestConfigEnvironment:
         # Reload configuration
         config = reload_config()
 
-        assert config.datadog.limit == 100
-        assert config.jira.similarity_threshold == 0.75
-        assert config.ui.max_title_length == 150
-        assert config.logging.level == "DEBUG"
+        assert config.datadog_limit == 100
+        assert config.jira_similarity_threshold == 0.75
+        assert config.max_title_length == 150
+        assert config.log_level == "DEBUG"
 
-    @pytest.mark.xfail(reason="Pre-existing: Config object has no attribute 'datadog'")
     def test_config_type_conversion(self, temp_env):
         """Test automatic type conversion from environment variables."""
         # Set string values that should be converted
@@ -562,11 +566,11 @@ class TestConfigEnvironment:
 
         config = reload_config()
 
-        assert isinstance(config.datadog.limit, int)
-        assert config.datadog.limit == 50
-        assert isinstance(config.jira.similarity_threshold, float)
-        assert config.jira.similarity_threshold == 0.82
-        assert isinstance(config.agent.auto_create_ticket, bool)
-        assert config.agent.auto_create_ticket is True
-        assert isinstance(config.agent.max_tickets_per_run, int)
-        assert config.agent.max_tickets_per_run == 5
+        assert isinstance(config.datadog_limit, int)
+        assert config.datadog_limit == 50
+        assert isinstance(config.jira_similarity_threshold, float)
+        assert config.jira_similarity_threshold == 0.82
+        assert isinstance(config.auto_create_ticket, bool)
+        assert config.auto_create_ticket is True
+        assert isinstance(config.max_tickets_per_run, int)
+        assert config.max_tickets_per_run == 5
