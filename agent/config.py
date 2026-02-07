@@ -8,7 +8,7 @@ import json
 import threading
 from typing import Dict, List, Optional, Union
 
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -33,7 +33,8 @@ class OpenAIConfig(BaseSettings):
         "extra": "ignore",
     }
 
-    @validator("response_format")
+    @field_validator("response_format", mode="after")
+    @classmethod
     def validate_response_format(cls, v):
         if v not in ["json_object", "text"]:
             raise ValueError('response_format must be "json_object" or "text"')
@@ -81,13 +82,15 @@ class DatadogConfig(BaseSettings):
         "extra": "ignore",
     }
 
-    @validator("query_extra_mode")
+    @field_validator("query_extra_mode", mode="after")
+    @classmethod
     def validate_query_extra_mode(cls, v):
         if v.upper() not in ["AND", "OR"]:
             raise ValueError('query_extra_mode must be "AND" or "OR"')
         return v.upper()
 
-    @validator("statuses")
+    @field_validator("statuses", mode="after")
+    @classmethod
     def validate_statuses(cls, v):
         valid_statuses = ["error", "critical", "warning", "info", "debug"]
         statuses = [s.strip().lower() for s in v.split(",")]
@@ -215,13 +218,15 @@ class AgentConfig(BaseSettings):
         "high", env="OCC_ESCALATE_TO", description="Target severity for escalation"
     )
 
-    @validator("occ_escalate_to")
+    @field_validator("occ_escalate_to", mode="after")
+    @classmethod
     def validate_escalate_to(cls, v):
         if v.lower() not in ["low", "medium", "high"]:
             raise ValueError('occ_escalate_to must be "low", "medium", or "high"')
         return v.lower()
 
-    @validator("severity_rules_json")
+    @field_validator("severity_rules_json", mode="after")
+    @classmethod
     def validate_severity_rules(cls, v):
         if v.strip():
             try:
@@ -254,7 +259,8 @@ class LoggingConfig(BaseSettings):
         description="Log format",
     )
 
-    @validator("level")
+    @field_validator("level", mode="after")
+    @classmethod
     def validate_level(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:

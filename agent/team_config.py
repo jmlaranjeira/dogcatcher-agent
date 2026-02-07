@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class TeamConfig(BaseModel):
@@ -38,7 +38,8 @@ class TeamConfig(BaseModel):
         None, description="Team-specific error_type → severity mapping"
     )
 
-    @validator("team_id")
+    @field_validator("team_id", mode="after")
+    @classmethod
     def validate_team_id(cls, v: str) -> str:
         if not v or not v.replace("-", "").replace("_", "").isalnum():
             raise ValueError(
@@ -46,7 +47,8 @@ class TeamConfig(BaseModel):
             )
         return v
 
-    @validator("datadog_services")
+    @field_validator("datadog_services", mode="after")
+    @classmethod
     def validate_services(cls, v: List[str]) -> List[str]:
         if not v:
             raise ValueError("datadog_services must contain at least one service")
