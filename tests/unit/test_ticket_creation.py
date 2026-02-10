@@ -74,67 +74,6 @@ class TestTicketValidation:
         assert result.is_valid is False
 
 
-@pytest.mark.skip(
-    reason="_prepare_context was removed; logic integrated into _check_duplicates"
-)
-class TestContextPreparation:
-    """Test context preparation and fingerprint generation."""
-
-    def test_prepare_context_success(self, sample_state, mock_config):
-        """Test successful context preparation."""
-        pass
-
-    def test_prepare_context_with_severity_override(self, sample_state, mock_config):
-        """Test context preparation with severity override."""
-        pass
-
-
-@pytest.mark.skip(
-    reason="_check_fingerprint_dup was removed; logic integrated into _check_duplicates"
-)
-class TestFingerprintDuplicateCheck:
-    """Test fingerprint-based duplicate detection."""
-
-    def test_check_fingerprint_dup_no_duplicate(self, sample_state, mock_config):
-        pass
-
-    def test_check_fingerprint_dup_in_run_duplicate(self, sample_state, mock_config):
-        pass
-
-    def test_check_fingerprint_dup_cross_run_duplicate(self, sample_state, mock_config):
-        pass
-
-
-@pytest.mark.skip(
-    reason="_check_llm_no_create was removed; logic integrated into _check_duplicates"
-)
-class TestLLMNoCreateCheck:
-    """Test LLM decision to not create ticket."""
-
-    def test_check_llm_no_create_allow(self, sample_state, mock_config):
-        pass
-
-    def test_check_llm_no_create_deny(self, sample_state, mock_config):
-        pass
-
-
-@pytest.mark.skip(
-    reason="_check_jira_duplicate was removed; logic integrated into _check_duplicates"
-)
-class TestJiraDuplicateCheck:
-    """Test Jira duplicate detection."""
-
-    def test_check_jira_duplicate_no_duplicate(
-        self, sample_state, mock_config, mock_jira_client
-    ):
-        pass
-
-    def test_check_jira_duplicate_found(
-        self, sample_state, mock_config, mock_jira_client
-    ):
-        pass
-
-
 class TestJiraPayloadBuilding:
     """Test Jira payload construction."""
 
@@ -160,28 +99,6 @@ class TestJiraPayloadBuilding:
         assert isinstance(result, TicketPayload)
         labels = result.payload["fields"].get("labels", [])
         assert any("aggregate-email-not-found" in label for label in labels)
-
-
-@pytest.mark.skip(
-    reason="_execute_ticket_creation signature changed; now takes (state, payload)"
-)
-class TestTicketExecution:
-    """Test ticket execution (creation or simulation)."""
-
-    def test_execute_ticket_creation_simulation(
-        self, sample_state, mock_config, mock_jira_client
-    ):
-        pass
-
-    def test_execute_ticket_creation_real(
-        self, sample_state, mock_config, mock_jira_client
-    ):
-        pass
-
-    def test_execute_ticket_creation_max_tickets_reached(
-        self, sample_state, mock_config, mock_jira_client
-    ):
-        pass
 
 
 class TestCreateTicketIntegration:

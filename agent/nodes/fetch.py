@@ -9,11 +9,11 @@ def fetch_logs(state: Dict[str, Any]) -> Dict[str, Any]:
 
     logs = state.get("logs", [])
 
-    # Compute per-run fingerprint counts once (logger|thread|message)
+    # Compute per-run fingerprint counts once (logger|message)
     if "fp_counts" not in state:
         counts = {}
         for lg in logs:
-            k = f"{lg.get('logger','')}|{lg.get('thread','')}|{lg.get('message','')}"
+            k = f"{lg.get('logger','')}|{lg.get('message','')}"
             counts[k] = counts.get(k, 0) + 1
         state["fp_counts"] = counts
         try:

@@ -4,10 +4,12 @@ This module provides centralized configuration management with validation,
 type safety, and sensible defaults for the dogcatcher-agent.
 """
 
-from typing import Dict, List, Optional, Union
-from pydantic import Field, validator
-from pydantic_settings import BaseSettings
 import json
+import threading
+from typing import Dict, List, Optional, Union
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
 
 
 class OpenAIConfig(BaseSettings):
@@ -31,7 +33,8 @@ class OpenAIConfig(BaseSettings):
         "extra": "ignore",
     }
 
-    @validator("response_format")
+    @field_validator("response_format", mode="after")
+    @classmethod
     def validate_response_format(cls, v):
         if v not in ["json_object", "text"]:
             raise ValueError('response_format must be "json_object" or "text"')
@@ -79,13 +82,15 @@ class DatadogConfig(BaseSettings):
         "extra": "ignore",
     }
 
-    @validator("query_extra_mode")
+    @field_validator("query_extra_mode", mode="after")
+    @classmethod
     def validate_query_extra_mode(cls, v):
         if v.upper() not in ["AND", "OR"]:
             raise ValueError('query_extra_mode must be "AND" or "OR"')
         return v.upper()
 
-    @validator("statuses")
+    @field_validator("statuses", mode="after")
+    @classmethod
     def validate_statuses(cls, v):
         valid_statuses = ["error", "critical", "warning", "info", "debug"]
         statuses = [s.strip().lower() for s in v.split(",")]
@@ -213,13 +218,15 @@ class AgentConfig(BaseSettings):
         "high", env="OCC_ESCALATE_TO", description="Target severity for escalation"
     )
 
-    @validator("occ_escalate_to")
+    @field_validator("occ_escalate_to", mode="after")
+    @classmethod
     def validate_escalate_to(cls, v):
         if v.lower() not in ["low", "medium", "high"]:
             raise ValueError('occ_escalate_to must be "low", "medium", or "high"')
         return v.lower()
 
-    @validator("severity_rules_json")
+    @field_validator("severity_rules_json", mode="after")
+    @classmethod
     def validate_severity_rules(cls, v):
         if v.strip():
             try:
@@ -252,7 +259,8 @@ class LoggingConfig(BaseSettings):
         description="Log format",
     )
 
-    @validator("level")
+    @field_validator("level", mode="after")
+    @classmethod
     def validate_level(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
@@ -578,6 +586,30 @@ class Config(BaseSettings):
         description="Enable rate limiting for API calls",
     )
 
+    # Observability / Metrics Configuration
+    datadog_metrics_enabled: bool = Field(
+        False,
+        env="DATADOG_METRICS_ENABLED",
+        description="Enable custom metric emission to Datadog via DogStatsD",
+    )
+    dd_agent_host: str = Field(
+        "localhost",
+        env="DD_AGENT_HOST",
+        description="DogStatsD agent host",
+    )
+    dd_agent_port: int = Field(
+        8125,
+        env="DD_AGENT_PORT",
+        ge=1,
+        le=65535,
+        description="DogStatsD agent port",
+    )
+    metrics_prefix: str = Field(
+        "dogcatcher",
+        env="METRICS_PREFIX",
+        description="Prefix for all custom metrics",
+    )
+
     # Profile Configuration (Phase 1.3 - Configuration Profiles)
     profile: Optional[str] = Field(
         None,
@@ -707,20 +739,25 @@ class Config(BaseSettings):
         )
 
 
-# Global configuration instance (lazy loading)
-_config = None
+# Global configuration instance (lazy loading, thread-safe)
+_config: Optional[Config] = None
+_config_lock = threading.Lock()
 
 
 def get_config() -> Config:
-    """Get the global configuration instance."""
+    """Get the global configuration instance (thread-safe)."""
     global _config
     if _config is None:
-        _config = Config()
+        with _config_lock:
+            # Double-checked locking: re-check after acquiring lock
+            if _config is None:
+                _config = Config()
     return _config
 
 
 def reload_config() -> Config:
-    """Reload configuration from environment variables."""
+    """Reload configuration from environment variables (thread-safe)."""
     global _config
-    _config = Config()
-    return _config
+    with _config_lock:
+        _config = Config()
+        return _config

@@ -1,0 +1,34 @@
+# Copy to terraform.tfvars and fill in your values.
+# For per-environment overrides, use environments/dev.tfvars or environments/prod.tfvars.
+
+aws_region   = "eu-west-1"
+environment  = "prod"
+project_name = "dogcatcher"
+
+# --- Secrets Manager ARNs (create secrets first, then paste ARNs) ---
+openai_api_key_arn  = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/openai-api-key-XXXXXX"
+datadog_api_key_arn = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/datadog-api-key-XXXXXX"
+datadog_app_key_arn = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/datadog-app-key-XXXXXX"
+jira_api_token_arn  = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/jira-api-token-XXXXXX"
+github_token_arn    = ""  # Optional, for Patchy
+
+# --- Jira ---
+jira_domain      = "mycompany.atlassian.net"
+jira_user        = "bot@mycompany.com"
+jira_project_key = "PROJ"
+
+# --- Datadog ---
+datadog_service = "myservice"
+datadog_env     = "prod"
+datadog_site    = "datadoghq.eu"
+
+# --- Schedule ---
+schedule_expression = "cron(0 * * * ? *)"  # Every hour
+
+# --- Sizing ---
+task_cpu    = 1024   # 1 vCPU
+task_memory = 2048   # 2 GB
+redis_node_type = "cache.t3.micro"
+
+# --- Logging ---
+log_retention_days = 7

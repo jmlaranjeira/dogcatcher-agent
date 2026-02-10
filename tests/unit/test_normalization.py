@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from agent.jira.utils import (
     normalize_text,
     normalize_log_message,
+    sanitize_for_jira,
     extract_text_from_description,
     should_comment,
     update_comment_timestamp,
@@ -302,3 +303,58 @@ class TestThresholdValidation:
         norm2 = normalize_log_message(message2)
 
         assert norm1 == norm2
+
+
+class TestSanitizeForJira:
+    """Test PII sanitization for Jira content."""
+
+    def test_sanitize_emails(self):
+        result = sanitize_for_jira("User john.doe@example.com not found")
+        assert "<email>" in result
+        assert "john.doe@example.com" not in result
+
+    def test_sanitize_urls(self):
+        result = sanitize_for_jira(
+            "Failed to connect to https://api.internal.io/v1/users"
+        )
+        assert "<url>" in result
+        assert "https://api.internal.io" not in result
+
+    def test_sanitize_uuids(self):
+        result = sanitize_for_jira(
+            "Request 123e4567-e89b-12d3-a456-426614174000 failed"
+        )
+        assert "<uuid>" in result
+        assert "123e4567" not in result
+
+    def test_sanitize_long_hex(self):
+        result = sanitize_for_jira("ObjectId 507f1f77bcf86cd799439011 not found")
+        assert "<hex>" in result
+        assert "507f1f77bcf86cd799439011" not in result
+
+    def test_sanitize_ipv4(self):
+        result = sanitize_for_jira("Connection refused from 192.168.1.42")
+        assert "<ip>" in result
+        assert "192.168.1.42" not in result
+
+    def test_sanitize_jwt_tokens(self):
+        token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        result = sanitize_for_jira(f"Auth failed for token {token}")
+        assert "<token>" in result
+        assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in result
+
+    def test_sanitize_preserves_readability(self):
+        result = sanitize_for_jira("NullPointerException in UserService.findById()")
+        assert result == "NullPointerException in UserService.findById()"
+
+    def test_sanitize_empty_string(self):
+        assert sanitize_for_jira("") == ""
+
+    def test_sanitize_multiple_pii_types(self):
+        msg = "User admin@corp.com at 10.0.0.1 token 507f1f77bcf86cd799439011"
+        result = sanitize_for_jira(msg)
+        assert "<email>" in result
+        assert "<ip>" in result
+        assert "<hex>" in result
+        assert "admin@corp.com" not in result
+        assert "10.0.0.1" not in result

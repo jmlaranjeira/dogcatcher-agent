@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1.7
+# ECS Fargate optimized — single-shot execution, no cron.
+# EventBridge handles scheduling; this container runs once and exits.
+FROM python:3.11-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG APP_USER=app
+RUN useradd -m -u 10001 ${APP_USER}
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt pydantic-settings
+
+COPY . /app
+
+RUN mkdir -p /app/.agent_cache && chown ${APP_USER}:${APP_USER} /app/.agent_cache
+
+USER ${APP_USER}
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    AGENT_CACHE_DIR=/app/.agent_cache
+
+CMD ["python", "main.py", "--profile", "production"]

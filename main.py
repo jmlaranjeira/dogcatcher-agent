@@ -75,6 +75,11 @@ parser.add_argument(
     action="store_true",
     help="Invoke Patchy to create draft PRs for tickets created (requires GITHUB_TOKEN).",
 )
+parser.add_argument(
+    "--team",
+    type=str,
+    help="Run only for a specific team (requires config/teams.yaml).",
+)
 
 parser.set_defaults(
     auto_create_ticket=os.getenv("AUTO_CREATE_TICKET", "true").lower() == "true"
@@ -149,72 +154,128 @@ if recommendations:
     for rec in recommendations:
         log_info(f"  💡 {rec}")
 
-log_agent_progress("Starting agent", jira_project=config.jira_project_key)
 
-graph = build_graph()
-logs = get_logs()
-log_agent_progress("Logs loaded", log_count=len(logs))
-if not logs:
-    log_info("No logs to process; exiting.")
-    raise SystemExit(0)
+def _run_for_service(graph, team_id=None, team_service=None):
+    """Run the pipeline for one (service, team) combination."""
+    config = get_config()
+    _auto = config.auto_create_ticket
+    _max = config.max_tickets_per_run
 
-# Use configuration values
-_auto = config.auto_create_ticket
-_max = config.max_tickets_per_run
+    if _auto:
+        if _max > 0:
+            log_info(
+                f"Safety guard: up to {_max} real Jira tickets will be created per run."
+            )
+        else:
+            log_info(
+                "Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful."
+            )
+    else:
+        log_info("Dry-run mode: Jira ticket creation is disabled.")
 
-if _auto:
-    if _max > 0:
+    logs = get_logs()
+    log_agent_progress("Logs loaded", log_count=len(logs))
+    if not logs:
+        log_info("No logs to process for this service; skipping.")
+        return
+
+    initial_state = {
+        "logs": logs,
+        "log_index": 0,
+        "seen_logs": set(),
+        "created_fingerprints": set(),
+    }
+    if team_id:
+        initial_state["team_id"] = team_id
+    if team_service:
+        initial_state["team_service"] = team_service
+
+    import time as _time
+
+    from agent.metrics import gauge as _m_gauge, incr as _m_incr
+
+    _run_start = _time.time()
+
+    if config.async_enabled:
+        log_info("Running in ASYNC mode", max_workers=config.async_max_workers)
+        import asyncio
+        from agent.async_processor import process_logs_parallel
+
+        async def run_async():
+            return await process_logs_parallel(
+                logs=logs,
+                max_workers=config.async_max_workers,
+                enable_rate_limiting=config.async_rate_limiting,
+            )
+
+        result = asyncio.run(run_async())
         log_info(
-            f"Safety guard: up to {_max} real Jira tickets will be created per run."
+            "Async processing completed",
+            processed=result.get("processed", 0),
+            successful=result.get("successful", 0),
+            errors=result.get("errors", 0),
+            duration_seconds=result.get("stats", {}).get("duration_seconds", 0),
         )
     else:
-        log_info(
-            "Safety guard: no per-run cap on real Jira tickets (MAX_TICKETS_PER_RUN=0). Be careful."
-        )
+        log_info("Running in SYNC mode (sequential processing)")
+        graph.invoke(initial_state, {"recursion_limit": 2000})
+
+    _run_duration = _time.time() - _run_start
+    _m_gauge("run.duration", _run_duration, team_id=team_id)
+    _m_incr("logs.processed", value=len(logs), team_id=team_id)
+
+
+# --- Multi-tenant support ---
+from agent.team_loader import load_teams_config, is_multi_tenant
+
+teams_config = load_teams_config()
+
+if teams_config:
+    # Multi-tenant mode
+    if args.team:
+        team = teams_config.get_team(args.team)
+        if not team:
+            print(f"Team '{args.team}' not found in config/teams.yaml")
+            sys.exit(1)
+        team_ids = [args.team]
+    else:
+        team_ids = teams_config.list_team_ids()
+
+    log_agent_progress("Starting agent (multi-tenant)", team_count=len(team_ids))
+    graph = build_graph()
+
+    for tid in team_ids:
+        team = teams_config.get_team(tid)
+        if not team:
+            continue
+        for svc in team.datadog_services:
+            log_agent_progress(
+                "Processing team/service",
+                team_id=tid,
+                service=svc,
+                jira_project=team.jira_project_key,
+            )
+            # Override env vars for this team/service
+            os.environ["JIRA_PROJECT_KEY"] = team.jira_project_key
+            os.environ["DATADOG_SERVICE"] = svc
+            os.environ["DATADOG_ENV"] = team.datadog_env
+            if team.max_tickets_per_run is not None:
+                os.environ["MAX_TICKETS_PER_RUN"] = str(team.max_tickets_per_run)
+            reload_config()
+
+            _run_for_service(graph, team_id=tid, team_service=svc)
+
+    log_agent_progress("Agent execution finished (multi-tenant)")
 else:
-    log_info("Dry-run mode: Jira ticket creation is disabled.")
+    # Single-tenant mode (backward compatible)
+    if args.team:
+        print("--team requires config/teams.yaml to exist")
+        sys.exit(1)
 
-# Choose processing mode based on configuration
-if config.async_enabled:
-    log_info("Running in ASYNC mode", max_workers=config.async_max_workers)
-
-    import asyncio
-    from agent.async_processor import process_logs_parallel
-
-    # Run async processing
-    async def run_async():
-        return await process_logs_parallel(
-            logs=logs,
-            max_workers=config.async_max_workers,
-            enable_rate_limiting=config.async_rate_limiting,
-        )
-
-    result = asyncio.run(run_async())
-
-    # Log async processing results
-    log_info(
-        "Async processing completed",
-        processed=result.get("processed", 0),
-        successful=result.get("successful", 0),
-        errors=result.get("errors", 0),
-        duration_seconds=result.get("stats", {}).get("duration_seconds", 0),
-    )
-
-else:
-    log_info("Running in SYNC mode (sequential processing)")
-
-    # Use traditional sync processing
-    graph.invoke(
-        {
-            "logs": logs,
-            "log_index": 0,
-            "seen_logs": set(),
-            "created_fingerprints": set(),
-        },
-        {"recursion_limit": 2000},
-    )
-
-log_agent_progress("Agent execution finished")
+    log_agent_progress("Starting agent", jira_project=config.jira_project_key)
+    graph = build_graph()
+    _run_for_service(graph)
+    log_agent_progress("Agent execution finished")
 
 # Log performance summary
 log_performance_summary()

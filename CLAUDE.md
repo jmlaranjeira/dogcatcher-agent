@@ -32,6 +32,11 @@ python main.py --profile staging      # Staging environment
 python main.py --profile production   # Production (Redis cache, auto-create)
 python main.py --profile testing      # Test environment
 
+# Multi-tenant mode (requires config/teams.yaml)
+python main.py --profile production                  # Loops all teams
+python main.py --profile production --team team-vega  # Single team only
+python main.py --dry-run --team team-vega             # Dry-run one team
+
 # LangGraph Studio (for debugging workflows)
 source .venv-studio/bin/activate
 langgraph-studio start --host 127.0.0.1 --port 8123
@@ -40,6 +45,12 @@ langgraph dev --studio-url http://127.0.0.1:8123
 
 # Generate audit reports
 python tools/report.py --since-hours 24
+
+# Validate teams.yaml configuration
+python -m tools.validate_teams                              # validate default path
+python -m tools.validate_teams config/teams.yaml.example    # validate specific file
+python -m tools.validate_teams --schema                     # emit JSON Schema
+python -m tools.validate_teams --schema -o schema/teams.schema.json
 
 # Run Patchy (self-healing PR bot)
 python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49
@@ -66,10 +77,35 @@ flake8 .
 
 ### Docker
 ```bash
-# Build and run
+# Build and run (local)
 docker build -t dd-jira-agent:latest .
 docker compose up --build
+
+# Build AWS image
+docker build -f Dockerfile.aws -t dogcatcher-agent:latest .
 ```
+
+### AWS Deployment
+```bash
+# Deploy infrastructure (one-time setup)
+cd infra/aws
+cp terraform.tfvars.example terraform.tfvars  # fill in values
+terraform init
+terraform plan -var-file=environments/prod.tfvars
+terraform apply -var-file=environments/prod.tfvars
+
+# Push image to ECR
+ECR_URL=$(terraform output -raw ecr_repository_url)
+docker build -f ../../Dockerfile.aws -t $ECR_URL:latest ../../
+aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URL
+docker push $ECR_URL:latest
+
+# Manual test run
+aws ecs run-task --cluster dogcatcher-prod --task-definition dogcatcher-prod --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=DISABLED}"
+```
+
+See `infra/aws/README.md` for full setup guide and cost breakdown.
 
 ## Architecture Overview
 
@@ -157,6 +193,25 @@ python main.py --profile staging --env staging --hours 12
 python main.py --profile production
 ```
 
+### Multi-Tenant Configuration
+
+When `config/teams.yaml` exists, the agent runs in **multi-tenant mode**: it loops over teams sequentially, each with its own Jira project, Datadog services, cache directory, and audit log.
+
+**Setup:** Copy `config/teams.yaml.example` to `config/teams.yaml` and customize.
+
+**Key files:**
+- `agent/team_config.py` - Pydantic models (`TeamConfig`, `TeamsConfig`)
+- `agent/team_loader.py` - YAML loader with module-level cache
+- `config/teams.yaml.example` - Example with 4 teams
+
+**Behavior:**
+- Without `teams.yaml`: single-tenant mode (100% backward compatible)
+- With `teams.yaml`: loops all teams and their services, overriding config per iteration
+- `--team <team-id>`: process only one specific team
+- Cache isolation: `.agent_cache/teams/{team_id}/` per team
+- Audit logs include `team_id` and `team_service` fields
+- Jira team custom field injected from `TeamsConfig.jira_team_field_id` + `TeamConfig.jira_team_field_value`
+
 ## Development Guidelines
 
 ### Testing Strategy
@@ -196,7 +251,7 @@ The system provides automatic recommendations. Monitor logs for:
 - **Dry-run mode**: Default behavior for safe testing
 - **Per-run caps**: Configurable limits on ticket creation
 - **Duplicate prevention**: Multi-level deduplication (fingerprints, similarity)
-- **Audit logging**: Complete trail in `.agent_cache/audit_logs.jsonl`
+- **Audit logging**: Complete trail in `.agent_cache/audit_logs.jsonl` (or `.agent_cache/teams/{team_id}/audit_logs.jsonl` in multi-tenant mode)
 
 ### LangGraph Integration
 - Graph definition in `agent/graph.py`

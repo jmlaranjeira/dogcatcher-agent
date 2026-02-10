@@ -110,57 +110,61 @@ class TestAsyncJiraClientSearch:
     """Test async search operations."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pre-existing: Async search API changed")
     async def test_search_success(self, sample_jira_response):
         """Test successful search operation."""
         async with AsyncJiraClient() as client:
-            with patch.object(client._client, "get") as mock_get:
+            with patch.object(client._client, "post") as mock_post:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
                 mock_response.json = MagicMock(return_value=sample_jira_response)
                 mock_response.raise_for_status = MagicMock()
-                mock_get.return_value = mock_response
+                mock_post.return_value = mock_response
 
                 result = await client.search("project = TEST")
 
         assert result == sample_jira_response
         assert result["total"] == 1
+        # Verify POST was called with correct URL and body
+        assert mock_post.called
+        call_args = mock_post.call_args
+        assert "/rest/api/3/search/jql" in call_args[0][0]
+        assert call_args[1]["json"]["jql"] == "project = TEST"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pre-existing: Async search API changed")
     async def test_search_with_fields(self):
         """Test search with custom fields."""
         async with AsyncJiraClient() as client:
-            with patch.object(client._client, "get") as mock_get:
+            with patch.object(client._client, "post") as mock_post:
                 mock_response = AsyncMock()
                 mock_response.status_code = 200
                 mock_response.json.return_value = {}
                 mock_response.raise_for_status = MagicMock()
-                mock_get.return_value = mock_response
+                mock_post.return_value = mock_response
 
                 await client.search("project = TEST", fields="summary,status")
 
-        # Verify fields parameter passed correctly
-        call_kwargs = mock_get.call_args[1]
-        assert "fields" in call_kwargs["params"]
-        assert call_kwargs["params"]["fields"] == "summary,status"
+        # Verify fields parameter passed correctly in JSON body as list
+        call_kwargs = mock_post.call_args[1]
+        assert "json" in call_kwargs
+        assert "fields" in call_kwargs["json"]
+        assert call_kwargs["json"]["fields"] == ["summary", "status"]
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pre-existing: Async search API changed")
     async def test_search_with_max_results(self):
         """Test search with custom max results."""
         async with AsyncJiraClient() as client:
-            with patch.object(client._client, "get") as mock_get:
+            with patch.object(client._client, "post") as mock_post:
                 mock_response = AsyncMock()
                 mock_response.status_code = 200
                 mock_response.json.return_value = {}
                 mock_response.raise_for_status = MagicMock()
-                mock_get.return_value = mock_response
+                mock_post.return_value = mock_response
 
                 await client.search("project = TEST", max_results=50)
 
-        call_kwargs = mock_get.call_args[1]
-        assert call_kwargs["params"]["maxResults"] == 50
+        # Verify maxResults passed in JSON body
+        call_kwargs = mock_post.call_args[1]
+        assert call_kwargs["json"]["maxResults"] == 50
 
     @pytest.mark.asyncio
     async def test_search_not_configured(self):
@@ -172,12 +176,11 @@ class TestAsyncJiraClientSearch:
         assert result is None
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pre-existing: Async search API changed")
     async def test_search_http_error(self):
         """Test search handles HTTP errors."""
         async with AsyncJiraClient() as client:
-            with patch.object(client._client, "get") as mock_get:
-                mock_get.side_effect = httpx.HTTPError("Connection failed")
+            with patch.object(client._client, "post") as mock_post:
+                mock_post.side_effect = httpx.HTTPError("Connection failed")
 
                 result = await client.search("project = TEST")
 

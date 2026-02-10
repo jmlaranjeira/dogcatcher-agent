@@ -7,7 +7,6 @@ with proper separation of validation, duplicate checking, payload building, and 
 from typing import Dict, Any, Tuple, Optional
 import os
 import json
-import hashlib
 from dataclasses import dataclass
 
 from agent.jira import (
@@ -17,10 +16,13 @@ from agent.jira import (
 )
 from agent.jira.utils import (
     normalize_log_message,
+    sanitize_for_jira,
+    compute_loghash,
+    compute_fingerprint,
     should_comment,
     update_comment_timestamp,
+    priority_name_from_severity,
 )
-from agent.jira.utils import priority_name_from_severity
 from agent.utils.logger import (
     log_info,
     log_error,
@@ -36,17 +38,24 @@ import datetime
 # Configuration will be loaded lazily in functions
 
 
-_AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
+_AUDIT_LOG_DIR = pathlib.Path(".agent_cache")
+
+
+def _get_audit_log_path(team_id: str | None = None) -> pathlib.Path:
+    if team_id:
+        return _AUDIT_LOG_DIR / "teams" / team_id / "audit_logs.jsonl"
+    return _AUDIT_LOG_DIR / "audit_logs.jsonl"
 
 
 def _utcnow_iso() -> str:
     return datetime.datetime.utcnow().isoformat() + "Z"
 
 
-def _append_audit_log(entry: dict) -> None:
+def _append_audit_log(entry: dict, team_id: str | None = None) -> None:
     try:
-        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+        path = _get_audit_log_path(team_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:
         # Best-effort; do not fail the workflow
@@ -64,6 +73,7 @@ def _append_audit(
     create: bool = False,
     message: str = "",
 ) -> None:
+    team_id = state.get("team_id")
     entry = {
         "timestamp": _utcnow_iso(),
         "fingerprint": fingerprint,
@@ -77,7 +87,10 @@ def _append_audit(
         "occurrences": occ,
         "message": message,
     }
-    _append_audit_log(entry)
+    if team_id:
+        entry["team_id"] = team_id
+        entry["team_service"] = state.get("team_service", "")
+    _append_audit_log(entry, team_id=team_id)
 
 
 @dataclass
@@ -165,7 +178,8 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
 
     # 1. Check fingerprint cache (fastest)
     fingerprint = _compute_fingerprint(state)
-    processed = _load_processed_fingerprints()
+    team_id = state.get("team_id")
+    processed = _load_processed_fingerprints(team_id)
     created_in_run: set[str] = state.get("created_fingerprints", set())
 
     if fingerprint in created_in_run or fingerprint in processed:
@@ -174,7 +188,7 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
         log_data = state.get("log_data", {})
         raw_msg = log_data.get("message", "")
         norm_msg = normalize_log_message(raw_msg)
-        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+        fp_source = f"{log_data.get('logger','')}|{raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
         _append_audit(
             decision="duplicate-fingerprint",
@@ -186,6 +200,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
             create=False,
             message="Duplicate log skipped (fingerprint cache)",
         )
+        from agent.metrics import incr as _m_incr
+
+        _m_incr("duplicates.fingerprint", team_id=state.get("team_id"))
         return DuplicateCheckResult(
             is_duplicate=True,
             message="Log already processed previously (fingerprint match)",
@@ -225,7 +242,7 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
                 )
                 # Update fingerprint cache
                 processed.add(fingerprint)
-                _save_processed_fingerprints(processed)
+                _save_processed_fingerprints(processed, team_id)
 
                 _append_audit(
                     decision="duplicate-error-type",
@@ -237,6 +254,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
                     create=False,
                     message=f"Duplicate by error_type '{error_type}': {existing_key}",
                 )
+                from agent.metrics import incr as _m_incr
+
+                _m_incr("duplicates.jira", team_id=state.get("team_id"))
                 return DuplicateCheckResult(
                     is_duplicate=True,
                     existing_ticket_key=existing_key,
@@ -257,12 +277,12 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
 
             # Update fingerprint cache
             processed.add(fingerprint)
-            _save_processed_fingerprints(processed)
+            _save_processed_fingerprints(processed, team_id)
             # Audit duplicate in Jira
             log_data = state.get("log_data", {})
             raw_msg = log_data.get("message", "")
             norm_msg = normalize_log_message(raw_msg)
-            fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+            fp_source = f"{log_data.get('logger','')}|{raw_msg}"
             occ = (state.get("fp_counts") or {}).get(fp_source, 1)
             _append_audit(
                 decision="duplicate-jira",
@@ -275,6 +295,9 @@ def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult
                 message=f"Duplicate in Jira: {key} — {existing_summary}",
             )
 
+            from agent.metrics import incr as _m_incr
+
+            _m_incr("duplicates.jira", team_id=state.get("team_id"))
             return DuplicateCheckResult(
                 is_duplicate=True,
                 existing_ticket_key=key,
@@ -338,13 +361,25 @@ def _build_jira_payload(
         }
     }
 
-    # Optional team custom field injection via env vars
-    # Set JIRA_TEAM_FIELD_ID and JIRA_TEAM_VALUE in .env to enable
+    # Optional team custom field injection
+    # Multi-tenant: reads from TeamsConfig; single-tenant: falls back to env vars
     try:
-        team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
-        team_field_value = os.getenv("JIRA_TEAM_VALUE")
-        if team_field_id and team_field_value:
-            payload["fields"][team_field_id] = [{"value": team_field_value}]
+        team_id = state.get("team_id")
+        if team_id:
+            from agent.team_loader import load_teams_config
+
+            tcfg = load_teams_config()
+            if tcfg:
+                team = tcfg.get_team(team_id)
+                field_id = tcfg.jira_team_field_id
+                field_val = team.jira_team_field_value if team else None
+                if field_id and field_val:
+                    payload["fields"][field_id] = [{"value": field_val}]
+        else:
+            team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
+            team_field_value = os.getenv("JIRA_TEAM_VALUE")
+            if team_field_id and team_field_value:
+                payload["fields"][team_field_id] = [{"value": team_field_value}]
     except Exception:
         # Do not fail payload building if optional field injection fails
         pass
@@ -394,6 +429,9 @@ def _execute_ticket_creation(
             create=False,
             message=cap_msg,
         )
+        from agent.metrics import incr as _m_incr
+
+        _m_incr("tickets.cap_reached", team_id=state.get("team_id"))
         return {**state, "message": cap_msg, "ticket_created": True}
 
     # Create or simulate based on configuration
@@ -406,52 +444,27 @@ def _execute_ticket_creation(
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> str:
-    """Compute a stable fingerprint for the log entry.
-
-    Uses error_type (from LLM analysis) + normalized message to group
-    similar errors regardless of which logger produced them.
-    """
+    """Compute a stable fingerprint for the log entry."""
     log_data = state.get("log_data", {})
     raw_msg = log_data.get("message", "")
-    norm_msg = normalize_log_message(raw_msg)
-
-    # Use error_type from LLM analysis (more stable than logger name)
     error_type = state.get("error_type", "unknown")
-
-    fp_source = f"{error_type}|{norm_msg or raw_msg}"
-    return hashlib.sha1(fp_source.encode("utf-8"), usedforsecurity=False).hexdigest()[
-        :12
-    ]
+    return compute_fingerprint(error_type, raw_msg)
 
 
-def _load_processed_fingerprints() -> set[str]:
+def _load_processed_fingerprints(team_id: str | None = None) -> set[str]:
     """Load the set of processed fingerprints from cache."""
-    try:
-        import json
-        import pathlib
+    from agent.jira.utils import load_processed_fingerprints as _load_fps
 
-        cache_path = pathlib.Path(".agent_cache/processed_logs.json")
-        if cache_path.exists():
-            with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return set(data) if isinstance(data, list) else set()
-    except Exception:
-        pass
-    return set()
+    return _load_fps(team_id)
 
 
-def _save_processed_fingerprints(fingerprints: set[str]) -> None:
+def _save_processed_fingerprints(
+    fingerprints: set[str], team_id: str | None = None
+) -> None:
     """Save the set of processed fingerprints to cache."""
-    try:
-        import json
-        import pathlib
+    from agent.jira.utils import save_processed_fingerprints as _save_fps
 
-        cache_path = pathlib.Path(".agent_cache/processed_logs.json")
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(sorted(list(fingerprints)), f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log_error("Failed to save processed fingerprints", error=str(e))
+    _save_fps(fingerprints, team_id)
 
 
 def _maybe_comment_duplicate(
@@ -464,22 +477,22 @@ def _maybe_comment_duplicate(
 
     cooldown_min = config.comment_cooldown_minutes
 
-    if should_comment(issue_key, cooldown_min):
+    if should_comment(issue_key, cooldown_min, team_id=state.get("team_id")):
         log_data = state.get("log_data", {})
         win = state.get("window_hours", 48)
         raw_msg = log_data.get("message", "")
         norm_msg = normalize_log_message(raw_msg)
-        fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+        fp_source = f"{log_data.get('logger','')}|{raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
 
         comment = (
             f"Detected by Datadog Logs Agent as a likely duplicate (score {score:.2f}).\n"
             f"Logger: {log_data.get('logger', 'N/A')} | Thread: {log_data.get('thread', 'N/A')} | Timestamp: {log_data.get('timestamp', 'N/A')}\n"
             f"Occurrences in last {win}h: {occ}\n"
-            f"Original message: {log_data.get('message', 'N/A')}\n"
+            f"Original message: {sanitize_for_jira(log_data.get('message', 'N/A'))}\n"
         )
         comment_on_issue(issue_key, comment)
-        update_comment_timestamp(issue_key)
+        update_comment_timestamp(issue_key, team_id=state.get("team_id"))
 
 
 def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
@@ -489,7 +502,7 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
     win = state.get("window_hours", 48)
     raw_msg = log_data.get("message", "")
     norm_msg = normalize_log_message(raw_msg)
-    fp_source = f"{log_data.get('logger','')}|{norm_msg or raw_msg}"
+    fp_source = f"{log_data.get('logger','')}|{raw_msg}"
     occ = (state.get("fp_counts") or {}).get(fp_source, 1)
 
     # Extract MDC fields from log attributes (if available)
@@ -516,8 +529,8 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
 🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
 🧩 Logger: {log_data.get('logger', 'N/A')}
 🧵 Thread: {log_data.get('thread', 'N/A')}
-📝 Original Log: {log_data.get('message', 'N/A')}
-🔍 Detail: {log_data.get('detail', 'N/A')}
+📝 Original Log: {sanitize_for_jira(log_data.get('message', 'N/A'))}
+🔍 Detail: {sanitize_for_jira(log_data.get('detail', 'N/A'))}
 📈 Occurrences in last {win}h: {occ}"""
 
     # Add MDC context if available
@@ -583,13 +596,8 @@ def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
 
     # Add loghash label
     try:
-        norm_msg = normalize_log_message(
-            (state.get("log_data") or {}).get("message", "")
-        )
-        if norm_msg:
-            loghash = hashlib.sha1(
-                norm_msg.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()[:12]
+        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        if loghash:
             labels.append(f"loghash-{loghash}")
     except Exception:
         pass
@@ -721,9 +729,10 @@ def _create_real_ticket(
             )
 
             # Update fingerprint caches (in-run and persisted)
-            processed = _load_processed_fingerprints()
+            team_id = state.get("team_id")
+            processed = _load_processed_fingerprints(team_id)
             processed.add(payload.fingerprint)
-            _save_processed_fingerprints(processed)
+            _save_processed_fingerprints(processed, team_id)
             state.setdefault("created_fingerprints", set()).add(payload.fingerprint)
             # Increment counter only on success
             state["_tickets_created_in_run"] = (
@@ -740,6 +749,9 @@ def _create_real_ticket(
                 create=True,
                 message="Ticket created successfully",
             )
+            from agent.metrics import incr as _m_incr
+
+            _m_incr("tickets.created", team_id=state.get("team_id"))
 
             # Invoke Patchy if enabled
             _invoke_patchy(result_state, issue_key)
@@ -777,9 +789,10 @@ def _simulate_ticket_creation(
     # Optionally persist fingerprint even in simulation
     persist_sim = config.persist_sim_fp
     if persist_sim:
-        processed = _load_processed_fingerprints()
+        team_id = state.get("team_id")
+        processed = _load_processed_fingerprints(team_id)
         processed.add(payload.fingerprint)
-        _save_processed_fingerprints(processed)
+        _save_processed_fingerprints(processed, team_id)
 
     log_info(
         "Ticket creation simulated",
@@ -797,6 +810,9 @@ def _simulate_ticket_creation(
         create=False,
         message="Ticket creation simulated (dry run)",
     )
+    from agent.metrics import incr as _m_incr
+
+    _m_incr("tickets.simulated", team_id=state.get("team_id"))
     return {
         **state,
         "ticket_created": True,

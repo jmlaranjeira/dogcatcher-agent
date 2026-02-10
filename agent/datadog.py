@@ -223,11 +223,7 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                 "filter": {
                     "from": start.isoformat() + "Z",
                     "to": now.isoformat() + "Z",
-                    "query": (
-                        f"service:{service} env:{env} {extra_clause}".strip()
-                        if not extra_clause
-                        else f"service:{service} env:{env} {extra_clause}".strip()
-                    ),
+                    "query": f"service:{service} env:{env}".strip(),
                 },
                 "page": {"limit": limit},
             }
@@ -269,6 +265,13 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
         total_logs=len(results),
         duration_ms=round(duration * 1000, 2),
     )
+
+    # Emit observability metrics
+    from agent.metrics import incr as _m_incr, timing as _m_timing
+
+    _m_incr("logs.fetched", value=len(results))
+    _m_timing("api.datadog_duration", value_ms=round(duration * 1000, 2))
+
     return results
 
 

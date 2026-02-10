@@ -29,6 +29,10 @@ class GraphState(TypedDict, total=False):
     ticket_created: bool
     jira_payload: Dict[str, Any]
 
+    # Multi-tenancy (absent in single-tenant mode)
+    team_id: str
+    team_service: str
+
 
 # Alias kept for compatibility if any module imported it previously
 state_schema = GraphState

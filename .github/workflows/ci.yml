@@ -33,7 +33,10 @@ jobs:
           # Exit-zero treats all errors as warnings
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
 
-      - name: Type check with mypy
+      - name: Type check with mypy (strict on utils)
+        run: mypy agent/jira/utils.py agent/utils/logger.py --ignore-missing-imports --follow-imports=silent
+
+      - name: Type check with mypy (advisory on full codebase)
         continue-on-error: true
         run: mypy agent/ --ignore-missing-imports
 
