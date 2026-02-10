@@ -12,7 +12,6 @@ from agent.team_loader import (
     list_team_ids,
 )
 
-
 SAMPLE_YAML = """\
 jira_team_field_id: customfield_10100
 teams:

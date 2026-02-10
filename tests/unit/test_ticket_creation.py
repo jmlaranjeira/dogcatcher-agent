@@ -74,8 +74,6 @@ class TestTicketValidation:
         assert result.is_valid is False
 
 
-
-
 class TestJiraPayloadBuilding:
     """Test Jira payload construction."""
 
@@ -101,8 +99,6 @@ class TestJiraPayloadBuilding:
         assert isinstance(result, TicketPayload)
         labels = result.payload["fields"].get("labels", [])
         assert any("aggregate-email-not-found" in label for label in labels)
-
-
 
 
 class TestCreateTicketIntegration:

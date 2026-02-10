@@ -24,6 +24,7 @@ def _cache_path(team_id: str | None = None) -> pathlib.Path:
 def _comment_cache_path(team_id: str | None = None) -> pathlib.Path:
     return _get_cache_dir(team_id) / "jira_comments.json"
 
+
 _RE_WS = re.compile(r"\s+")
 _RE_PUNCT = re.compile(r"[^a-z0-9]+")
 
@@ -196,7 +197,9 @@ def _save_comment_cache(data: dict, team_id: str | None = None) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def should_comment(issue_key: str, cooldown_minutes: int = 120, team_id: str | None = None) -> bool:
+def should_comment(
+    issue_key: str, cooldown_minutes: int = 120, team_id: str | None = None
+) -> bool:
     """Return True if we should post a duplicate comment now (based on per-issue cool-down)."""
     if cooldown_minutes <= 0:
         return True

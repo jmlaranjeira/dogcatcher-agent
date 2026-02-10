@@ -53,9 +53,7 @@ def validate_file(path: Path) -> Tuple[bool, List[str]]:
     seen_projects: dict[str, str] = {}
     for tid, team in cfg.teams.items():
         if tid != team.team_id:
-            errors.append(
-                f"Key mismatch: dict key '{tid}' != team_id '{team.team_id}'"
-            )
+            errors.append(f"Key mismatch: dict key '{tid}' != team_id '{team.team_id}'")
         if team.jira_project_key in seen_projects:
             errors.append(
                 f"Duplicate jira_project_key '{team.jira_project_key}' "
@@ -75,9 +73,7 @@ def generate_schema() -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Validate teams.yaml configuration"
-    )
+    parser = argparse.ArgumentParser(description="Validate teams.yaml configuration")
     parser.add_argument(
         "file",
         nargs="?",

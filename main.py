@@ -154,6 +154,7 @@ if recommendations:
     for rec in recommendations:
         log_info(f"  💡 {rec}")
 
+
 def _run_for_service(graph, team_id=None, team_service=None):
     """Run the pipeline for one (service, team) combination."""
     config = get_config()

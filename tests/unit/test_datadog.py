@@ -62,6 +62,7 @@ class TestCoerceDetail:
 
     def test_coerce_dict_json_error(self):
         """Test dict that cannot be JSON-encoded falls back to str()."""
+
         # Create a mock object that raises an exception during JSON encoding
         class UnserializableDict(dict):
             def __iter__(self):
@@ -97,13 +98,20 @@ class TestBuildDdQuery:
             extra_csv="",
             extra_mode="AND",
         )
-        assert query == "service:myservice env:prod (status:error OR status:critical OR status:warning)"
+        assert (
+            query
+            == "service:myservice env:prod (status:error OR status:critical OR status:warning)"
+        )
         assert extra == ""
 
     def test_empty_statuses_defaults_to_error(self):
         """Test that empty statuses defaults to 'status:error'."""
         query, extra = _build_dd_query(
-            service="myservice", env="prod", statuses_csv="", extra_csv="", extra_mode="AND"
+            service="myservice",
+            env="prod",
+            statuses_csv="",
+            extra_csv="",
+            extra_mode="AND",
         )
         assert query == "service:myservice env:prod status:error"
         assert extra == ""
@@ -129,7 +137,10 @@ class TestBuildDdQuery:
             extra_csv="term1,term2,term3",
             extra_mode="OR",
         )
-        assert query == "service:myservice env:prod (status:error) (term1 OR term2 OR term3)"
+        assert (
+            query
+            == "service:myservice env:prod (status:error) (term1 OR term2 OR term3)"
+        )
         assert extra == " (term1 OR term2 OR term3)"
 
     def test_extra_clause_single_term(self):
@@ -141,7 +152,9 @@ class TestBuildDdQuery:
             extra_csv="NullPointerException",
             extra_mode="AND",
         )
-        assert query == "service:myservice env:prod (status:error) (NullPointerException)"
+        assert (
+            query == "service:myservice env:prod (status:error) (NullPointerException)"
+        )
         assert extra == " (NullPointerException)"
 
     def test_whitespace_handling(self):
@@ -244,8 +257,9 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.0)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.get_performance_metrics", return_value=mock_metrics
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
         ):
             result = get_logs()
             assert result == []
@@ -275,7 +289,10 @@ class TestGetLogs:
                         "message": "NullPointerException in UserService",
                         "timestamp": "2025-01-01T12:00:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.UserService", "thread_name": "worker-1"},
+                            "logger": {
+                                "name": "com.example.UserService",
+                                "thread_name": "worker-1",
+                            },
                             "properties": {"Log": "Detailed error log information"},
                         },
                     }
@@ -292,9 +309,11 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", return_value=mock_http_response
-        ), patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch("agent.datadog.requests.post", return_value=mock_http_response),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             assert len(result) == 1
@@ -329,7 +348,10 @@ class TestGetLogs:
                         "message": "Error 1",
                         "timestamp": "2025-01-01T12:00:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.Service", "thread_name": "thread-1"},
+                            "logger": {
+                                "name": "com.example.Service",
+                                "thread_name": "thread-1",
+                            },
                             "properties": {"Log": "Detail 1"},
                         },
                     }
@@ -346,7 +368,10 @@ class TestGetLogs:
                         "message": "Error 2",
                         "timestamp": "2025-01-01T12:01:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.Service", "thread_name": "thread-2"},
+                            "logger": {
+                                "name": "com.example.Service",
+                                "thread_name": "thread-2",
+                            },
                             "properties": {"Log": "Detail 2"},
                         },
                     }
@@ -369,9 +394,11 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", side_effect=mock_post
-        ), patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch("agent.datadog.requests.post", side_effect=mock_post),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             assert len(result) == 2
@@ -403,7 +430,10 @@ class TestGetLogs:
                         "message": "Error",
                         "timestamp": "2025-01-01T12:00:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.Service", "thread_name": "thread-1"},
+                            "logger": {
+                                "name": "com.example.Service",
+                                "thread_name": "thread-1",
+                            },
                             "properties": {"Log": "Detail"},
                         },
                     }
@@ -420,9 +450,13 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", return_value=mock_http_response
-        ) as mock_post, patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch(
+                "agent.datadog.requests.post", return_value=mock_http_response
+            ) as mock_post,
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             # Should only fetch 2 pages
@@ -456,7 +490,10 @@ class TestGetLogs:
                         "message": "Error",
                         "timestamp": "2025-01-01T12:00:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.Service", "thread_name": "thread-1"},
+                            "logger": {
+                                "name": "com.example.Service",
+                                "thread_name": "thread-1",
+                            },
                             "properties": {"Log": long_detail},
                         },
                     }
@@ -473,13 +510,17 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", return_value=mock_http_response
-        ), patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch("agent.datadog.requests.post", return_value=mock_http_response),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             assert len(result) == 1
-            assert len(result[0]["detail"]) == MAX_LOG_DETAIL_LENGTH + len("... [truncated]")
+            assert len(result[0]["detail"]) == MAX_LOG_DETAIL_LENGTH + len(
+                "... [truncated]"
+            )
             assert result[0]["detail"].endswith("... [truncated]")
 
     def test_http_error_returns_empty_list(self):
@@ -505,9 +546,14 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", side_effect=requests.RequestException("Connection error")
-        ), patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch(
+                "agent.datadog.requests.post",
+                side_effect=requests.RequestException("Connection error"),
+            ),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             assert result == []
@@ -540,7 +586,10 @@ class TestGetLogs:
                         "message": "Some other error",
                         "timestamp": "2025-01-01T12:00:00Z",
                         "attributes": {
-                            "logger": {"name": "com.example.Service", "thread_name": "thread-1"},
+                            "logger": {
+                                "name": "com.example.Service",
+                                "thread_name": "thread-1",
+                            },
                             "properties": {"Log": "Different error"},
                         },
                     }
@@ -563,10 +612,12 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", side_effect=mock_post
-        ) as mock_post_call, patch(
-            "agent.datadog.get_performance_metrics", return_value=mock_metrics
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch(
+                "agent.datadog.requests.post", side_effect=mock_post
+            ) as mock_post_call,
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
         ):
             result = get_logs()
 
@@ -621,9 +672,11 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", return_value=mock_http_response
-        ), patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch("agent.datadog.requests.post", return_value=mock_http_response),
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             result = get_logs()
 
             assert len(result) == 1
@@ -660,11 +713,17 @@ class TestGetLogs:
         mock_metrics.start_timer = Mock()
         mock_metrics.end_timer = Mock(return_value=0.123)
 
-        with patch("agent.datadog.get_config", return_value=mock_config), patch(
-            "agent.datadog.requests.post", return_value=mock_http_response
-        ) as mock_post, patch("agent.datadog.get_performance_metrics", return_value=mock_metrics):
+        with (
+            patch("agent.datadog.get_config", return_value=mock_config),
+            patch(
+                "agent.datadog.requests.post", return_value=mock_http_response
+            ) as mock_post,
+            patch("agent.datadog.get_performance_metrics", return_value=mock_metrics),
+        ):
             # Call with override parameters
-            get_logs(service="override-service", env="override-env", hours_back=48, limit=100)
+            get_logs(
+                service="override-service", env="override-env", hours_back=48, limit=100
+            )
 
             # Verify the request used the override values
             call_payload = mock_post.call_args[1]["json"]

@@ -288,10 +288,19 @@ class TestAgentConfig:
     def test_agent_config_defaults(self, monkeypatch):
         """Test Agent configuration defaults."""
         # Clear env vars that override defaults (e.g. from .env)
-        for key in ("SEVERITY_RULES_JSON", "AUTO_CREATE_TICKET", "COMMENT_ON_DUPLICATE",
-                     "MAX_TICKETS_PER_RUN", "PERSIST_SIM_FP", "COMMENT_COOLDOWN_MINUTES",
-                     "AGGREGATE_EMAIL_NOT_FOUND", "AGGREGATE_KAFKA_CONSUMER",
-                     "OCC_ESCALATE_ENABLED", "OCC_ESCALATE_THRESHOLD", "OCC_ESCALATE_TO"):
+        for key in (
+            "SEVERITY_RULES_JSON",
+            "AUTO_CREATE_TICKET",
+            "COMMENT_ON_DUPLICATE",
+            "MAX_TICKETS_PER_RUN",
+            "PERSIST_SIM_FP",
+            "COMMENT_COOLDOWN_MINUTES",
+            "AGGREGATE_EMAIL_NOT_FOUND",
+            "AGGREGATE_KAFKA_CONSUMER",
+            "OCC_ESCALATE_ENABLED",
+            "OCC_ESCALATE_THRESHOLD",
+            "OCC_ESCALATE_TO",
+        ):
             monkeypatch.delenv(key, raising=False)
 
         config = AgentConfig()

@@ -314,12 +314,16 @@ class TestSanitizeForJira:
         assert "john.doe@example.com" not in result
 
     def test_sanitize_urls(self):
-        result = sanitize_for_jira("Failed to connect to https://api.internal.io/v1/users")
+        result = sanitize_for_jira(
+            "Failed to connect to https://api.internal.io/v1/users"
+        )
         assert "<url>" in result
         assert "https://api.internal.io" not in result
 
     def test_sanitize_uuids(self):
-        result = sanitize_for_jira("Request 123e4567-e89b-12d3-a456-426614174000 failed")
+        result = sanitize_for_jira(
+            "Request 123e4567-e89b-12d3-a456-426614174000 failed"
+        )
         assert "<uuid>" in result
         assert "123e4567" not in result
 

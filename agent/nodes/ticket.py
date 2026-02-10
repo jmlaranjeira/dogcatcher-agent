@@ -458,7 +458,9 @@ def _load_processed_fingerprints(team_id: str | None = None) -> set[str]:
     return _load_fps(team_id)
 
 
-def _save_processed_fingerprints(fingerprints: set[str], team_id: str | None = None) -> None:
+def _save_processed_fingerprints(
+    fingerprints: set[str], team_id: str | None = None
+) -> None:
     """Save the set of processed fingerprints to cache."""
     from agent.jira.utils import save_processed_fingerprints as _save_fps
 

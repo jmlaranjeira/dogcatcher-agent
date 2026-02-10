@@ -207,7 +207,9 @@ class TestSearch:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.post") as mock_post:
-                    mock_post.side_effect = requests.RequestException("Connection failed")
+                    mock_post.side_effect = requests.RequestException(
+                        "Connection failed"
+                    )
 
                     result = search("project = TEST")
 
@@ -352,7 +354,9 @@ class TestCreateIssue:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.post") as mock_post:
-                    mock_post.side_effect = requests.RequestException("Connection timeout")
+                    mock_post.side_effect = requests.RequestException(
+                        "Connection timeout"
+                    )
 
                     result = create_issue({})
 
@@ -386,7 +390,10 @@ class TestAddComment:
         # Verify POST was called correctly with ADF body
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert "https://test.atlassian.net/rest/api/3/issue/TEST-123/comment" in call_args[0]
+        assert (
+            "https://test.atlassian.net/rest/api/3/issue/TEST-123/comment"
+            in call_args[0]
+        )
         json_body = call_args[1]["json"]
         assert "body" in json_body
         assert json_body["body"]["type"] == "doc"
@@ -425,7 +432,9 @@ class TestAddComment:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.post") as mock_post:
-                    mock_post.side_effect = requests.RequestException("Connection failed")
+                    mock_post.side_effect = requests.RequestException(
+                        "Connection failed"
+                    )
 
                     result = add_comment("TEST-123", "Comment")
 
@@ -548,7 +557,10 @@ class TestGetTransitions:
         # Verify GET was called correctly
         mock_get.assert_called_once()
         call_args = mock_get.call_args
-        assert "https://test.atlassian.net/rest/api/3/issue/TEST-123/transitions" in call_args[0]
+        assert (
+            "https://test.atlassian.net/rest/api/3/issue/TEST-123/transitions"
+            in call_args[0]
+        )
 
     def test_get_transitions_http_error(self):
         """Test get_transitions returns None on HTTP error."""
@@ -562,7 +574,9 @@ class TestGetTransitions:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.get") as mock_get:
-                    mock_get.side_effect = requests.RequestException("Connection failed")
+                    mock_get.side_effect = requests.RequestException(
+                        "Connection failed"
+                    )
 
                     result = get_transitions("TEST-123")
 
@@ -603,7 +617,10 @@ class TestTransitionIssue:
         # Verify POST was called correctly
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert "https://test.atlassian.net/rest/api/3/issue/TEST-123/transitions" in call_args[0]
+        assert (
+            "https://test.atlassian.net/rest/api/3/issue/TEST-123/transitions"
+            in call_args[0]
+        )
         json_body = call_args[1]["json"]
         assert json_body["transition"]["id"] == "21"
         assert "fields" not in json_body
@@ -668,7 +685,9 @@ class TestTransitionIssue:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.post") as mock_post:
-                    mock_post.side_effect = requests.RequestException("Connection failed")
+                    mock_post.side_effect = requests.RequestException(
+                        "Connection failed"
+                    )
 
                     result = transition_issue("TEST-123", "21")
 
@@ -748,7 +767,9 @@ class TestLinkIssues:
         with patch("agent.jira.client.get_config", return_value=mock_config):
             with patch("agent.jira.client.is_configured", return_value=True):
                 with patch("agent.jira.client.requests.post") as mock_post:
-                    mock_post.side_effect = requests.RequestException("Connection failed")
+                    mock_post.side_effect = requests.RequestException(
+                        "Connection failed"
+                    )
 
                     result = link_issues("TEST-123", "TEST-124")
 

@@ -77,7 +77,12 @@ def _try_handle_duplicate(
     if not key:
         return state, False
 
-    log_warning("Duplicate detected", jira_key=key, existing_summary=existing_summary, score=f"{score:.2f}")
+    log_warning(
+        "Duplicate detected",
+        jira_key=key,
+        existing_summary=existing_summary,
+        score=f"{score:.2f}",
+    )
 
     if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
         log_data = state.get("log_data", {})
@@ -115,7 +120,11 @@ def _create_or_simulate(
 ) -> Dict[str, Any]:
     auto = os.getenv("AUTO_CREATE_TICKET", "").lower() in ("1", "true", "yes")
     if auto:
-        log_info("Creating ticket", project=get_jira_project_key(), summary=payload['fields']['summary'])
+        log_info(
+            "Creating ticket",
+            project=get_jira_project_key(),
+            summary=payload["fields"]["summary"],
+        )
         resp = jira_create_issue(payload)
         if resp:
             issue_key = resp.get("key", "UNKNOWN")
@@ -130,7 +139,7 @@ def _create_or_simulate(
         return state
 
     # Dry-run branch
-    log_info("Simulated ticket creation", summary=payload['fields']['summary'])
+    log_info("Simulated ticket creation", summary=payload["fields"]["summary"])
     state["ticket_created"] = True
     persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
     if persist_sim and state.get("log_fingerprint"):
@@ -144,7 +153,7 @@ def comment_on_issue(issue_key: str, comment_text: str) -> bool:
 
 
 def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
-    log_info("Entered create_ticket", auto_create=os.getenv('AUTO_CREATE_TICKET'))
+    log_info("Entered create_ticket", auto_create=os.getenv("AUTO_CREATE_TICKET"))
 
     assert (
         "ticket_title" in state and "ticket_description" in state
@@ -152,7 +161,11 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     description = state.get("ticket_description")
     title = state.get("ticket_title")
 
-    log_info("Ticket details", title=title, description_preview=description[:160] if description else "")
+    log_info(
+        "Ticket details",
+        title=title,
+        description_preview=description[:160] if description else "",
+    )
 
     # Cap is enforced in agent.nodes.ticket._execute_ticket_creation
 
@@ -166,7 +179,10 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     _tid = state.get("team_id")
     processed = load_processed_fingerprints(_tid)
     if fingerprint in processed:
-        log_info("Skipping ticket creation: fingerprint already processed", fingerprint=fingerprint)
+        log_info(
+            "Skipping ticket creation: fingerprint already processed",
+            fingerprint=fingerprint,
+        )
         return {
             **state,
             "message": "⚠️ Log already processed previously (fingerprint match).",
@@ -197,7 +213,9 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
                             "type": "paragraph",
                             "content": [
                                 {
-                                    "text": sanitize_for_jira(state.get("ticket_description") or ""),
+                                    "text": sanitize_for_jira(
+                                        state.get("ticket_description") or ""
+                                    ),
                                     "type": "text",
                                 }
                             ],
