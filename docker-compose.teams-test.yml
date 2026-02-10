@@ -1,0 +1,44 @@
+# Docker Compose for testing multi-tenant mode locally.
+#
+# Usage:
+#   docker compose -f docker-compose.teams-test.yml up --build
+#
+# What it does:
+#   1. Builds from Dockerfile.scheduled (has pydantic-settings)
+#   2. Mounts config/teams.yaml into the container
+#   3. Runs --dry-run with --team team-vega (single team, no ticket creation)
+#   4. Cache is isolated at .agent_cache/teams/team-vega/
+
+services:
+  agent-teams-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduled
+    image: dogcatcher-agent:teams-test
+    container_name: dogcatcher-teams-test
+    restart: "no"
+
+    env_file:
+      - .env
+
+    environment:
+      - AUTO_CREATE_TICKET=false
+
+    volumes:
+      - ./.agent_cache:/app/.agent_cache
+      - ./config/teams.yaml:/app/config/teams.yaml:ro
+
+    command:
+      [
+        "python", "main.py",
+        "--dry-run",
+        "--team", "team-vega",
+        "--hours", "24",
+        "--limit", "10"
+      ]
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G

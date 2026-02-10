@@ -1,0 +1,20 @@
+# Multi-tenant test configuration.
+# Team Vega with dehnlicense + dehnproject services → DDSIT board.
+# Use --dry-run to validate the flow without creating tickets.
+#
+# Test commands:
+#   python main.py --dry-run --team team-vega
+#   docker compose -f docker-compose.teams-test.yml up --build
+
+jira_team_field_id: "customfield_10767"
+
+teams:
+  team-vega:
+    team_name: "Team Vega"
+    jira_project_key: "DDSIT"
+    jira_team_field_value: "Team Vega"
+    datadog_services:
+      - dehnlicense
+      - dehnproject
+    datadog_env: prod
+    max_tickets_per_run: 3
