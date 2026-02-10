@@ -124,6 +124,7 @@ python main.py --profile production --async --workers 10
 | `--hours N` | Time window in hours |
 | `--limit N` | Max logs per page |
 | `--max-tickets N` | Per-run ticket cap (0 = no limit) |
+| `--team` | Process a single team in multi-tenant mode |
 
 ### Sleuth (Error Investigator)
 
@@ -235,6 +236,46 @@ python main.py --profile production --async
 
 **Precedence:** `.env` → Profile YAML → Environment Variables → CLI Arguments
 
+### Multi-Tenant Mode
+
+When `config/teams.yaml` exists, the agent runs in **multi-tenant mode**: it loops through every team sequentially, each with its own Jira project, Datadog service filters, cache directory, and audit log.
+
+**Setup:**
+```bash
+cp config/teams.yaml.example config/teams.yaml
+# Edit config/teams.yaml with your teams
+
+# Validate configuration
+python -m tools.validate_teams
+```
+
+**Usage:**
+```bash
+# Process all teams
+python main.py --profile production
+
+# Process a single team
+python main.py --profile production --team team-vega
+
+# Dry-run a single team
+python main.py --dry-run --team team-vega
+```
+
+**Per-team isolation:**
+- Cache: `.agent_cache/teams/{team_id}/`
+- Audit logs: `.agent_cache/teams/{team_id}/audit_logs.jsonl`
+- Each team has its own Jira project key and Datadog service filters
+
+**Validation tool:**
+```bash
+python -m tools.validate_teams                              # validate default path
+python -m tools.validate_teams config/teams.yaml.example    # validate specific file
+python -m tools.validate_teams --schema                     # emit JSON Schema
+python -m tools.validate_teams --schema -o schema/teams.schema.json
+```
+
+> **Backward compatible:** Without `teams.yaml`, the agent runs in single-tenant mode with no behavior changes.
+
 ---
 
 ## Duplicate Detection
@@ -298,6 +339,8 @@ dogcatcher-agent/
 │   ├── graph.py               # LangGraph pipeline
 │   ├── async_processor.py     # Parallel processing
 │   ├── healthcheck.py         # Service connectivity checks
+│   ├── team_config.py         # Multi-tenant Pydantic models
+│   ├── team_loader.py         # Teams YAML loader with caching
 │   ├── datadog.py             # Datadog client (sync)
 │   ├── datadog_async.py       # Datadog client (async)
 │   ├── nodes/
@@ -319,9 +362,11 @@ dogcatcher-agent/
 ├── patchy/
 │   └── patchy_graph.py        # Self-healing PR bot
 ├── config/
-│   └── profiles/              # YAML configuration profiles
+│   ├── profiles/              # YAML configuration profiles
+│   └── teams.yaml.example     # Multi-tenant config example
 ├── tools/
-│   └── report.py              # Audit report generator
+│   ├── report.py              # Audit report generator
+│   └── validate_teams.py      # Teams config validator
 └── tests/
     ├── unit/
     └── integration/
