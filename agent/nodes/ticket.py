@@ -32,6 +32,7 @@ from agent.utils.logger import (
     log_ticket_operation,
 )
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.performance import get_performance_metrics
 from agent.dedup import DuplicateDetector
 from agent.dedup.result import DuplicateCheckResult
@@ -254,10 +255,10 @@ def _build_jira_payload(
     Returns:
         TicketPayload with complete Jira payload and metadata
     """
-    config = get_config()
+    rc = get_run_config(state)
     log_info("Building Jira ticket payload")
 
-    builder = JiraPayloadBuilder(config)
+    builder = JiraPayloadBuilder(rc)
     result = builder.build(state, title, description)
 
     log_info(
@@ -281,15 +282,14 @@ def _execute_ticket_creation(
     Returns:
         Updated state with creation results
     """
-    config = get_config()
+    rc = get_run_config(state)
     log_info("Executing ticket creation")
 
     # Check per-run cap (strict enforcement)
     if _is_cap_reached(state):
-        cap_msg = (
-            f"Ticket creation limit reached for this run (max {_get_max_tickets()})"
-        )
-        log_warning("Ticket creation cap reached", max_tickets=_get_max_tickets())
+        max_t = rc.max_tickets_per_run
+        cap_msg = f"Ticket creation limit reached for this run (max {max_t})"
+        log_warning("Ticket creation cap reached", max_tickets=max_t)
         # Audit cap reached
         _append_audit(
             decision="cap-reached",
@@ -307,9 +307,7 @@ def _execute_ticket_creation(
         return {**state, "message": cap_msg, "ticket_created": True}
 
     # Create or simulate based on configuration
-    auto_create = config.auto_create_ticket
-
-    if auto_create:
+    if rc.auto_create_ticket:
         return _create_real_ticket(state, payload)
     else:
         return _simulate_ticket_creation(state, payload)
@@ -340,11 +338,11 @@ def _maybe_comment_duplicate(
     issue_key: str, score: float, state: Dict[str, Any]
 ) -> None:
     """Add a comment to an existing duplicate ticket if configured."""
-    config = get_config()
-    if not config.comment_on_duplicate:
+    rc = get_run_config(state)
+    if not rc.comment_on_duplicate:
         return
 
-    cooldown_min = config.comment_cooldown_minutes
+    cooldown_min = rc.comment_cooldown_minutes
 
     if should_comment(issue_key, cooldown_min, team_id=state.get("team_id")):
         log_data = state.get("log_data", {})
@@ -366,16 +364,11 @@ def _maybe_comment_duplicate(
 
 def _is_cap_reached(state: Dict[str, Any]) -> bool:
     """Check if the per-run ticket creation cap has been reached."""
-    max_tickets = _get_max_tickets()
+    rc = get_run_config(state)
+    max_tickets = rc.max_tickets_per_run
     if max_tickets <= 0:
         return False
     return state.get("_tickets_created_in_run", 0) >= max_tickets
-
-
-def _get_max_tickets() -> int:
-    """Get the maximum number of tickets per run."""
-    config = get_config()
-    return config.max_tickets_per_run
 
 
 def _invoke_patchy(state: Dict[str, Any], issue_key: str) -> None:
@@ -396,7 +389,8 @@ def _invoke_patchy(state: Dict[str, Any], issue_key: str) -> None:
         log_data = state.get("log_data", {})
         logger_name = log_data.get("logger", "")
         error_type = state.get("error_type", "unknown")
-        service = state.get("service") or get_config().datadog_service
+        rc = get_run_config(state)
+        service = state.get("service") or rc.datadog_service
 
         if not logger_name:
             log_info("No logger name in log data, skipping Patchy")
@@ -503,7 +497,7 @@ def _simulate_ticket_creation(
     state: Dict[str, Any], payload: TicketPayload
 ) -> Dict[str, Any]:
     """Simulate ticket creation for dry-run mode."""
-    config = get_config()
+    rc = get_run_config(state)
     log_ticket_operation("Simulating ticket creation", title=payload.title)
 
     # Update state with payload info
@@ -512,7 +506,7 @@ def _simulate_ticket_creation(
     state["jira_payload"] = payload.payload
 
     # Optionally persist fingerprint even in simulation
-    persist_sim = config.persist_sim_fp
+    persist_sim = rc.persist_sim_fp
     if persist_sim:
         team_id = state.get("team_id")
         processed = _load_processed_fingerprints(team_id)

@@ -31,6 +31,7 @@ from agent.utils.logger import (
     log_duplicate_detection,
 )
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.performance import get_performance_metrics
 
 _AUDIT_LOG_PATH = pathlib.Path(".agent_cache/audit_logs.jsonl")
@@ -206,7 +207,9 @@ async def _check_duplicates_async(
 
     # 3. Check fingerprint label in Jira (async)
     try:
-        is_fp_dup, fp_key = await check_fingerprint_duplicate_async(fingerprint, client)
+        is_fp_dup, fp_key = await check_fingerprint_duplicate_async(
+            fingerprint, client, state
+        )
         if is_fp_dup:
             log_duplicate_detection(1.0, fp_key, existing_summary="fingerprint match")
             log_data = state.get("log_data", {})
@@ -237,9 +240,9 @@ async def _check_duplicates_async(
     error_type = state.get("error_type", "")
     if error_type and error_type != "unknown":
         try:
-            config = get_config()
+            rc = get_run_config(state)
             jql = (
-                f"project = {config.jira_project_key} "
+                f"project = {rc.jira_project_key} "
                 f"AND labels = datadog-log "
                 f"AND labels = {error_type} "
                 f"AND created >= -7d "
@@ -327,10 +330,10 @@ def _build_jira_payload(
     Delegates to :class:`~agent.jira.payload.JiraPayloadBuilder`.
     Async-created tickets include the ``async-created`` label.
     """
-    config = get_config()
+    rc = get_run_config(state)
     log_info("Building Jira ticket payload (async)")
 
-    builder = JiraPayloadBuilder(config)
+    builder = JiraPayloadBuilder(rc)
     result = builder.build(state, title, description, extra_labels=["async-created"])
 
     log_info(
@@ -344,8 +347,8 @@ def _build_jira_payload(
 
 def _is_cap_reached(state: Dict[str, Any]) -> bool:
     """Check if the per-run ticket creation cap has been reached."""
-    config = get_config()
-    max_tickets = config.max_tickets_per_run
+    rc = get_run_config(state)
+    max_tickets = rc.max_tickets_per_run
     if max_tickets <= 0:
         return False
     return state.get("_tickets_created_in_run", 0) >= max_tickets
@@ -364,15 +367,17 @@ async def _execute_ticket_creation_async(
     Returns:
         Updated state with creation results
     """
-    config = get_config()
+    rc = get_run_config(state)
     log_info("Executing ticket creation (async)")
 
     # Check per-run cap
     if _is_cap_reached(state):
-        cap_msg = f"Ticket creation limit reached for this run (max {config.max_tickets_per_run})"
+        cap_msg = (
+            f"Ticket creation limit reached for this run (max {rc.max_tickets_per_run})"
+        )
         log_warning(
             "Ticket creation cap reached (async)",
-            max_tickets=config.max_tickets_per_run,
+            max_tickets=rc.max_tickets_per_run,
         )
         _append_audit(
             decision="cap-reached",
@@ -386,9 +391,7 @@ async def _execute_ticket_creation_async(
         )
         return {**state, "message": cap_msg, "ticket_created": True}
 
-    auto_create = config.auto_create_ticket
-
-    if auto_create:
+    if rc.auto_create_ticket:
         return await _create_real_ticket_async(state, payload, client)
     else:
         return _simulate_ticket_creation(state, payload)
@@ -412,7 +415,7 @@ def _invoke_patchy_sync(state: Dict[str, Any], issue_key: str) -> None:
         log_data = state.get("log_data", {})
         logger_name = log_data.get("logger", "")
         error_type = state.get("error_type", "unknown")
-        service = state.get("service") or get_config().datadog_service
+        service = state.get("service") or get_run_config(state).datadog_service
 
         if not logger_name:
             log_info("No logger name in log data, skipping Patchy")
@@ -525,14 +528,14 @@ def _simulate_ticket_creation(
     state: Dict[str, Any], payload: TicketPayload
 ) -> Dict[str, Any]:
     """Simulate ticket creation for dry-run mode."""
-    config = get_config()
+    rc = get_run_config(state)
     log_ticket_operation("Simulating ticket creation (async)", title=payload.title)
 
     state["ticket_description"] = payload.description
     state["ticket_title"] = payload.title
     state["jira_payload"] = payload.payload
 
-    persist_sim = config.persist_sim_fp
+    persist_sim = rc.persist_sim_fp
     if persist_sim:
         processed = _load_processed_fingerprints()
         processed.add(payload.fingerprint)

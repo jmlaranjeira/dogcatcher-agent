@@ -15,6 +15,7 @@ from .utils import (
     extract_text_from_description,
 )
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.utils.logger import log_debug
 from agent.performance import (
     get_similarity_cache,
@@ -63,8 +64,8 @@ def find_similar_ticket(
         return None, 0.0, None
 
     if similarity_threshold is None:
-        config = get_config()
-        similarity_threshold = config.jira_similarity_threshold
+        rc = get_run_config(state or {})
+        similarity_threshold = rc.jira_similarity_threshold
 
     # Check cache first
     cache = get_similarity_cache()
@@ -105,9 +106,9 @@ def find_similar_ticket(
     # Use optimized search parameters
     optimized_params = optimize_jira_search_params()
 
-    config = get_config()
+    rc = get_run_config(state or {})
     jql = (
-        f"project = {config.jira_project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
+        f"project = {rc.jira_project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
         + token_filter
         + ") ORDER BY created DESC"
     )
@@ -123,7 +124,7 @@ def find_similar_ticket(
     if norm_current_log:
         loghash = compute_loghash(current_log_msg)
         jql_hash = (
-            f"project = {config.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
+            f"project = {rc.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"
         )
         resp_hash = client.search(
@@ -166,7 +167,7 @@ def find_similar_ticket(
         log_sim = None
         if norm_current_log and norm_issue_log:
             log_sim = _sim(norm_current_log, norm_issue_log)
-            if log_sim >= config.jira_direct_log_threshold:
+            if log_sim >= rc.jira_direct_log_threshold:
                 from agent.utils.logger import log_info
 
                 log_info(
@@ -191,9 +192,7 @@ def find_similar_ticket(
             score += 0.05
         if (
             log_sim is not None
-            and config.jira_partial_log_threshold
-            <= log_sim
-            < config.jira_direct_log_threshold
+            and rc.jira_partial_log_threshold <= log_sim < rc.jira_direct_log_threshold
         ):
             score += 0.05
 

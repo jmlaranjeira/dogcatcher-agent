@@ -2,11 +2,18 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
+from agent.run_config import RunConfig
 from agent.nodes.ticket import _execute_ticket_creation, TicketPayload
 
 
-def make_state():
+def make_state(max_tickets_per_run=3):
     return {
+        "run_config": RunConfig(
+            jira_project_key="TEST",
+            auto_create_ticket=True,
+            max_tickets_per_run=max_tickets_per_run,
+            datadog_service="test-service",
+        ),
         "log_data": {
             "logger": "org.example.Logger",
             "thread": "worker-1",
@@ -30,9 +37,8 @@ def test_per_run_cap_strictly_enforced(max_cap, expected_calls):
     max_tickets_per_run limit is reached, regardless of how many times
     _execute_ticket_creation is called.
     """
+    # Patch the actual create_jira_ticket function in ticket.py
     cfg = SimpleNamespace(auto_create_ticket=True, max_tickets_per_run=max_cap)
-
-    # Patch config and the actual create_jira_ticket function in ticket.py
     with patch("agent.nodes.ticket.get_config", return_value=cfg):
         # Patch filesystem functions to prevent side effects
         with patch(
@@ -80,7 +86,9 @@ def test_per_run_cap_strictly_enforced(max_cap, expected_calls):
                                                         "id": f"{len(mock_jira_api.call_args_list)}",
                                                     }
 
-                                                    state = make_state()
+                                                    state = make_state(
+                                                        max_tickets_per_run=max_cap
+                                                    )
 
                                                     # Try to create well beyond the cap
                                                     # Use different log messages for each iteration to get different fingerprints

@@ -347,42 +347,37 @@ class TestAsyncErrorHandling:
             for i in range(5)
         ]
 
-        with patch("agent.async_processor.get_config", return_value=mock_config):
-            with patch(
-                "agent.nodes.analysis_async.get_config", return_value=mock_config
-            ):
-                with patch(
-                    "agent.nodes.ticket_async.get_config", return_value=mock_config
-                ):
-                    call_count = 0
+        with (
+            patch("agent.config.get_config", return_value=mock_config),
+            patch("agent.async_processor.get_config", return_value=mock_config),
+            patch("agent.nodes.analysis_async.get_config", return_value=mock_config),
+            patch("agent.nodes.ticket_async.get_config", return_value=mock_config),
+        ):
+            call_count = 0
 
-                    async def sometimes_failing(*args, **kwargs):
-                        nonlocal call_count
-                        call_count += 1
-                        if call_count == 3:
-                            raise RuntimeError("Simulated failure")
-                        mock_response = MagicMock()
-                        mock_response.content = valid_llm_response
-                        return mock_response
+            async def sometimes_failing(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 3:
+                    raise RuntimeError("Simulated failure")
+                mock_response = MagicMock()
+                mock_response.content = valid_llm_response
+                return mock_response
 
-                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
-                        mock_chain.ainvoke = sometimes_failing
+            with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                mock_chain.ainvoke = sometimes_failing
 
-                        # Mock Jira client for ticket creation
-                        with patch(
-                            "agent.nodes.ticket_async.AsyncJiraClient"
-                        ) as MockJira:
-                            mock_jira = AsyncMock()
-                            mock_jira.is_configured.return_value = True
-                            mock_jira.search.return_value = {"issues": []}
-                            MockJira.return_value.__aenter__.return_value = mock_jira
-                            MockJira.return_value.__aexit__.return_value = None
+                # Mock Jira client for ticket creation
+                with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockJira:
+                    mock_jira = AsyncMock()
+                    mock_jira.is_configured.return_value = True
+                    mock_jira.search.return_value = {"issues": []}
+                    MockJira.return_value.__aenter__.return_value = mock_jira
+                    MockJira.return_value.__aexit__.return_value = None
 
-                            with patch(
-                                "agent.jira.async_match.AsyncJiraClient", MockJira
-                            ):
-                                processor = AsyncLogProcessor(max_workers=2)
-                                result = await processor.process_logs(logs)
+                    with patch("agent.jira.async_match.AsyncJiraClient", MockJira):
+                        processor = AsyncLogProcessor(max_workers=2)
+                        result = await processor.process_logs(logs)
 
         # All 5 logs should be processed (no exceptions at processor level)
         # The analysis module catches exceptions and returns error states

@@ -3,6 +3,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock
 
+from agent.run_config import RunConfig
 from agent.graph import build_graph
 
 
@@ -117,9 +118,28 @@ def test_end_to_end_cap_and_duplicate_collapse():
                                 ),
                                 patch("agent.nodes.ticket._append_audit_log"),
                             ):
+                                rc = RunConfig(
+                                    jira_project_key="TEST",
+                                    auto_create_ticket=True,
+                                    max_tickets_per_run=5,
+                                    datadog_service="test-service",
+                                    datadog_env="test",
+                                    datadog_hours_back=24,
+                                    datadog_limit=50,
+                                    persist_sim_fp=False,
+                                    comment_on_duplicate=False,
+                                    comment_cooldown_minutes=0,
+                                    circuit_breaker_enabled=False,
+                                    fallback_analysis_enabled=False,
+                                    aggregate_email_not_found=False,
+                                    aggregate_kafka_consumer=False,
+                                    max_title_length=120,
+                                    datadog_logs_url="https://app.datadoghq.eu/logs",
+                                )
                                 graph = build_graph()
                                 state = graph.invoke(
                                     {
+                                        "run_config": rc,
                                         "logs": logs,
                                         "log_index": 0,
                                         "seen_logs": set(),

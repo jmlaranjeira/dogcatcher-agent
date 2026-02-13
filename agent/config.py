@@ -756,7 +756,20 @@ def get_config() -> Config:
 
 
 def reload_config() -> Config:
-    """Reload configuration from environment variables (thread-safe)."""
+    """Reload configuration from environment variables (thread-safe).
+
+    .. deprecated::
+        Prefer ``RunConfig.from_config()`` or ``RunConfig.from_team()``
+        to obtain per-run settings.  This function remains for backward
+        compatibility but will be removed in a future version.
+    """
+    import warnings
+
+    warnings.warn(
+        "reload_config() is deprecated; use RunConfig instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _config
     with _config_lock:
         _config = Config()
