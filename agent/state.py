@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set, TypedDict
 
+from agent.run_config import RunConfig  # noqa: F401 – needed at runtime for TypedDict
+
 
 class GraphState(TypedDict, total=False):
+    # Per-run configuration (immutable, injected at graph invocation)
+    run_config: RunConfig
+
     # Core traversal
     logs: List[dict]
     log_index: int

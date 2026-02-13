@@ -16,6 +16,7 @@ load_dotenv()
 from agent.graph import build_graph
 from agent.utils.logger import log_info, log_error, log_agent_progress
 from agent.config import get_config
+from agent.run_config import RunConfig
 from agent.performance import (
     log_performance_summary,
     log_configuration_performance,
@@ -155,11 +156,10 @@ if recommendations:
         log_info(f"  💡 {rec}")
 
 
-def _run_for_service(graph, team_id=None, team_service=None):
+def _run_for_service(graph, run_config: RunConfig):
     """Run the pipeline for one (service, team) combination."""
-    config = get_config()
-    _auto = config.auto_create_ticket
-    _max = config.max_tickets_per_run
+    _auto = run_config.auto_create_ticket
+    _max = run_config.max_tickets_per_run
 
     if _auto:
         if _max > 0:
@@ -173,22 +173,28 @@ def _run_for_service(graph, team_id=None, team_service=None):
     else:
         log_info("Dry-run mode: Jira ticket creation is disabled.")
 
-    logs = get_logs()
+    logs = get_logs(
+        service=run_config.datadog_service,
+        env=run_config.datadog_env,
+        hours_back=run_config.datadog_hours_back,
+        limit=run_config.datadog_limit,
+    )
     log_agent_progress("Logs loaded", log_count=len(logs))
     if not logs:
         log_info("No logs to process for this service; skipping.")
         return
 
     initial_state = {
+        "run_config": run_config,
         "logs": logs,
         "log_index": 0,
         "seen_logs": set(),
         "created_fingerprints": set(),
     }
-    if team_id:
-        initial_state["team_id"] = team_id
-    if team_service:
-        initial_state["team_service"] = team_service
+    if run_config.team_id:
+        initial_state["team_id"] = run_config.team_id
+    if run_config.team_service:
+        initial_state["team_service"] = run_config.team_service
 
     import time as _time
 
@@ -196,6 +202,7 @@ def _run_for_service(graph, team_id=None, team_service=None):
 
     _run_start = _time.time()
 
+    config = get_config()
     if config.async_enabled:
         log_info("Running in ASYNC mode", max_workers=config.async_max_workers)
         import asyncio
@@ -221,8 +228,8 @@ def _run_for_service(graph, team_id=None, team_service=None):
         graph.invoke(initial_state, {"recursion_limit": 2000})
 
     _run_duration = _time.time() - _run_start
-    _m_gauge("run.duration", _run_duration, team_id=team_id)
-    _m_incr("logs.processed", value=len(logs), team_id=team_id)
+    _m_gauge("run.duration", _run_duration, team_id=run_config.team_id)
+    _m_incr("logs.processed", value=len(logs), team_id=run_config.team_id)
 
 
 # --- Multi-tenant support ---
@@ -244,8 +251,6 @@ if teams_config:
     log_agent_progress("Starting agent (multi-tenant)", team_count=len(team_ids))
     graph = build_graph()
 
-    from agent.utils.env_context import team_env_override
-
     for tid in team_ids:
         team = teams_config.get_team(tid)
         if not team:
@@ -257,8 +262,8 @@ if teams_config:
                 service=svc,
                 jira_project=team.jira_project_key,
             )
-            with team_env_override(team, svc):
-                _run_for_service(graph, team_id=tid, team_service=svc)
+            rc = RunConfig.from_team(team, svc, config)
+            _run_for_service(graph, rc)
 
     log_agent_progress("Agent execution finished (multi-tenant)")
 else:
@@ -269,7 +274,8 @@ else:
 
     log_agent_progress("Starting agent", jira_project=config.jira_project_key)
     graph = build_graph()
-    _run_for_service(graph)
+    rc = RunConfig.from_config(config)
+    _run_for_service(graph, rc)
     log_agent_progress("Agent execution finished")
 
 # Log performance summary

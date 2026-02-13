@@ -8,6 +8,7 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from agent.run_config import RunConfig
 from agent.nodes.analysis_async import (
     analyze_log_async,
     analyze_logs_batch_async,
@@ -43,7 +44,14 @@ def sample_log_data():
 @pytest.fixture
 def sample_state(sample_log_data):
     """Sample state for testing."""
-    return {"log_data": sample_log_data, "log_message": sample_log_data["message"]}
+    return {
+        "run_config": RunConfig(
+            circuit_breaker_enabled=True,
+            fallback_analysis_enabled=True,
+        ),
+        "log_data": sample_log_data,
+        "log_message": sample_log_data["message"],
+    }
 
 
 @pytest.fixture
@@ -236,7 +244,10 @@ class TestAnalyzeLogAsyncCircuitBreaker:
         """Test error state when fallback is disabled."""
         from agent.utils.circuit_breaker import CircuitBreakerOpenError
 
-        mock_config.fallback_analysis_enabled = False
+        sample_state["run_config"] = RunConfig(
+            circuit_breaker_enabled=True,
+            fallback_analysis_enabled=False,
+        )
 
         with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
             with patch(
@@ -256,7 +267,10 @@ class TestAnalyzeLogAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_unexpected_exception_with_fallback(self, mock_config, sample_state):
         """Test unexpected exception triggers fallback."""
-        mock_config.fallback_analysis_enabled = True
+        sample_state["run_config"] = RunConfig(
+            circuit_breaker_enabled=True,
+            fallback_analysis_enabled=True,
+        )
 
         with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
             with patch(
@@ -283,7 +297,10 @@ class TestAnalyzeLogAsyncErrorHandling:
         self, mock_config, sample_state
     ):
         """Test unexpected exception without fallback returns error state."""
-        mock_config.fallback_analysis_enabled = False
+        sample_state["run_config"] = RunConfig(
+            circuit_breaker_enabled=True,
+            fallback_analysis_enabled=False,
+        )
 
         with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
             with patch(

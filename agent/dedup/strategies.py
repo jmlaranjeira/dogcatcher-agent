@@ -23,6 +23,7 @@ from agent.jira.utils import (
     compute_loghash,
 )
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.utils.logger import log_info, log_debug, log_error
 
 # ---------------------------------------------------------------------------
@@ -153,9 +154,9 @@ class LoghashLabelSearch(DedupStrategy):
         if not loghash:
             return DuplicateCheckResult(is_duplicate=False)
 
-        config = get_config()
+        rc = get_run_config(state)
         jql = (
-            f"project = {config.jira_project_key} "
+            f"project = {rc.jira_project_key} "
             f"AND statusCategory != Done "
             f"AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"
@@ -211,10 +212,10 @@ class ErrorTypeLabelSearch(DedupStrategy):
         if not error_type or error_type == "unknown":
             return DuplicateCheckResult(is_duplicate=False)
 
-        config = get_config()
+        rc = get_run_config(state)
 
         jql = (
-            f"project = {config.jira_project_key} "
+            f"project = {rc.jira_project_key} "
             f"AND labels = datadog-log "
             f"AND labels = {error_type} "
             f"AND created >= -7d "

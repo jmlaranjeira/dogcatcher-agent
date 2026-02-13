@@ -2,6 +2,8 @@
 
 from typing import Dict, Any
 
+from agent.run_config import get_run_config
+
 
 def fetch_logs(state: Dict[str, Any]) -> Dict[str, Any]:
     if state.get("skipped_duplicate"):
@@ -16,12 +18,8 @@ def fetch_logs(state: Dict[str, Any]) -> Dict[str, Any]:
             k = f"{lg.get('logger','')}|{lg.get('message','')}"
             counts[k] = counts.get(k, 0) + 1
         state["fp_counts"] = counts
-        try:
-            import os as _os
-
-            state["window_hours"] = int(_os.getenv("DATADOG_HOURS_BACK", "48"))
-        except Exception:
-            state["window_hours"] = 48
+        rc = get_run_config(state)
+        state["window_hours"] = rc.datadog_hours_back
 
     index = state.get("log_index", 0)
     if index < len(logs):

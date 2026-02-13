@@ -21,6 +21,7 @@ from agent.utils.circuit_breaker import (
 )
 from agent.utils.fallback_analysis import get_fallback_analyzer
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.nodes.prompt_context import build_contextual_log
 from agent.team_loader import get_team
 
@@ -154,23 +155,23 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         Updated state with error_type, create_ticket, ticket_title,
         ticket_description, and severity fields
     """
-    config = get_config()
+    rc = get_run_config(state)
     log_data = state.get("log_data", {})
 
     # Load team severity rules for multi-tenant prompt enrichment
     team_severity_rules = None
-    team_id = state.get("team_id")
+    team_id = rc.team_id or state.get("team_id")
     if team_id:
         team = get_team(team_id)
         if team and team.severity_rules:
             team_severity_rules = team.severity_rules
 
     contextual_log = build_contextual_log(
-        log_data, state, config, team_severity_rules=team_severity_rules
+        log_data, state, rc, team_severity_rules=team_severity_rules
     )
 
     # Initialize circuit breaker if needed
-    if config.circuit_breaker_enabled and not _circuit_breaker_initialized:
+    if rc.circuit_breaker_enabled and not _circuit_breaker_initialized:
         _initialize_circuit_breaker_async()
 
     content = None
@@ -210,7 +211,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
             reason=str(e),
         )
 
-        if config.fallback_analysis_enabled:
+        if rc.fallback_analysis_enabled:
             return await _use_fallback_analysis_async(state, log_data)
         else:
             return {
@@ -230,7 +231,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
             content_preview=content[:200] if content else "N/A",
         )
 
-        if config.fallback_analysis_enabled:
+        if rc.fallback_analysis_enabled:
             log_info("Falling back to rule-based analysis due to async LLM error")
             return await _use_fallback_analysis_async(state, log_data)
         else:
@@ -250,7 +251,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
             error_type=type(e).__name__,
         )
 
-        if config.fallback_analysis_enabled:
+        if rc.fallback_analysis_enabled:
             log_info(
                 "Falling back to rule-based analysis due to unexpected async error"
             )

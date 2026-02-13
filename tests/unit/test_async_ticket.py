@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import hashlib
 
+from agent.run_config import RunConfig
 from agent.nodes.ticket_async import (
     create_ticket_async,
     create_tickets_batch_async,
@@ -52,9 +53,28 @@ def sample_log_data():
 
 
 @pytest.fixture
-def sample_state(sample_log_data):
+def sample_run_config():
+    """RunConfig for tests (mirrors mock_config values)."""
+    return RunConfig(
+        jira_project_key="TEST",
+        jira_similarity_threshold=0.85,
+        auto_create_ticket=True,
+        max_tickets_per_run=10,
+        aggregate_email_not_found=False,
+        aggregate_kafka_consumer=False,
+        max_title_length=100,
+        persist_sim_fp=False,
+        comment_on_duplicate=False,
+        datadog_service="test-service",
+        datadog_env="test",
+    )
+
+
+@pytest.fixture
+def sample_state(sample_log_data, sample_run_config):
     """Sample state with analysis results."""
     return {
+        "run_config": sample_run_config,
         "log_data": sample_log_data,
         "error_type": "null-pointer-exception",
         "create_ticket": True,
@@ -318,37 +338,29 @@ class TestBuildJiraPayload:
 class TestIsCapReached:
     """Test ticket cap checking."""
 
-    def test_cap_not_reached(self, mock_config, sample_state):
+    def test_cap_not_reached(self, sample_state):
         """Test cap not reached."""
         sample_state["_tickets_created_in_run"] = 5
-        mock_config.max_tickets_per_run = 10
+        sample_state["run_config"] = RunConfig(max_tickets_per_run=10)
+        assert _is_cap_reached(sample_state) is False
 
-        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
-            assert _is_cap_reached(sample_state) is False
-
-    def test_cap_reached(self, mock_config, sample_state):
+    def test_cap_reached(self, sample_state):
         """Test cap reached."""
         sample_state["_tickets_created_in_run"] = 10
-        mock_config.max_tickets_per_run = 10
+        sample_state["run_config"] = RunConfig(max_tickets_per_run=10)
+        assert _is_cap_reached(sample_state) is True
 
-        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
-            assert _is_cap_reached(sample_state) is True
-
-    def test_cap_exceeded(self, mock_config, sample_state):
+    def test_cap_exceeded(self, sample_state):
         """Test cap exceeded."""
         sample_state["_tickets_created_in_run"] = 15
-        mock_config.max_tickets_per_run = 10
+        sample_state["run_config"] = RunConfig(max_tickets_per_run=10)
+        assert _is_cap_reached(sample_state) is True
 
-        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
-            assert _is_cap_reached(sample_state) is True
-
-    def test_cap_unlimited(self, mock_config, sample_state):
+    def test_cap_unlimited(self, sample_state):
         """Test unlimited cap (0 or negative)."""
         sample_state["_tickets_created_in_run"] = 100
-        mock_config.max_tickets_per_run = 0
-
-        with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
-            assert _is_cap_reached(sample_state) is False
+        sample_state["run_config"] = RunConfig(max_tickets_per_run=0)
+        assert _is_cap_reached(sample_state) is False
 
 
 class TestCreateTicketAsync:
@@ -424,7 +436,12 @@ class TestCreateTicketAsync:
         self, mock_config, sample_state, mock_jira_client
     ):
         """Test ticket creation in dry-run mode."""
-        mock_config.auto_create_ticket = False
+        sample_state["run_config"] = RunConfig(
+            jira_project_key="TEST",
+            auto_create_ticket=False,
+            max_tickets_per_run=10,
+            datadog_service="test-service",
+        )
 
         with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockClient:
@@ -591,7 +608,12 @@ class TestExecuteTicketCreationAsync:
             fingerprint="abc123",
         )
 
-        mock_config.auto_create_ticket = False
+        sample_state["run_config"] = RunConfig(
+            jira_project_key="TEST",
+            auto_create_ticket=False,
+            max_tickets_per_run=10,
+            datadog_service="test-service",
+        )
 
         with patch("agent.nodes.ticket_async.get_config", return_value=mock_config):
             result = await _execute_ticket_creation_async(

@@ -17,6 +17,7 @@ from .utils import (
     extract_text_from_description,
 )
 from agent.config import get_config
+from agent.run_config import get_run_config
 from agent.utils.logger import log_debug, log_info, log_error
 from agent.performance import (
     get_similarity_cache,
@@ -81,9 +82,9 @@ async def find_similar_ticket_async(
         metrics.end_timer("find_similar_ticket_async")
         return None, 0.0, None
 
-    config = get_config()
+    rc = get_run_config(state or {})
     if similarity_threshold is None:
-        similarity_threshold = config.jira_similarity_threshold
+        similarity_threshold = rc.jira_similarity_threshold
 
     # Check cache first
     cache = get_similarity_cache()
@@ -125,7 +126,7 @@ async def find_similar_ticket_async(
     optimized_params = optimize_jira_search_params()
 
     jql = (
-        f"project = {config.jira_project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
+        f"project = {rc.jira_project_key} AND statusCategory != Done AND created >= -{optimized_params['search_window_days']}d AND ("
         + token_filter
         + ") ORDER BY created DESC"
     )
@@ -141,7 +142,7 @@ async def find_similar_ticket_async(
             norm_current_log.encode("utf-8"), usedforsecurity=False
         ).hexdigest()[:12]
         jql_hash = (
-            f"project = {config.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
+            f"project = {rc.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"
         )
         resp_hash = await client.search(
@@ -189,7 +190,7 @@ async def find_similar_ticket_async(
         log_sim = None
         if norm_current_log and norm_issue_log:
             log_sim = _sim(norm_current_log, norm_issue_log)
-            if log_sim >= config.jira_direct_log_threshold:
+            if log_sim >= rc.jira_direct_log_threshold:
                 log_info(
                     "Direct log match found (async)",
                     similarity=log_sim,
@@ -215,9 +216,7 @@ async def find_similar_ticket_async(
             score += 0.05
         if (
             log_sim is not None
-            and config.jira_partial_log_threshold
-            <= log_sim
-            < config.jira_direct_log_threshold
+            and rc.jira_partial_log_threshold <= log_sim < rc.jira_direct_log_threshold
         ):
             score += 0.05
 
@@ -249,13 +248,16 @@ async def find_similar_ticket_async(
 
 
 async def check_fingerprint_duplicate_async(
-    fingerprint: str, client: AsyncJiraClient
+    fingerprint: str,
+    client: AsyncJiraClient,
+    state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Check if a fingerprint already exists in Jira.
 
     Args:
         fingerprint: Error fingerprint to check
         client: Async Jira client instance
+        state: Optional graph state for RunConfig resolution
 
     Returns:
         Tuple of (is_duplicate, existing_issue_key)
@@ -263,9 +265,9 @@ async def check_fingerprint_duplicate_async(
     if not client.is_configured():
         return False, None
 
-    config = get_config()
+    rc = get_run_config(state or {})
     jql = (
-        f"project = {config.jira_project_key} AND statusCategory != Done AND "
+        f"project = {rc.jira_project_key} AND statusCategory != Done AND "
         f"labels = fingerprint-{fingerprint} ORDER BY created DESC"
     )
 
