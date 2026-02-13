@@ -135,6 +135,7 @@ The LLM's `create_ticket=False` decision should be handled **separately** in the
 
 **Priority**: High
 **Estimated effort**: 3-4 days
+**Status**: Phase 1 **COMPLETED** (February 13, 2026 — branch `refactor/env-context-manager`); Phase 2 pending
 **Files affected**: `main.py`, `agent/config.py`, `agent/graph.py`, `agent/nodes/*.py`, `agent/jira/client.py`
 
 ### Problem
@@ -250,6 +251,28 @@ This `RunConfig` would be passed into the graph via LangGraph's `config` paramet
 
 - **Phase 1**: Very low risk. Context manager is additive, doesn't change behavior.
 - **Phase 2**: Medium risk. Requires touching every node. Mitigate by keeping `get_config()` for truly global settings (API keys, model name) and only moving run-scoped settings to `RunConfig`.
+
+### Phase 1 Completion Notes
+
+**Delivered artifacts:**
+
+| File | Description |
+|------|-------------|
+| `agent/utils/env_context.py` | `team_env_override` context manager with guaranteed restoration |
+| `tests/unit/test_env_context.py` | 10 tests covering override, restoration, exception safety, leakage prevention |
+
+**Modified files:**
+
+- `main.py` — Multi-tenant loop uses `with team_env_override(team, svc)` instead of direct `os.environ` mutation; removed `reload_config` import (now handled inside the context manager)
+
+**Bug fixed:** `MAX_TICKETS_PER_RUN` env var leakage between teams. Previously, if team A set `max_tickets_per_run=5` and team B did not override it, team B would inherit team A's value. The context manager now removes `MAX_TICKETS_PER_RUN` from the environment when a team doesn't specify it, letting `reload_config()` pick up the base default.
+
+**Test results:** 595 passed, 0 failed, 5 skipped. Zero regressions from this refactor.
+
+**Key design decisions:**
+- All 4 team-scoped env vars (`JIRA_PROJECT_KEY`, `DATADOG_SERVICE`, `DATADOG_ENV`, `MAX_TICKETS_PER_RUN`) are snapshotted before override and restored in `finally`
+- Uses a sentinel object to distinguish "was not set" from "was set to empty string"
+- `reload_config()` is called both on enter (to activate overrides) and on exit (to restore base config)
 
 ---
 
@@ -412,7 +435,7 @@ Selectively enrich the prompt with low-cost contextual signals. Keep it minimal 
 Week 1-2:  Refactor A (DuplicateDetector)               ✅ DONE (Feb 13, 2026)
               Reason: highest complexity reduction, enables cleaner audit logging
 
-Week 2-3:  Refactor B Phase 1 (context manager for env vars)    ⏳ NEXT
+Week 2-3:  Refactor B Phase 1 (context manager for env vars)    ✅ DONE (Feb 13, 2026)
               Reason: quick safety win, eliminates env var corruption risk
 
 Week 3-4:  Refactor C (Payload builder extraction)

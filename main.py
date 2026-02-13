@@ -15,7 +15,7 @@ load_dotenv()
 
 from agent.graph import build_graph
 from agent.utils.logger import log_info, log_error, log_agent_progress
-from agent.config import get_config, reload_config
+from agent.config import get_config
 from agent.performance import (
     log_performance_summary,
     log_configuration_performance,
@@ -244,6 +244,8 @@ if teams_config:
     log_agent_progress("Starting agent (multi-tenant)", team_count=len(team_ids))
     graph = build_graph()
 
+    from agent.utils.env_context import team_env_override
+
     for tid in team_ids:
         team = teams_config.get_team(tid)
         if not team:
@@ -255,15 +257,8 @@ if teams_config:
                 service=svc,
                 jira_project=team.jira_project_key,
             )
-            # Override env vars for this team/service
-            os.environ["JIRA_PROJECT_KEY"] = team.jira_project_key
-            os.environ["DATADOG_SERVICE"] = svc
-            os.environ["DATADOG_ENV"] = team.datadog_env
-            if team.max_tickets_per_run is not None:
-                os.environ["MAX_TICKETS_PER_RUN"] = str(team.max_tickets_per_run)
-            reload_config()
-
-            _run_for_service(graph, team_id=tid, team_service=svc)
+            with team_env_override(team, svc):
+                _run_for_service(graph, team_id=tid, team_service=svc)
 
     log_agent_progress("Agent execution finished (multi-tenant)")
 else:
