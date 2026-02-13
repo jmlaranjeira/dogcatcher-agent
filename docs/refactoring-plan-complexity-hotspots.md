@@ -1,7 +1,7 @@
 # Refactoring Plan: Complexity Hotspots
 
 **Date**: February 10, 2026
-**Last updated**: February 13, 2026 (Refactor C completed)
+**Last updated**: February 13, 2026 (Refactor D completed)
 **Status**: In Progress
 **Scope**: Structural refactoring without changing external behavior
 
@@ -385,11 +385,12 @@ def create_ticket(state):
 
 ---
 
-## Refactor D: Contextual LLM Prompt Enrichment
+## Refactor D: Contextual LLM Prompt Enrichment ✅
 
 **Priority**: Medium (evaluate with data first)
 **Estimated effort**: 1 day for implementation, 1 week for A/B evaluation
-**Files affected**: `agent/nodes/analysis.py`
+**Status**: **COMPLETED** (February 13, 2026 — branch `refactor/contextual-llm-prompt`)
+**Files affected**: `agent/nodes/analysis.py`, `agent/nodes/analysis_async.py` (new: `agent/nodes/prompt_context.py`)
 
 ### Problem
 
@@ -461,6 +462,39 @@ Selectively enrich the prompt with low-cost contextual signals. Keep it minimal 
 - **Low**: Additive change to the prompt. Worst case: revert.
 - Watch for prompt length — if contextual info pushes nano into lower quality, the enrichment is counterproductive.
 
+### Completion Notes
+
+**Delivered artifacts:**
+
+| File | Description |
+|------|-------------|
+| `agent/nodes/prompt_context.py` | **NEW** — `build_contextual_log()` pure function for prompt construction |
+| `tests/unit/test_prompt_context.py` | **NEW** — 22 unit tests covering all enrichment scenarios |
+
+**Modified files:**
+
+- `agent/nodes/analysis.py` — Imports `build_contextual_log` and `get_team`; replaces inline contextual_log building with shared helper; system prompt updated with context field guidance
+- `agent/nodes/analysis_async.py` — Same changes as `analysis.py` for the async path
+
+**Enriched prompt fields:**
+
+| Field | Source | Condition |
+|-------|--------|-----------|
+| `[Service]` | `config.datadog_service` | Always |
+| `[Environment]` | `config.datadog_env` | Always |
+| `[Occurrences in last Nh]` | `state["fp_counts"]` | Only when fetch node computed counts |
+| `[Severity hints]` | `TeamConfig.severity_rules` | Only in multi-tenant mode when team has rules |
+
+**Code duplication eliminated:** Both `analysis.py` and `analysis_async.py` previously duplicated the same 6-line contextual log construction. Now consolidated in a single pure function.
+
+**Test results:** 653 passed, 0 failed, 5 skipped. Zero regressions from this refactor.
+
+**Key design decisions:**
+- `build_contextual_log()` is a pure function (no side effects, no API calls) — trivial to unit-test with `SimpleNamespace` mock config
+- `team_severity_rules` is passed as a keyword argument to keep the function dependency-free (caller handles team loading)
+- Optional enrichment lines are omitted entirely when data is unavailable (no empty brackets)
+- System prompt updated to tell the LLM about the new context fields
+
 ---
 
 ## Implementation Order
@@ -476,7 +510,7 @@ Week 3-4:  Refactor C (Payload builder extraction)       ✅ DONE (Feb 13, 2026)
               Reason: low effort, high testability improvement
               Can be done in parallel with Refactor B Phase 1
 
-Week 4-5:  Refactor D (LLM prompt enrichment)
+Week 4-5:  Refactor D (LLM prompt enrichment)            ✅ DONE (Feb 13, 2026)
               Reason: requires A/B evaluation period
               Start implementation, then monitor for 1 week
 

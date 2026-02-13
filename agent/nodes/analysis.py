@@ -15,6 +15,8 @@ from agent.utils.circuit_breaker import (
 )
 from agent.utils.fallback_analysis import get_fallback_analyzer
 from agent.config import get_config
+from agent.nodes.prompt_context import build_contextual_log
+from agent.team_loader import get_team
 
 import os
 import re
@@ -56,7 +58,9 @@ prompt = ChatPromptTemplate.from_messages(
                 "create_ticket (boolean), "
                 "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
                 "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
-                "severity (one of: low, medium, high)."
+                "severity (one of: low, medium, high). "
+                "Context fields [Service], [Environment], [Occurrences in last Nh], and [Severity hints] "
+                "are provided when available — use them to calibrate severity and create_ticket decisions."
             ),
         ),
         ("human", "{log_message}"),
@@ -134,16 +138,17 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     config = get_config()
     log_data = state.get("log_data", {})
-    msg = log_data.get("message", "")
-    logger = log_data.get("logger", "unknown.logger")
-    thread = log_data.get("thread", "unknown.thread")
-    detail = log_data.get("detail", "")
 
-    contextual_log = (
-        f"[Logger]: {logger if logger else 'unknown.logger'}\n"
-        f"[Thread]: {thread if thread else 'unknown.thread'}\n"
-        f"[Message]: {msg if msg else '<no message>'}\n"
-        f"[Detail]: {detail if detail else '<no detail>'}"
+    # Load team severity rules for multi-tenant prompt enrichment
+    team_severity_rules = None
+    team_id = state.get("team_id")
+    if team_id:
+        team = get_team(team_id)
+        if team and team.severity_rules:
+            team_severity_rules = team.severity_rules
+
+    contextual_log = build_contextual_log(
+        log_data, state, config, team_severity_rules=team_severity_rules
     )
 
     # Initialize circuit breaker if needed
