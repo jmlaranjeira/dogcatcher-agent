@@ -213,6 +213,7 @@ def _run_for_service(graph, run_config: RunConfig):
                 logs=logs,
                 max_workers=config.async_max_workers,
                 enable_rate_limiting=config.async_rate_limiting,
+                run_config=run_config,
             )
 
         result = asyncio.run(run_async())

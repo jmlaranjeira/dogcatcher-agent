@@ -14,6 +14,7 @@ from agent.async_processor import AsyncLogProcessor, process_logs_parallel
 from agent.datadog_async import get_logs_async
 from agent.nodes.analysis_async import analyze_log_async
 from agent.nodes.ticket_async import create_ticket_async
+from agent.run_config import RunConfig
 
 
 @pytest.fixture
@@ -55,6 +56,26 @@ def mock_config():
 
 
 @pytest.fixture
+def sample_run_config():
+    """Immutable RunConfig for integration tests (dry-run, safe defaults)."""
+    return RunConfig(
+        jira_project_key="TEST",
+        jira_similarity_threshold=0.85,
+        auto_create_ticket=False,
+        max_tickets_per_run=100,
+        aggregate_email_not_found=False,
+        aggregate_kafka_consumer=False,
+        max_title_length=100,
+        persist_sim_fp=False,
+        comment_on_duplicate=False,
+        datadog_service="test-service",
+        datadog_env="test",
+        circuit_breaker_enabled=False,
+        fallback_analysis_enabled=True,
+    )
+
+
+@pytest.fixture
 def sample_logs():
     """Generate sample logs for testing."""
     return [
@@ -88,7 +109,7 @@ class TestAsyncPipelineE2E:
 
     @pytest.mark.asyncio
     async def test_full_pipeline_dry_run(
-        self, mock_config, sample_logs, valid_llm_response
+        self, mock_config, sample_run_config, sample_logs, valid_llm_response
     ):
         """Test complete pipeline in dry-run mode."""
         with patch("agent.async_processor.get_config", return_value=mock_config):
@@ -117,7 +138,10 @@ class TestAsyncPipelineE2E:
                             with patch(
                                 "agent.jira.async_match.AsyncJiraClient", MockJira
                             ):
-                                processor = AsyncLogProcessor(max_workers=3)
+                                processor = AsyncLogProcessor(
+                                    max_workers=3,
+                                    run_config=sample_run_config,
+                                )
                                 result = await processor.process_logs(sample_logs[:3])
 
         assert result["processed"] == 3
@@ -125,7 +149,7 @@ class TestAsyncPipelineE2E:
 
     @pytest.mark.asyncio
     async def test_pipeline_with_duplicates(
-        self, mock_config, sample_logs, valid_llm_response
+        self, mock_config, sample_run_config, sample_logs, valid_llm_response
     ):
         """Test pipeline correctly handles duplicate logs."""
         # Create logs with identical messages (should be deduplicated)
@@ -149,7 +173,10 @@ class TestAsyncPipelineE2E:
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
 
-                    processor = AsyncLogProcessor(max_workers=3)
+                    processor = AsyncLogProcessor(
+                        max_workers=3,
+                        run_config=sample_run_config,
+                    )
                     result = await processor.process_logs(duplicate_logs)
 
         # First log should be processed, rest should be duplicates
@@ -162,7 +189,7 @@ class TestAsyncThroughput:
 
     @pytest.mark.asyncio
     async def test_throughput_baseline(
-        self, mock_config, sample_logs, valid_llm_response
+        self, mock_config, sample_run_config, sample_logs, valid_llm_response
     ):
         """Test throughput with mocked components."""
         # Generate more logs for throughput testing
@@ -204,7 +231,9 @@ class TestAsyncThroughput:
                             MockJira.return_value.__aexit__.return_value = None
 
                             processor = AsyncLogProcessor(
-                                max_workers=10, enable_rate_limiting=False
+                                max_workers=10,
+                                enable_rate_limiting=False,
+                                run_config=sample_run_config,
                             )
 
                             start = time.time()
@@ -222,7 +251,7 @@ class TestAsyncThroughput:
 
     @pytest.mark.asyncio
     async def test_parallel_faster_than_sequential(
-        self, mock_config, valid_llm_response
+        self, mock_config, sample_run_config, valid_llm_response
     ):
         """Test that parallel processing is faster than sequential."""
         logs = [
@@ -267,7 +296,10 @@ class TestAsyncThroughput:
                                 "agent.jira.async_match.AsyncJiraClient", MockJira
                             ):
                                 # Parallel with 3 workers
-                                processor = AsyncLogProcessor(max_workers=3)
+                                processor = AsyncLogProcessor(
+                                    max_workers=3,
+                                    run_config=sample_run_config,
+                                )
                                 start = time.time()
                                 await processor.process_logs(logs)
                                 parallel_duration = time.time() - start
@@ -282,7 +314,9 @@ class TestAsyncRateLimiting:
     """Rate limiting tests."""
 
     @pytest.mark.asyncio
-    async def test_rate_limiting_enforced(self, mock_config, valid_llm_response):
+    async def test_rate_limiting_enforced(
+        self, mock_config, sample_run_config, valid_llm_response
+    ):
         """Test that rate limiting is enforced."""
         logs = [
             {
@@ -312,7 +346,9 @@ class TestAsyncRateLimiting:
 
                     # Rate limiter: 10 calls per second
                     processor = AsyncLogProcessor(
-                        max_workers=15, enable_rate_limiting=True
+                        max_workers=15,
+                        enable_rate_limiting=True,
+                        run_config=sample_run_config,
                     )
                     await processor.process_logs(logs)
 
@@ -327,7 +363,9 @@ class TestAsyncErrorHandling:
     """Error handling integration tests."""
 
     @pytest.mark.asyncio
-    async def test_partial_failure_isolation(self, mock_config, valid_llm_response):
+    async def test_partial_failure_isolation(
+        self, mock_config, sample_run_config, valid_llm_response
+    ):
         """Test that LLM failures don't affect overall processing.
 
         The async analysis module is designed to be resilient - it catches
@@ -336,6 +374,10 @@ class TestAsyncErrorHandling:
         """
         # Disable fallback to test error state handling
         mock_config.fallback_analysis_enabled = False
+        # Override run_config with fallback disabled
+        from dataclasses import replace
+
+        rc = replace(sample_run_config, fallback_analysis_enabled=False)
 
         logs = [
             {
@@ -376,7 +418,10 @@ class TestAsyncErrorHandling:
                     MockJira.return_value.__aexit__.return_value = None
 
                     with patch("agent.jira.async_match.AsyncJiraClient", MockJira):
-                        processor = AsyncLogProcessor(max_workers=2)
+                        processor = AsyncLogProcessor(
+                            max_workers=2,
+                            run_config=rc,
+                        )
                         result = await processor.process_logs(logs)
 
         # All 5 logs should be processed (no exceptions at processor level)
@@ -394,12 +439,16 @@ class TestAsyncErrorHandling:
         assert len(error_results) == 1  # One log had analysis error
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_integration(self, mock_config):
+    async def test_circuit_breaker_integration(self, mock_config, sample_run_config):
         """Test circuit breaker integration in pipeline."""
         mock_config.circuit_breaker_enabled = True
         mock_config.circuit_breaker_failure_threshold = 2
         mock_config.circuit_breaker_timeout_seconds = 60
         mock_config.circuit_breaker_half_open_calls = 1
+
+        from dataclasses import replace
+
+        rc = replace(sample_run_config, circuit_breaker_enabled=True)
 
         logs = [
             {"message": f"Error {i}", "logger": "logger", "thread": "t", "detail": "d"}
@@ -426,7 +475,10 @@ class TestAsyncErrorHandling:
                             "severity": "low",
                         }
 
-                        processor = AsyncLogProcessor(max_workers=2)
+                        processor = AsyncLogProcessor(
+                            max_workers=2,
+                            run_config=rc,
+                        )
                         result = await processor.process_logs(logs)
 
         # Should have completed with fallback
@@ -438,7 +490,7 @@ class TestConvenienceFunction:
 
     @pytest.mark.asyncio
     async def test_process_logs_parallel(
-        self, mock_config, sample_logs, valid_llm_response
+        self, mock_config, sample_run_config, sample_logs, valid_llm_response
     ):
         """Test process_logs_parallel convenience function."""
         with patch("agent.async_processor.get_config", return_value=mock_config):
@@ -451,7 +503,10 @@ class TestConvenienceFunction:
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
 
                     result = await process_logs_parallel(
-                        sample_logs[:3], max_workers=2, enable_rate_limiting=False
+                        sample_logs[:3],
+                        max_workers=2,
+                        enable_rate_limiting=False,
+                        run_config=sample_run_config,
                     )
 
         assert result["processed"] == 3
@@ -461,7 +516,9 @@ class TestDatadogFetchIntegration:
     """Test Datadog fetch integration."""
 
     @pytest.mark.asyncio
-    async def test_datadog_to_processor_pipeline(self, mock_config, valid_llm_response):
+    async def test_datadog_to_processor_pipeline(
+        self, mock_config, sample_run_config, valid_llm_response
+    ):
         """Test logs from Datadog are processed correctly."""
         sample_dd_response = {
             "data": [
@@ -503,7 +560,10 @@ class TestDatadogFetchIntegration:
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
 
-                    processor = AsyncLogProcessor(max_workers=1)
+                    processor = AsyncLogProcessor(
+                        max_workers=1,
+                        run_config=sample_run_config,
+                    )
                     result = await processor.process_logs(logs)
 
         assert result["processed"] == 1

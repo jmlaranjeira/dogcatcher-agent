@@ -432,7 +432,9 @@ class TestProcessLogsParallelConvenience:
             result = await process_logs_parallel(sample_logs, max_workers=5)
 
         assert result["processed"] == 3
-        MockProcessor.assert_called_once_with(max_workers=5, enable_rate_limiting=True)
+        MockProcessor.assert_called_once_with(
+            max_workers=5, enable_rate_limiting=True, run_config=None
+        )
 
 
 if __name__ == "__main__":

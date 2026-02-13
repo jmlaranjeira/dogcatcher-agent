@@ -15,6 +15,7 @@ from agent.utils.logger import log_info, log_error, log_warning, log_debug
 from agent.utils.thread_safe import ThreadSafeDeduplicator, ProcessingStats, RateLimiter
 from agent.jira.utils import normalize_log_message
 from agent.config import get_config
+from agent.run_config import RunConfig
 
 # Import true async modules (Phase 2.1)
 from agent.nodes.analysis_async import analyze_log_async
@@ -29,18 +30,27 @@ from agent.jira.async_match import (
 class AsyncLogProcessor:
     """Async log processor with worker pool for parallel processing."""
 
-    def __init__(self, max_workers: int = 5, enable_rate_limiting: bool = True):
+    def __init__(
+        self,
+        max_workers: int = 5,
+        enable_rate_limiting: bool = True,
+        run_config: Optional[RunConfig] = None,
+    ):
         """Initialize async processor.
 
         Args:
             max_workers: Maximum number of concurrent workers
             enable_rate_limiting: Enable rate limiting for API calls
+            run_config: Immutable per-run config.  When ``None`` a
+                ``RunConfig`` is built from the global ``Config`` singleton
+                (backward-compatible default).
         """
         self.max_workers = max_workers
         self.semaphore = asyncio.Semaphore(max_workers)
         self.deduplicator = ThreadSafeDeduplicator()
         self.stats = ProcessingStats()
         self.config = get_config()
+        self.run_config = run_config or RunConfig.from_config(self.config)
 
         # Rate limiting
         self.rate_limiter = None
@@ -229,7 +239,11 @@ class AsyncLogProcessor:
         Returns:
             Analysis result with error_type, create_ticket, ticket_title, etc.
         """
-        state = {"log_data": log, "log_message": log.get("message", "")}
+        state = {
+            "log_data": log,
+            "log_message": log.get("message", ""),
+            "run_config": self.run_config,
+        }
 
         # True async analysis (Phase 2.1)
         result = await analyze_log_async(state)
@@ -252,7 +266,7 @@ class AsyncLogProcessor:
             Ticket creation result
         """
         # Build state for ticket creation
-        state = {"log_data": log, **analysis}
+        state = {"log_data": log, "run_config": self.run_config, **analysis}
 
         # True async ticket creation (Phase 2.1)
         # Handles duplicate detection and ticket creation in one async flow
@@ -308,7 +322,10 @@ class AsyncLogProcessor:
 
 
 async def process_logs_parallel(
-    logs: List[Dict[str, Any]], max_workers: int = 5, enable_rate_limiting: bool = True
+    logs: List[Dict[str, Any]],
+    max_workers: int = 5,
+    enable_rate_limiting: bool = True,
+    run_config: Optional[RunConfig] = None,
 ) -> Dict[str, Any]:
     """Convenience function to process logs in parallel.
 
@@ -316,12 +333,15 @@ async def process_logs_parallel(
         logs: List of log entries
         max_workers: Maximum concurrent workers
         enable_rate_limiting: Enable rate limiting
+        run_config: Immutable per-run config (optional)
 
     Returns:
         Processing results and statistics
     """
     processor = AsyncLogProcessor(
-        max_workers=max_workers, enable_rate_limiting=enable_rate_limiting
+        max_workers=max_workers,
+        enable_rate_limiting=enable_rate_limiting,
+        run_config=run_config,
     )
 
     return await processor.process_logs(logs)
