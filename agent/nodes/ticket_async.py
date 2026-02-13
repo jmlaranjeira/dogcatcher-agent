@@ -7,7 +7,6 @@ with duplicate detection, validation, and audit logging.
 from __future__ import annotations
 import os
 import json
-import hashlib
 import pathlib
 import datetime
 from typing import Dict, Any, Optional
@@ -18,11 +17,11 @@ from agent.jira.async_match import (
     find_similar_ticket_async,
     check_fingerprint_duplicate_async,
 )
+from agent.jira.payload import JiraPayloadBuilder, TicketPayload
 from agent.jira.utils import (
     normalize_log_message,
     should_comment,
     update_comment_timestamp,
-    priority_name_from_severity,
 )
 from agent.utils.logger import (
     log_info,
@@ -98,17 +97,6 @@ class DuplicateCheckResult:
     message: Optional[str] = None
 
 
-@dataclass
-class TicketPayload:
-    """Jira ticket payload with metadata."""
-
-    payload: Dict[str, Any]
-    title: str
-    description: str
-    labels: list[str]
-    fingerprint: str
-
-
 def _validate_ticket_fields(state: Dict[str, Any]) -> TicketValidationResult:
     """Validate that required ticket fields are present and valid."""
     log_info("Validating ticket fields (async)")
@@ -136,22 +124,8 @@ def _validate_ticket_fields(state: Dict[str, Any]) -> TicketValidationResult:
 
 
 def _compute_fingerprint(state: Dict[str, Any]) -> str:
-    """Compute a stable fingerprint for the log entry.
-
-    Uses error_type (from LLM analysis) + normalized message to group
-    similar errors regardless of which logger produced them.
-    """
-    log_data = state.get("log_data", {})
-    raw_msg = log_data.get("message", "")
-    norm_msg = normalize_log_message(raw_msg)
-
-    # Use error_type from LLM analysis (more stable than logger name)
-    error_type = state.get("error_type", "unknown")
-
-    fp_source = f"{error_type}|{norm_msg or raw_msg}"
-    return hashlib.sha1(fp_source.encode("utf-8"), usedforsecurity=False).hexdigest()[
-        :12
-    ]
+    """Compute a stable fingerprint for the log entry."""
+    return JiraPayloadBuilder.compute_fingerprint(state)
 
 
 def _load_processed_fingerprints() -> set[str]:
@@ -345,151 +319,27 @@ async def _check_duplicates_async(
     return DuplicateCheckResult(is_duplicate=False)
 
 
-def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
-    """Build enhanced description with additional context."""
-    config = get_config()
-    log_data = state.get("log_data", {})
-    win = state.get("window_hours", 48)
-    raw_msg = log_data.get("message", "")
-    norm_msg = normalize_log_message(raw_msg)
-    fp_source = f"{log_data.get('logger', '')}|{norm_msg or raw_msg}"
-    occ = (state.get("fp_counts") or {}).get(fp_source, 1)
-
-    attributes = log_data.get("attributes", {})
-    request_id = (
-        attributes.get("requestId")
-        or attributes.get("request_id")
-        or log_data.get("requestId", "")
-    )
-    user_id = (
-        attributes.get("userId")
-        or attributes.get("user_id")
-        or log_data.get("userId", "")
-    )
-    error_type = (
-        attributes.get("errorType")
-        or attributes.get("error_type")
-        or log_data.get("errorType", "")
-    )
-
-    extra_info = f"""
----
-Timestamp: {log_data.get('timestamp', 'N/A')}
-Logger: {log_data.get('logger', 'N/A')}
-Thread: {log_data.get('thread', 'N/A')}
-Original Log: {log_data.get('message', 'N/A')}
-Detail: {log_data.get('detail', 'N/A')}
-Occurrences in last {win}h: {occ}"""
-
-    mdc_context = []
-    if request_id:
-        mdc_context.append(f"Request ID: {request_id}")
-    if user_id:
-        mdc_context.append(f"User ID: {user_id}")
-    if error_type:
-        mdc_context.append(f"Error Type: {error_type}")
-
-    if mdc_context:
-        extra_info += "\n---\n" + "\n".join(mdc_context)
-
-    return f"{description.strip()}\n{extra_info}"
-
-
-def _build_labels(state: Dict[str, Any], fingerprint: str) -> list[str]:
-    """Build labels for the ticket."""
-    config = get_config()
-    labels = ["datadog-log", "async-created"]
-
-    try:
-        norm_msg = normalize_log_message(
-            (state.get("log_data") or {}).get("message", "")
-        )
-        if norm_msg:
-            loghash = hashlib.sha1(
-                norm_msg.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()[:12]
-            labels.append(f"loghash-{loghash}")
-    except Exception:
-        pass
-
-    etype = (state.get("error_type") or "").strip().lower()
-
-    if config.aggregate_email_not_found and etype == "email-not-found":
-        labels.append("aggregate-email-not-found")
-
-    if config.aggregate_kafka_consumer and etype == "kafka-consumer":
-        labels.append("aggregate-kafka-consumer")
-
-    return labels
-
-
-def _clean_title(title: str, error_type: Optional[str]) -> str:
-    """Clean and format the ticket title."""
-    config = get_config()
-    base_title = title.replace("**", "").strip()
-
-    if error_type == "email-not-found" and config.aggregate_email_not_found:
-        base_title = "Investigate Email Not Found errors (aggregated)"
-    elif error_type == "kafka-consumer" and config.aggregate_kafka_consumer:
-        base_title = "Investigate Kafka Consumer errors (aggregated)"
-
-    max_title = config.max_title_length
-    if len(base_title) > max_title:
-        base_title = base_title[: max_title - 1] + "..."
-
-    prefix = "[Datadog]" + (f"[{error_type}]" if error_type else "")
-    return f"{prefix} {base_title}".strip()
-
-
 def _build_jira_payload(
     state: Dict[str, Any], title: str, description: str
 ) -> TicketPayload:
-    """Build the Jira ticket payload with proper formatting and labels."""
+    """Build the Jira ticket payload with proper formatting and labels.
+
+    Delegates to :class:`~agent.jira.payload.JiraPayloadBuilder`.
+    Async-created tickets include the ``async-created`` label.
+    """
     config = get_config()
     log_info("Building Jira ticket payload (async)")
 
-    fingerprint = _compute_fingerprint(state)
-    full_description = _build_enhanced_description(state, description)
-    labels = _build_labels(state, fingerprint)
-    clean_title = _clean_title(title, state.get("error_type"))
+    builder = JiraPayloadBuilder(config)
+    result = builder.build(state, title, description, extra_labels=["async-created"])
 
-    payload = {
-        "fields": {
-            "project": {"key": config.jira_project_key},
-            "summary": clean_title,
-            "description": {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [{"text": full_description, "type": "text"}],
-                    }
-                ],
-            },
-            "issuetype": {"name": "Bug"},
-            "labels": labels,
-            "priority": {"name": priority_name_from_severity(state.get("severity"))},
-        }
-    }
-
-    try:
-        team_field_id = os.getenv("JIRA_TEAM_FIELD_ID")
-        team_field_value = os.getenv("JIRA_TEAM_VALUE")
-        if team_field_id and team_field_value:
-            payload["fields"][team_field_id] = [{"value": team_field_value}]
-    except Exception:
-        pass
-
-    log_info("Jira payload built (async)", title=clean_title, label_count=len(labels))
-
-    return TicketPayload(
-        payload=payload,
-        title=clean_title,
-        description=full_description,
-        labels=labels,
-        fingerprint=fingerprint,
+    log_info(
+        "Jira payload built (async)",
+        title=result.title,
+        label_count=len(result.labels),
     )
+
+    return result
 
 
 def _is_cap_reached(state: Dict[str, Any]) -> bool:

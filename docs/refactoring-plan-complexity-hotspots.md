@@ -1,7 +1,7 @@
 # Refactoring Plan: Complexity Hotspots
 
 **Date**: February 10, 2026
-**Last updated**: February 13, 2026
+**Last updated**: February 13, 2026 (Refactor C completed)
 **Status**: In Progress
 **Scope**: Structural refactoring without changing external behavior
 
@@ -276,11 +276,12 @@ This `RunConfig` would be passed into the graph via LangGraph's `config` paramet
 
 ---
 
-## Refactor C: Extract Jira Payload Builder
+## Refactor C: Extract Jira Payload Builder ✅
 
 **Priority**: Medium
 **Estimated effort**: 1-2 days
-**Files affected**: `agent/nodes/ticket.py` (new: `agent/jira/payload.py`)
+**Status**: **COMPLETED** (February 13, 2026)
+**Files affected**: `agent/nodes/ticket.py`, `agent/nodes/ticket_async.py` (new: `agent/jira/payload.py`)
 
 ### Problem
 
@@ -348,6 +349,39 @@ def create_ticket(state):
 ### Risks
 
 - **Very low**: Pure extraction, no logic changes. All functions are already free of side effects.
+
+### Completion Notes
+
+**Delivered artifacts:**
+
+| File | Description |
+|------|-------------|
+| `agent/jira/payload.py` | **NEW** — `JiraPayloadBuilder` class + `TicketPayload` dataclass (297 lines) |
+| `tests/unit/test_payload_builder.py` | **NEW** — 30+ isolated tests for pure formatting functions (448 lines) |
+
+**Modified files:**
+
+- `agent/nodes/ticket.py` — Removed formatting functions (`_build_enhanced_description`, `_build_datadog_links`, `_build_labels`, `_clean_title`, `TicketPayload`); `_build_jira_payload` delegates to `JiraPayloadBuilder`. **818 → 601 lines (-217)**
+- `agent/nodes/ticket_async.py` — Removed duplicated formatting functions; delegates to `JiraPayloadBuilder` with `extra_labels=["async-created"]`. **810 → 660 lines (-150)**
+- `tests/unit/test_ticket_creation.py` — No changes needed (imports `TicketPayload` via re-export)
+- `tests/unit/test_async_ticket.py` — No changes needed (imports `TicketPayload` via re-export)
+- `tests/unit/test_max_tickets_cap.py` — No changes needed (imports `TicketPayload` via re-export)
+
+**Code duplication eliminated:** The async module previously duplicated all 4 formatting functions with minor differences. These are now consolidated in a single `JiraPayloadBuilder` class with `extra_labels` parameter for async-specific behavior.
+
+**Behavioral improvements (non-breaking):**
+- Async tickets now include `sanitize_for_jira` in descriptions (previously skipped)
+- Async tickets now include Datadog trace links in descriptions (previously missing)
+- Async tickets use Unicode ellipsis `…` for truncation (previously used `...`)
+
+**Test results:** 631 passed, 0 failed, 5 skipped. Zero regressions from this refactor.
+
+**Key design decisions:**
+- `JiraPayloadBuilder` receives config via constructor (dependency injection), not `get_config()` — enables trivial unit testing with `SimpleNamespace` mock config
+- `extra_labels` parameter on `build()` and `build_labels()` handles async-specific `"async-created"` label without code duplication
+- `compute_fingerprint` is a `@staticmethod` since it depends only on state, not config
+- Team field injection (`_inject_team_field`) handles both multi-tenant (from `TeamsConfig`) and single-tenant (from env vars) modes
+- Existing test imports work unchanged because `ticket.py` and `ticket_async.py` re-export `TicketPayload` from the new module
 
 ---
 
@@ -438,7 +472,7 @@ Week 1-2:  Refactor A (DuplicateDetector)               ✅ DONE (Feb 13, 2026)
 Week 2-3:  Refactor B Phase 1 (context manager for env vars)    ✅ DONE (Feb 13, 2026)
               Reason: quick safety win, eliminates env var corruption risk
 
-Week 3-4:  Refactor C (Payload builder extraction)
+Week 3-4:  Refactor C (Payload builder extraction)       ✅ DONE (Feb 13, 2026)
               Reason: low effort, high testability improvement
               Can be done in parallel with Refactor B Phase 1
 
