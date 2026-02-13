@@ -2,6 +2,11 @@
 
 This module provides a cleaner, more testable version of the ticket creation logic
 with proper separation of validation, duplicate checking, payload building, and execution.
+
+Duplicate detection is now delegated to ``agent.dedup.DuplicateDetector``.  Only
+the Jira-facing strategies (fingerprint cache, loghash, error_type, similarity)
+run here — the in-memory ``seen_logs`` dedup runs earlier in the graph
+(``graph.py:analyze_log_wrapper``).
 """
 
 from typing import Dict, Any, Tuple, Optional
@@ -32,6 +37,14 @@ from agent.utils.logger import (
 )
 from agent.config import get_config
 from agent.performance import get_performance_metrics
+from agent.dedup import DuplicateDetector
+from agent.dedup.result import DuplicateCheckResult
+from agent.dedup.strategies import (
+    FingerprintCache,
+    LoghashLabelSearch,
+    ErrorTypeLabelSearch,
+    SimilaritySearch,
+)
 import pathlib
 import datetime
 
@@ -39,6 +52,17 @@ import datetime
 
 
 _AUDIT_LOG_DIR = pathlib.Path(".agent_cache")
+
+# Detector used inside the create_ticket node: strategies 2-5 (Jira-facing).
+# Strategy 1 (InMemorySeenLogs) runs earlier in the graph.
+_ticket_dedup = DuplicateDetector(
+    strategies=[
+        FingerprintCache(),
+        LoghashLabelSearch(),
+        ErrorTypeLabelSearch(),
+        SimilaritySearch(),
+    ]
+)
 
 
 def _get_audit_log_path(team_id: str | None = None) -> pathlib.Path:
@@ -72,6 +96,7 @@ def _append_audit(
     duplicate: bool = False,
     create: bool = False,
     message: str = "",
+    strategy_name: str | None = None,
 ) -> None:
     team_id = state.get("team_id")
     entry = {
@@ -87,6 +112,8 @@ def _append_audit(
         "occurrences": occ,
         "message": message,
     }
+    if strategy_name:
+        entry["strategy_name"] = strategy_name
     if team_id:
         entry["team_id"] = team_id
         entry["team_service"] = state.get("team_service", "")
@@ -101,16 +128,6 @@ class TicketValidationResult:
     title: Optional[str] = None
     description: Optional[str] = None
     error_message: Optional[str] = None
-
-
-@dataclass
-class DuplicateCheckResult:
-    """Result of duplicate checking."""
-
-    is_duplicate: bool
-    existing_ticket_key: Optional[str] = None
-    similarity_score: Optional[float] = None
-    message: Optional[str] = None
 
 
 @dataclass
@@ -165,151 +182,76 @@ def _validate_ticket_fields(state: Dict[str, Any]) -> TicketValidationResult:
 
 
 def _check_duplicates(state: Dict[str, Any], title: str) -> DuplicateCheckResult:
-    """Check for duplicate tickets using multiple strategies.
+    """Check for duplicate tickets using the unified DuplicateDetector.
+
+    Runs strategies 2-5 (fingerprint cache, loghash label, error_type label,
+    similarity search).  Strategy 1 (InMemorySeenLogs) runs earlier in
+    ``graph.py``.
 
     Args:
         state: Current agent state
-        title: Proposed ticket title
+        title: Proposed ticket title (unused now, kept for API compat)
 
     Returns:
         DuplicateCheckResult with duplicate status and details
     """
-    log_info("Checking for duplicate tickets")
+    log_info("Checking for duplicate tickets via DuplicateDetector")
 
-    # 1. Check fingerprint cache (fastest)
-    fingerprint = _compute_fingerprint(state)
-    team_id = state.get("team_id")
-    processed = _load_processed_fingerprints(team_id)
-    created_in_run: set[str] = state.get("created_fingerprints", set())
+    log_data = state.get("log_data", {})
+    result = _ticket_dedup.check(log_data, state)
 
-    if fingerprint in created_in_run or fingerprint in processed:
-        log_info("Duplicate found in fingerprint cache", fingerprint=fingerprint)
-        # Approximate occurrence lookup
-        log_data = state.get("log_data", {})
+    if result.is_duplicate:
+        # Emit audit entry and metrics
+        fingerprint = _compute_fingerprint(state)
         raw_msg = log_data.get("message", "")
-        norm_msg = normalize_log_message(raw_msg)
-        fp_source = f"{log_data.get('logger','')}|{raw_msg}"
+        fp_source = f"{log_data.get('logger', '')}|{raw_msg}"
         occ = (state.get("fp_counts") or {}).get(fp_source, 1)
+
+        # Map strategy name to audit decision and metric
+        strategy_to_decision = {
+            "fingerprint_cache": "duplicate-fingerprint",
+            "loghash_label_search": "duplicate-jira",
+            "error_type_label_search": "duplicate-error-type",
+            "similarity_search": "duplicate-jira",
+        }
+        strategy_to_metric = {
+            "fingerprint_cache": "duplicates.fingerprint",
+            "loghash_label_search": "duplicates.jira",
+            "error_type_label_search": "duplicates.jira",
+            "similarity_search": "duplicates.jira",
+        }
+
+        decision = strategy_to_decision.get(
+            result.strategy_name or "", "duplicate-unknown"
+        )
+        metric = strategy_to_metric.get(result.strategy_name or "", "duplicates.jira")
+
         _append_audit(
-            decision="duplicate-fingerprint",
+            decision=decision,
             state=state,
             fingerprint=fingerprint,
             occ=occ,
-            jira_key=None,
+            jira_key=result.existing_ticket_key,
             duplicate=True,
             create=False,
-            message="Duplicate log skipped (fingerprint cache)",
+            message=result.message or "Duplicate detected",
+            strategy_name=result.strategy_name,
         )
+
         from agent.metrics import incr as _m_incr
 
-        _m_incr("duplicates.fingerprint", team_id=state.get("team_id"))
-        return DuplicateCheckResult(
-            is_duplicate=True,
-            message="Log already processed previously (fingerprint match)",
-        )
+        _m_incr(metric, team_id=state.get("team_id"))
 
-    # 2. Check LLM decision
-    if not state.get("create_ticket", False):
-        log_info("LLM decided not to create ticket")
-        return DuplicateCheckResult(
-            is_duplicate=False,
-            message="LLM decision: do not create a ticket for this log",
-        )
-
-    # 3. Check for recent tickets with same error_type (prevents cross-logger duplicates)
-    error_type = state.get("error_type", "")
-    if error_type and error_type != "unknown":
-        try:
-            config = get_config()
-            jql = (
-                f"project = {config.jira_project_key} "
-                f"AND labels = datadog-log "
-                f"AND labels = {error_type} "
-                f"AND created >= -7d "
-                f"ORDER BY created DESC"
-            )
-            from agent.jira.client import search as jira_search
-
-            resp = jira_search(jql, max_results=1)
-            if resp and resp.get("issues"):
-                existing = resp["issues"][0]
-                existing_key = existing.get("key")
-                existing_summary = existing.get("fields", {}).get("summary", "")
-                log_info(
-                    "Duplicate found by error_type label",
-                    error_type=error_type,
-                    existing_key=existing_key,
-                )
-                # Update fingerprint cache
-                processed.add(fingerprint)
-                _save_processed_fingerprints(processed, team_id)
-
-                _append_audit(
-                    decision="duplicate-error-type",
-                    state=state,
-                    fingerprint=fingerprint,
-                    occ=1,
-                    jira_key=existing_key,
-                    duplicate=True,
-                    create=False,
-                    message=f"Duplicate by error_type '{error_type}': {existing_key}",
-                )
-                from agent.metrics import incr as _m_incr
-
-                _m_incr("duplicates.jira", team_id=state.get("team_id"))
-                return DuplicateCheckResult(
-                    is_duplicate=True,
-                    existing_ticket_key=existing_key,
-                    similarity_score=0.95,
-                    message=f"Recent ticket with same error_type: {existing_key} - {existing_summary}",
-                )
-        except Exception as e:
-            log_error("Error during error_type duplicate check", error=str(e))
-
-    # 4. Check Jira for similar tickets
-    try:
-        key, score, existing_summary = find_similar_ticket(title, state)
-        if key:
-            log_duplicate_detection(score, key, existing_summary=existing_summary)
-
-            # Add comment to existing ticket if configured
-            _maybe_comment_duplicate(key, score, state)
-
-            # Update fingerprint cache
-            processed.add(fingerprint)
-            _save_processed_fingerprints(processed, team_id)
-            # Audit duplicate in Jira
-            log_data = state.get("log_data", {})
-            raw_msg = log_data.get("message", "")
-            norm_msg = normalize_log_message(raw_msg)
-            fp_source = f"{log_data.get('logger','')}|{raw_msg}"
-            occ = (state.get("fp_counts") or {}).get(fp_source, 1)
-            _append_audit(
-                decision="duplicate-jira",
-                state=state,
-                fingerprint=fingerprint,
-                occ=occ,
-                jira_key=key,
-                duplicate=True,
-                create=False,
-                message=f"Duplicate in Jira: {key} — {existing_summary}",
+        # Comment on duplicate if it's a Jira-found duplicate
+        if result.existing_ticket_key and result.similarity_score:
+            _maybe_comment_duplicate(
+                result.existing_ticket_key, result.similarity_score, state
             )
 
-            from agent.metrics import incr as _m_incr
+    else:
+        log_info("No duplicates found, proceeding with ticket creation")
 
-            _m_incr("duplicates.jira", team_id=state.get("team_id"))
-            return DuplicateCheckResult(
-                is_duplicate=True,
-                existing_ticket_key=key,
-                similarity_score=score,
-                message=f"Duplicate in Jira: {key} — {existing_summary}",
-            )
-    except Exception as e:
-        log_error("Error during Jira duplicate check", error=str(e))
-        # Continue with creation if duplicate check fails
-
-    log_info("No duplicates found, proceeding with ticket creation")
-    return DuplicateCheckResult(is_duplicate=False)
+    return result
 
 
 def _build_jira_payload(
@@ -526,21 +468,21 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
     # Build basic context info
     extra_info = f"""
 ---
-🕒 Timestamp: {log_data.get('timestamp', 'N/A')}
-🧩 Logger: {log_data.get('logger', 'N/A')}
-🧵 Thread: {log_data.get('thread', 'N/A')}
-📝 Original Log: {sanitize_for_jira(log_data.get('message', 'N/A'))}
-🔍 Detail: {sanitize_for_jira(log_data.get('detail', 'N/A'))}
-📈 Occurrences in last {win}h: {occ}"""
+\U0001f552 Timestamp: {log_data.get('timestamp', 'N/A')}
+\U0001f9e9 Logger: {log_data.get('logger', 'N/A')}
+\U0001f9f5 Thread: {log_data.get('thread', 'N/A')}
+\U0001f4dd Original Log: {sanitize_for_jira(log_data.get('message', 'N/A'))}
+\U0001f50d Detail: {sanitize_for_jira(log_data.get('detail', 'N/A'))}
+\U0001f4c8 Occurrences in last {win}h: {occ}"""
 
     # Add MDC context if available
     mdc_context = []
     if request_id:
-        mdc_context.append(f"📋 Request ID: {request_id}")
+        mdc_context.append(f"\U0001f4cb Request ID: {request_id}")
     if user_id:
-        mdc_context.append(f"👤 User ID: {user_id}")
+        mdc_context.append(f"\U0001f464 User ID: {user_id}")
     if error_type:
-        mdc_context.append(f"🏷️ Error Type: {error_type}")
+        mdc_context.append(f"\U0001f3f7\ufe0f Error Type: {error_type}")
 
     if mdc_context:
         extra_info += "\n---\n" + "\n".join(mdc_context)
@@ -548,7 +490,7 @@ def _build_enhanced_description(state: Dict[str, Any], description: str) -> str:
     # Build Datadog trace links
     datadog_links = _build_datadog_links(config, log_data, request_id, user_id)
     if datadog_links:
-        extra_info += f"\n---\n🔗 Datadog Links:\n{datadog_links}"
+        extra_info += f"\n---\n\U0001f517 Datadog Links:\n{datadog_links}"
 
     return f"{description.strip()}\n{extra_info}"
 
@@ -567,7 +509,7 @@ def _build_datadog_links(
         encoded_query = (
             query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
         )
-        links.append(f"• Request Trace: {base_url}?query={encoded_query}")
+        links.append(f"\u2022 Request Trace: {base_url}?query={encoded_query}")
 
     # Link to user activity (if userId available)
     if user_id:
@@ -575,7 +517,7 @@ def _build_datadog_links(
         encoded_query = (
             query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
         )
-        links.append(f"• User Activity: {base_url}?query={encoded_query}")
+        links.append(f"\u2022 User Activity: {base_url}?query={encoded_query}")
 
     # Link to similar errors (by logger)
     logger = log_data.get("logger", "")
@@ -584,7 +526,7 @@ def _build_datadog_links(
         encoded_query = (
             query.replace(" ", "%20").replace(":", "%3A").replace("@", "%40")
         )
-        links.append(f"• Similar Errors: {base_url}?query={encoded_query}")
+        links.append(f"\u2022 Similar Errors: {base_url}?query={encoded_query}")
 
     return "\n".join(links)
 
@@ -632,7 +574,7 @@ def _clean_title(title: str, error_type: Optional[str]) -> str:
     # Truncate if too long
     max_title = config.max_title_length
     if len(base_title) > max_title:
-        base_title = base_title[: max_title - 1] + "…"
+        base_title = base_title[: max_title - 1] + "\u2026"
 
     # Add prefix
     prefix = "[Datadog]" + (f"[{error_type}]" if error_type else "")
@@ -825,9 +767,13 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
 
     This function orchestrates the ticket creation process by:
     1. Validating required fields
-    2. Checking for duplicates
+    2. Checking for duplicates (via DuplicateDetector, strategies 2-5)
     3. Building the Jira payload
     4. Executing creation or simulation
+
+    Note: The LLM ``create_ticket=False`` decision is handled by the graph's
+    conditional edge *before* this node is reached — it is no longer mixed
+    into the dedup chain.
 
     Args:
         state: Current agent state containing LLM analysis results
@@ -849,7 +795,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
     if not validation.is_valid:
         return {**state, "message": validation.error_message, "ticket_created": True}
 
-    # 2. Check for duplicates
+    # 2. Check for duplicates (strategies 2-5 via DuplicateDetector)
     duplicate_check = _check_duplicates(state, validation.title)
     if duplicate_check.is_duplicate:
         return {**state, "message": duplicate_check.message, "ticket_created": True}
