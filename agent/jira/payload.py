@@ -218,9 +218,7 @@ class JiraPayloadBuilder:
 
         # Add loghash label
         try:
-            loghash = compute_loghash(
-                (state.get("log_data") or {}).get("message", "")
-            )
+            loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
             if loghash:
                 labels.append(f"loghash-{loghash}")
         except Exception:

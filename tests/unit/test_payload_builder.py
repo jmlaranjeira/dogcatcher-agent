@@ -216,9 +216,7 @@ class TestBuildLabels:
         assert "unknown" not in labels
 
     def test_aggregation_email_not_found(self):
-        builder = JiraPayloadBuilder(
-            _make_config(aggregate_email_not_found=True)
-        )
+        builder = JiraPayloadBuilder(_make_config(aggregate_email_not_found=True))
         state = _make_state(error_type="email-not-found")
 
         labels = builder.build_labels(state, "fp-abc")
@@ -226,9 +224,7 @@ class TestBuildLabels:
         assert "aggregate-email-not-found" in labels
 
     def test_aggregation_kafka_consumer(self):
-        builder = JiraPayloadBuilder(
-            _make_config(aggregate_kafka_consumer=True)
-        )
+        builder = JiraPayloadBuilder(_make_config(aggregate_kafka_consumer=True))
         state = _make_state(error_type="kafka-consumer")
 
         labels = builder.build_labels(state, "fp-abc")
@@ -239,9 +235,7 @@ class TestBuildLabels:
         builder = JiraPayloadBuilder(_make_config())
         state = _make_state()
 
-        labels = builder.build_labels(
-            state, "fp-abc", extra_labels=["async-created"]
-        )
+        labels = builder.build_labels(state, "fp-abc", extra_labels=["async-created"])
 
         assert "async-created" in labels
         assert "datadog-log" in labels
@@ -296,18 +290,14 @@ class TestCleanTitle:
         assert result.endswith("\u2026")
 
     def test_aggregation_email_not_found(self):
-        builder = JiraPayloadBuilder(
-            _make_config(aggregate_email_not_found=True)
-        )
+        builder = JiraPayloadBuilder(_make_config(aggregate_email_not_found=True))
 
         result = builder.clean_title("Original Title", "email-not-found")
 
         assert "aggregated" in result.lower()
 
     def test_aggregation_kafka_consumer(self):
-        builder = JiraPayloadBuilder(
-            _make_config(aggregate_kafka_consumer=True)
-        )
+        builder = JiraPayloadBuilder(_make_config(aggregate_kafka_consumer=True))
 
         result = builder.clean_title("Original Title", "kafka-consumer")
 
@@ -406,9 +396,7 @@ class TestBuild:
         builder = JiraPayloadBuilder(_make_config())
         state = _make_state()
 
-        result = builder.build(
-            state, "Title", "Desc", extra_labels=["async-created"]
-        )
+        result = builder.build(state, "Title", "Desc", extra_labels=["async-created"])
 
         assert "async-created" in result.labels
         assert "async-created" in result.payload["fields"]["labels"]
@@ -426,9 +414,7 @@ class TestBuild:
 
             result = builder.build(state, "Title", "Desc")
 
-        assert result.payload["fields"]["customfield_10100"] == [
-            {"value": "Platform"}
-        ]
+        assert result.payload["fields"]["customfield_10100"] == [{"value": "Platform"}]
 
     def test_no_team_field_when_env_missing(self):
         """No team field injected when env vars are absent."""
