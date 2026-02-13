@@ -100,9 +100,11 @@ class TestGetTeam:
         assert team is not None
         assert team.jira_project_key == "VEGA"
 
-    def test_returns_none_single_tenant(self):
+    def test_returns_none_single_tenant(self, tmp_path):
         # No file loaded → single-tenant
-        assert get_team("team-vega") is None
+        fake = tmp_path / "nonexistent" / "teams.yaml"
+        with patch("agent.team_loader._TEAMS_FILE", fake):
+            assert get_team("team-vega") is None
 
 
 class TestListTeamIds:
@@ -114,5 +116,7 @@ class TestListTeamIds:
         load_teams_config(path=f)
         assert list_team_ids() == ["team-solar", "team-vega"]
 
-    def test_empty_single_tenant(self):
-        assert list_team_ids() == []
+    def test_empty_single_tenant(self, tmp_path):
+        fake = tmp_path / "nonexistent" / "teams.yaml"
+        with patch("agent.team_loader._TEAMS_FILE", fake):
+            assert list_team_ids() == []

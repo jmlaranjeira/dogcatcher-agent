@@ -17,9 +17,9 @@ from agent.nodes.ticket import (
     _build_jira_payload,
     _execute_ticket_creation,
     TicketValidationResult,
-    DuplicateCheckResult,
     TicketPayload,
 )
+from agent.dedup.result import DuplicateCheckResult
 
 
 class TestTicketValidation:
@@ -111,16 +111,10 @@ class TestCreateTicketIntegration:
         mock_config.auto_create_ticket = False
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=(None, 0.0, None),
-                ):
-                    with patch("agent.jira.client.search", return_value=None):
-                        result = create_ticket(sample_state)
+        no_dup = DuplicateCheckResult(is_duplicate=False)
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = no_dup
+            result = create_ticket(sample_state)
 
         assert result["ticket_created"] is True
         assert "simulated" in result.get("message", "").lower()
@@ -142,17 +136,17 @@ class TestCreateTicketIntegration:
         """Test ticket creation when duplicate is found."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=("TEST-123", 0.85, "Duplicate Title"),
-                ):
-                    with patch("agent.nodes.ticket._maybe_comment_duplicate"):
-                        with patch("agent.jira.client.search", return_value=None):
-                            result = create_ticket(sample_state)
+        dup_result = DuplicateCheckResult(
+            is_duplicate=True,
+            strategy_name="similarity_search",
+            existing_ticket_key="TEST-123",
+            similarity_score=0.85,
+            message="Duplicate in Jira: TEST-123 - Duplicate Title",
+        )
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = dup_result
+            with patch("agent.nodes.ticket._maybe_comment_duplicate"):
+                result = create_ticket(sample_state)
 
         assert result["ticket_created"] is True  # ticket_created is always True
         assert "duplicate" in result.get("message", "").lower()
@@ -167,21 +161,21 @@ class TestDirectLogMatchPath:
         """Test direct log match with high similarity."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=("TEST-123", 0.95, "Database Connection Error"),
-                ):
-                    with patch("agent.nodes.ticket._maybe_comment_duplicate"):
-                        with patch("agent.jira.client.search", return_value=None):
-                            result = create_ticket(sample_state)
+        dup_result = DuplicateCheckResult(
+            is_duplicate=True,
+            strategy_name="similarity_search",
+            existing_ticket_key="TEST-123",
+            similarity_score=0.95,
+            message="Duplicate in Jira: TEST-123 - Database Connection Error",
+        )
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = dup_result
+            with patch("agent.nodes.ticket._maybe_comment_duplicate"):
+                result = create_ticket(sample_state)
 
-            # Should detect as duplicate due to high similarity
-            assert result["ticket_created"] is True  # ticket_created is always True
-            assert "duplicate" in result.get("message", "").lower()
+        # Should detect as duplicate due to high similarity
+        assert result["ticket_created"] is True  # ticket_created is always True
+        assert "duplicate" in result.get("message", "").lower()
 
     def test_direct_log_match_exact_match(
         self, sample_state, mock_config, mock_jira_client
@@ -189,20 +183,20 @@ class TestDirectLogMatchPath:
         """Test direct log match with exact match."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=("TEST-123", 1.0, "Database Connection Error"),
-                ):
-                    with patch("agent.nodes.ticket._maybe_comment_duplicate"):
-                        with patch("agent.jira.client.search", return_value=None):
-                            result = create_ticket(sample_state)
+        dup_result = DuplicateCheckResult(
+            is_duplicate=True,
+            strategy_name="similarity_search",
+            existing_ticket_key="TEST-123",
+            similarity_score=1.0,
+            message="Duplicate in Jira: TEST-123 - Database Connection Error",
+        )
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = dup_result
+            with patch("agent.nodes.ticket._maybe_comment_duplicate"):
+                result = create_ticket(sample_state)
 
-            assert result["ticket_created"] is True
-            assert "duplicate" in result.get("message", "").lower()
+        assert result["ticket_created"] is True
+        assert "duplicate" in result.get("message", "").lower()
 
 
 class TestLabelShortCircuitPath:
@@ -214,17 +208,17 @@ class TestLabelShortCircuitPath:
         """Test short-circuit when loghash label matches."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=("TEST-123", 0.85, "Database Connection Error"),
-                ):
-                    with patch("agent.nodes.ticket._maybe_comment_duplicate"):
-                        with patch("agent.jira.client.search", return_value=None):
-                            result = create_ticket(sample_state)
+        dup_result = DuplicateCheckResult(
+            is_duplicate=True,
+            strategy_name="loghash_label_search",
+            existing_ticket_key="TEST-123",
+            similarity_score=1.0,
+            message="Exact duplicate by loghash: TEST-123 - Database Connection Error",
+        )
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = dup_result
+            with patch("agent.nodes.ticket._maybe_comment_duplicate"):
+                result = create_ticket(sample_state)
 
         assert result["ticket_created"] is True
         assert "duplicate" in result.get("message", "").lower()
@@ -235,16 +229,10 @@ class TestLabelShortCircuitPath:
         """Test that search continues when no loghash label matches."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=(None, 0.0, None),
-                ):
-                    with patch("agent.jira.client.search", return_value=None):
-                        result = create_ticket(sample_state)
+        no_dup = DuplicateCheckResult(is_duplicate=False)
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = no_dup
+            result = create_ticket(sample_state)
 
         assert "ticket_created" in result
 
@@ -257,15 +245,16 @@ class TestLLMNoCreateDecision:
     ):
         """Test when LLM decides not to create a ticket (create_ticket=False).
 
-        Note: Currently the LLM no-create decision in _check_duplicates returns
-        is_duplicate=False, so the code continues to payload building and simulation.
-        The ticket is "created" (simulated) regardless.
+        Note: The LLM no-create decision is now handled by the graph's
+        conditional edge. If create_ticket reaches this node, the dedup
+        chain runs normally. This test verifies that the node still works
+        when create_ticket=False is in the state (the field is ignored here).
         """
         sample_state["create_ticket"] = False  # LLM decided not to create
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
+        no_dup = DuplicateCheckResult(is_duplicate=False)
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = no_dup
             result = create_ticket(sample_state)
 
         assert result["ticket_created"] is True
@@ -276,16 +265,10 @@ class TestLLMNoCreateDecision:
         """Test when LLM decides to create a ticket."""
         sample_state["create_ticket"] = True
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
-            with patch("agent.nodes.ticket._save_processed_fingerprints"):
-                with patch(
-                    "agent.nodes.ticket.find_similar_ticket",
-                    return_value=(None, 0.0, None),
-                ):
-                    with patch("agent.jira.client.search", return_value=None):
-                        result = create_ticket(sample_state)
+        no_dup = DuplicateCheckResult(is_duplicate=False)
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = no_dup
+            result = create_ticket(sample_state)
 
         assert result["ticket_created"] is True
 
@@ -295,9 +278,9 @@ class TestLLMNoCreateDecision:
         """Test when create_ticket field is missing (defaults to not creating)."""
         sample_state.pop("create_ticket", None)
 
-        with patch(
-            "agent.nodes.ticket._load_processed_fingerprints", return_value=set()
-        ):
+        no_dup = DuplicateCheckResult(is_duplicate=False)
+        with patch("agent.nodes.ticket._ticket_dedup") as mock_dedup:
+            mock_dedup.check.return_value = no_dup
             result = create_ticket(sample_state)
 
         # create_ticket defaults to False, so LLM decision is "do not create"
