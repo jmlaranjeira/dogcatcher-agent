@@ -17,6 +17,11 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+# Ensure project root is importable when running as `python tools/report.py`.
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 # Graceful import of multi-tenant helpers — report works standalone too.
 try:
     from agent.team_loader import is_multi_tenant, list_team_ids
@@ -420,6 +425,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Suppress library loggers for machine-readable output.
+    if args.format in ("json", "csv"):
+        import logging
+
+        logging.disable(logging.CRITICAL)
+
     # Resolve audit file paths (single-tenant or multi-tenant)
     paths = _resolve_audit_paths(args.audit_file, args.team, args.all_teams)
 
@@ -500,4 +511,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BrokenPipeError:
+        # Gracefully handle piped output (e.g. `| head`).
+        pass
