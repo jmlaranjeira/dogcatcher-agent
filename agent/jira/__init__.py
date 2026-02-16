@@ -26,6 +26,7 @@ from .utils import (
     save_processed_fingerprints,
     priority_name_from_severity,
 )
+from agent.run_config import get_run_config
 from agent.utils.logger import log_info, log_warning
 
 __all__ = [
@@ -84,7 +85,8 @@ def _try_handle_duplicate(
         score=f"{score:.2f}",
     )
 
-    if os.getenv("COMMENT_ON_DUPLICATE", "true").lower() in ("1", "true", "yes"):
+    rc = get_run_config(state)
+    if rc.comment_on_duplicate:
         log_data = state.get("log_data", {})
         fp_count_key = f"{log_data.get('logger','')}|{log_data.get('message','')}"
         comment = (
@@ -118,8 +120,8 @@ def _try_handle_duplicate(
 def _create_or_simulate(
     state: Dict[str, Any], payload: Dict[str, Any], processed: set[str]
 ) -> Dict[str, Any]:
-    auto = os.getenv("AUTO_CREATE_TICKET", "").lower() in ("1", "true", "yes")
-    if auto:
+    rc = get_run_config(state)
+    if rc.auto_create_ticket:
         log_info(
             "Creating ticket",
             project=get_jira_project_key(),
@@ -141,8 +143,7 @@ def _create_or_simulate(
     # Dry-run branch
     log_info("Simulated ticket creation", summary=payload["fields"]["summary"])
     state["ticket_created"] = True
-    persist_sim = os.getenv("PERSIST_SIM_FP", "false").lower() in ("1", "true", "yes")
-    if persist_sim and state.get("log_fingerprint"):
+    if rc.persist_sim_fp and state.get("log_fingerprint"):
         processed.add(state["log_fingerprint"])
         save_processed_fingerprints(processed, state.get("team_id"))
     return state
@@ -153,7 +154,8 @@ def comment_on_issue(issue_key: str, comment_text: str) -> bool:
 
 
 def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
-    log_info("Entered create_ticket", auto_create=os.getenv("AUTO_CREATE_TICKET"))
+    rc = get_run_config(state)
+    log_info("Entered create_ticket", auto_create=rc.auto_create_ticket)
 
     assert (
         "ticket_title" in state and "ticket_description" in state

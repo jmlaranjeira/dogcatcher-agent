@@ -1,0 +1,48 @@
+# Docker Compose to simulate AWS ECS Fargate behaviour locally.
+#
+# What it does:
+#   1. Builds from Dockerfile.aws (same image deployed to ECR)
+#   2. Runs with --profile production (auto_create_ticket=true, max 5 tickets)
+#   3. Mounts teams.yaml and .agent_cache for persistence
+#   4. Container runs once and exits (like Fargate single-shot)
+#
+# Note: production profile sets cache_backend=redis but the agent
+# currently uses in-memory + file caching only.  Redis is a no-op
+# and is NOT included in this compose to keep it simple.
+#
+# Usage:
+#   docker compose -f docker-compose.aws-sim.yml up --build
+#
+# Override team:
+#   docker compose -f docker-compose.aws-sim.yml run --rm agent \
+#     python main.py --profile production --team team-vega
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.aws
+    image: dogcatcher-agent:aws-sim
+    container_name: dogcatcher-aws-sim
+    restart: "no"
+
+    env_file:
+      - .env
+
+    environment:
+      # Override cache backend to file (redis not implemented yet)
+      - CACHE_BACKEND=file
+
+    volumes:
+      - ./.agent_cache:/app/.agent_cache
+      - ./config/teams.yaml:/app/config/teams.yaml:ro
+
+    # CMD from Dockerfile.aws: python main.py --profile production
+    # This means: auto_create_ticket=true, max_tickets_per_run=5
+    # teams.yaml overrides max_tickets_per_run=3 for team-vega
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G

@@ -88,6 +88,14 @@ parser.set_defaults(
 
 args = parser.parse_args()
 
+# Track whether --real / --dry-run was explicitly passed on the CLI
+# (as opposed to falling through to the .env-based default).
+_cli_auto_create: bool | None = None
+if "--real" in sys.argv:
+    _cli_auto_create = True
+elif "--dry-run" in sys.argv:
+    _cli_auto_create = False
+
 # Apply parsed arguments to environment variables
 os.environ["AUTO_CREATE_TICKET"] = "true" if args.auto_create_ticket else "false"
 if args.env is not None:
@@ -126,6 +134,11 @@ if args.profile:
     try:
         config.load_profile_overrides(args.profile)
         print(f"✓ Using configuration profile: {args.profile}")
+
+        # If --real or --dry-run was explicitly passed on CLI, it overrides
+        # the profile value.  Otherwise the profile value wins over .env.
+        if _cli_auto_create is not None:
+            config.auto_create_ticket = _cli_auto_create
     except (ValueError, FileNotFoundError) as e:
         log_error(
             "Failed to load configuration profile", profile=args.profile, error=str(e)
