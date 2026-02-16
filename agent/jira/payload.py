@@ -213,6 +213,11 @@ class JiraPayloadBuilder:
         """Build labels for the ticket."""
         labels = ["datadog-log"]
 
+        # Add team label for multi-tenant identification
+        team_id = state.get("team_id")
+        if team_id:
+            labels.append(team_id)
+
         if extra_labels:
             labels.extend(extra_labels)
 

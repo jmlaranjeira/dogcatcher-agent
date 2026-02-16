@@ -58,6 +58,9 @@ def _compute_fingerprint(state: Dict[str, Any]) -> tuple[str, str]:
 
 def _base_labels(state: Dict[str, Any]) -> list[str]:
     labels: list[str] = ["datadog-log"]
+    team_id = state.get("team_id")
+    if team_id:
+        labels.append(team_id)
     try:
         loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
         if loghash:

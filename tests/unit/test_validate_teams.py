@@ -96,8 +96,8 @@ teams:
         f = tmp_path / "teams.yaml"
         f.write_text(content)
         ok, msgs = validate_file(f)
-        assert not ok
-        assert any("duplicate" in m.lower() for m in msgs)
+        assert ok  # shared project key is now a warning, not an error
+        assert any("shared jira_project_key" in m.lower() for m in msgs)
 
     def test_empty_teams(self, tmp_path):
         content = "teams: {}\n"

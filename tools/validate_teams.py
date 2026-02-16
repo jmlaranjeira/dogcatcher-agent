@@ -50,21 +50,26 @@ def validate_file(path: Path) -> Tuple[bool, List[str]]:
         return False, [f"Schema validation failed: {exc}"]
 
     # Cross-field validations
+    warnings: list[str] = []
     seen_projects: dict[str, str] = {}
     for tid, team in cfg.teams.items():
         if tid != team.team_id:
             errors.append(f"Key mismatch: dict key '{tid}' != team_id '{team.team_id}'")
         if team.jira_project_key in seen_projects:
-            errors.append(
-                f"Duplicate jira_project_key '{team.jira_project_key}' "
-                f"in teams '{seen_projects[team.jira_project_key]}' and '{tid}'"
+            warnings.append(
+                f"Shared jira_project_key '{team.jira_project_key}' "
+                f"in teams '{seen_projects[team.jira_project_key]}' and '{tid}' "
+                f"— use team labels to distinguish tickets"
             )
         seen_projects[team.jira_project_key] = tid
 
     if errors:
         return False, errors
 
-    return True, [f"Valid: {len(cfg.teams)} team(s) configured"]
+    messages = [f"Valid: {len(cfg.teams)} team(s) configured"]
+    for w in warnings:
+        messages.append(f"[WARN] {w}")
+    return True, messages
 
 
 def generate_schema() -> dict:
