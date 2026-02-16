@@ -16,6 +16,7 @@ teams:
     datadog_services:
       - dehnlicense
       - dehnproject
+      - dehn-risk-api
     datadog_env: prod
     max_tickets_per_run: 3
 
@@ -25,5 +26,6 @@ teams:
     jira_team_field_value: "Team Solar"
     datadog_services:
       - communication
+      - dehn-commerce-pricing
     datadog_env: dev
     max_tickets_per_run: 3

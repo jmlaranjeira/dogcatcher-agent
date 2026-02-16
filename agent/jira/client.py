@@ -109,18 +109,9 @@ def add_comment(issue_key: str, comment_text: str) -> bool:
         return False
     config = get_config()
     url = f"https://{config.jira_domain}/rest/api/3/issue/{issue_key}/comment"
-    body = {
-        "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [{"type": "text", "text": comment_text}],
-                }
-            ],
-        }
-    }
+    from agent.jira.adf import markdown_to_adf
+
+    body = {"body": markdown_to_adf(comment_text)}
     try:
         resp = requests.post(url, headers=_headers(), json=body, timeout=30)
         log_api_response("Jira comment addition", resp.status_code)

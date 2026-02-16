@@ -9,6 +9,8 @@ import hashlib
 import os
 from typing import Dict, Any
 
+from .adf import markdown_to_adf
+
 from .client import (
     get_jira_project_key,
     get_jira_domain,
@@ -210,23 +212,9 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
             "fields": {
                 "project": {"key": get_jira_project_key()},
                 "summary": clean_title,
-                "description": {
-                    "type": "doc",
-                    "version": 1,
-                    "content": [
-                        {
-                            "type": "paragraph",
-                            "content": [
-                                {
-                                    "text": sanitize_for_jira(
-                                        state.get("ticket_description") or ""
-                                    ),
-                                    "type": "text",
-                                }
-                            ],
-                        }
-                    ],
-                },
+                "description": markdown_to_adf(
+                    sanitize_for_jira(state.get("ticket_description") or "")
+                ),
                 "issuetype": {"name": "Bug"},
                 "labels": labels,
                 "priority": {"name": priority_name},

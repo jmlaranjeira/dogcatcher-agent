@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from agent.jira.adf import markdown_to_adf
 from agent.jira.utils import (
     compute_fingerprint,
     compute_loghash,
@@ -78,16 +79,7 @@ class JiraPayloadBuilder:
             "fields": {
                 "project": {"key": self.config.jira_project_key},
                 "summary": clean_title,
-                "description": {
-                    "type": "doc",
-                    "version": 1,
-                    "content": [
-                        {
-                            "type": "paragraph",
-                            "content": [{"text": full_description, "type": "text"}],
-                        }
-                    ],
-                },
+                "description": markdown_to_adf(full_description),
                 "issuetype": {"name": "Bug"},
                 "labels": labels,
                 "priority": {
@@ -142,6 +134,8 @@ class JiraPayloadBuilder:
         # Build basic context info
         extra_info = f"""
 ---
+\U0001f30d Environment: {self.config.datadog_env}
+\U0001f4e6 Service: {self.config.datadog_service}
 \U0001f552 Timestamp: {log_data.get('timestamp', 'N/A')}
 \U0001f9e9 Logger: {log_data.get('logger', 'N/A')}
 \U0001f9f5 Thread: {log_data.get('thread', 'N/A')}
@@ -213,10 +207,14 @@ class JiraPayloadBuilder:
         """Build labels for the ticket."""
         labels = ["datadog-log"]
 
-        # Add team label for multi-tenant identification
+        # Add team and environment labels for multi-tenant identification
         team_id = state.get("team_id")
         if team_id:
             labels.append(team_id)
+
+        env = self.config.datadog_env
+        if env:
+            labels.append(f"env-{env}")
 
         if extra_labels:
             labels.extend(extra_labels)

@@ -17,6 +17,7 @@ def _make_config(**overrides):
         "jira_project_key": "TEST",
         "datadog_logs_url": "https://app.datadoghq.eu/logs",
         "datadog_service": "test-service",
+        "datadog_env": "prod",
         "aggregate_email_not_found": False,
         "aggregate_kafka_consumer": False,
         "max_title_length": 120,
