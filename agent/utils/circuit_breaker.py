@@ -109,7 +109,7 @@ class CircuitBreaker:
         # In Python 3.10+, Lock stores its loop; in <3.10 it uses
         # _loop attribute.  Safest: just try to use it and recreate
         # on failure.
-        lock_loop = getattr(self._lock, '_loop', None)
+        lock_loop = getattr(self._lock, "_loop", None)
         if lock_loop is not None and lock_loop is not running_loop:
             self._lock = asyncio.Lock()
 

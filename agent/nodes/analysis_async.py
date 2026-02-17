@@ -55,6 +55,7 @@ def _build_chain():
     )
     return prompt | llm
 
+
 # Circuit breaker state
 _circuit_breaker_initialized = False
 

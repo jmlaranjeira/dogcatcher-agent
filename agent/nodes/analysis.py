@@ -52,6 +52,7 @@ def _build_chain():
     )
     return prompt | llm
 
+
 # Initialize circuit breaker for LLM calls (Phase 1.2)
 _circuit_breaker_initialized = False
 
