@@ -82,11 +82,42 @@ class CircuitBreaker:
         self.half_open_calls = 0
         self.last_failure_time: Optional[float] = None
         self.stats = CircuitBreakerStats()
-        self._lock = asyncio.Lock()
+        # Lazy asyncio.Lock — created on first use so it binds to the
+        # *current* event loop.  This avoids "Lock is bound to a different
+        # event loop" errors when the breaker is reused across multiple
+        # asyncio.run() calls (e.g. multi-tenant mode).
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Return an asyncio.Lock bound to the running event loop.
+
+        Creates a new lock when the running loop differs from the one
+        that created the previous lock (or on first call).
+        """
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop — create a fresh lock that will bind on first await
+            self._lock = asyncio.Lock()
+            return self._lock
+
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+            return self._lock
+
+        # Check if the existing lock is bound to a different loop
+        # In Python 3.10+, Lock stores its loop; in <3.10 it uses
+        # _loop attribute.  Safest: just try to use it and recreate
+        # on failure.
+        lock_loop = getattr(self._lock, '_loop', None)
+        if lock_loop is not None and lock_loop is not running_loop:
+            self._lock = asyncio.Lock()
+
+        return self._lock
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function with circuit breaker protection."""
-        async with self._lock:
+        async with self._get_lock():
             self.stats.total_calls += 1
 
             # Check if we should attempt the call
@@ -284,7 +315,7 @@ class CircuitBreaker:
 
     async def reset(self) -> None:
         """Reset circuit breaker to closed state."""
-        async with self._lock:
+        async with self._get_lock():
             old_state = self.state
             self.state = CircuitState.CLOSED
             self.failure_count = 0
@@ -299,7 +330,7 @@ class CircuitBreaker:
 
     async def force_open(self) -> None:
         """Force circuit breaker to open state (for testing/maintenance)."""
-        async with self._lock:
+        async with self._get_lock():
             old_state = self.state
             await self._transition_to_open()
 
