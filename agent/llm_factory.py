@@ -97,7 +97,9 @@ def chat_completion(
     provider = _get_provider()
 
     if provider == "bedrock":
-        return _bedrock_chat_completion(messages, temperature, max_tokens, json_response)
+        return _bedrock_chat_completion(
+            messages, temperature, max_tokens, json_response
+        )
     return _openai_chat_completion(messages, temperature, max_tokens, json_response)
 
 
@@ -148,10 +150,12 @@ def _bedrock_chat_completion(
         if msg["role"] == "system":
             system_prompt = msg["content"]
         else:
-            bedrock_messages.append({
-                "role": msg["role"],
-                "content": [{"text": msg["content"]}],
-            })
+            bedrock_messages.append(
+                {
+                    "role": msg["role"],
+                    "content": [{"text": msg["content"]}],
+                }
+            )
 
     # Enforce JSON output via system prompt (Bedrock has no native json mode)
     if json_response:
@@ -227,6 +231,8 @@ def get_circuit_breaker_exception_class() -> type:
     provider = _get_provider()
     if provider == "bedrock":
         from botocore.exceptions import ClientError
+
         return ClientError
     from openai import OpenAIError
+
     return OpenAIError

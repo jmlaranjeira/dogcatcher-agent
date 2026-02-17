@@ -20,7 +20,13 @@ class TestGetLangchainLlm:
         call_kwargs = mock_chat_openai.call_args
         assert call_kwargs.kwargs["model"] == "gpt-4.1-nano"
 
-    @patch.dict(os.environ, {"LLM_PROVIDER": "bedrock", "BEDROCK_MODEL_ID": "anthropic.claude-3-haiku-20240307-v1:0"})
+    @patch.dict(
+        os.environ,
+        {
+            "LLM_PROVIDER": "bedrock",
+            "BEDROCK_MODEL_ID": "anthropic.claude-3-haiku-20240307-v1:0",
+        },
+    )
     @patch("langchain_aws.ChatBedrockConverse")
     def test_returns_bedrock_when_configured(self, mock_bedrock):
         from agent.llm_factory import get_langchain_llm
@@ -63,11 +69,7 @@ class TestChatCompletion:
 
         mock_client = Mock()
         mock_client.converse.return_value = {
-            "output": {
-                "message": {
-                    "content": [{"text": "bedrock response"}]
-                }
-            }
+            "output": {"message": {"content": [{"text": "bedrock response"}]}}
         }
         mock_boto3_client.return_value = mock_client
 
@@ -86,11 +88,7 @@ class TestChatCompletion:
 
         mock_client = Mock()
         mock_client.converse.return_value = {
-            "output": {
-                "message": {
-                    "content": [{"text": '{"key": "value"}'}]
-                }
-            }
+            "output": {"message": {"content": [{"text": '{"key": "value"}'}]}}
         }
         mock_boto3_client.return_value = mock_client
 

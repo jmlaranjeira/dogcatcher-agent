@@ -73,9 +73,9 @@ class TestMarkdownToAdf:
     def test_url_link(self):
         result = markdown_to_adf("Visit https://example.com/page for details")
         nodes = result["content"][0]["content"]
-        link_node = [n for n in nodes if any(
-            m.get("type") == "link" for m in n.get("marks", [])
-        )]
+        link_node = [
+            n for n in nodes if any(m.get("type") == "link" for m in n.get("marks", []))
+        ]
         assert len(link_node) == 1
         assert link_node[0]["text"] == "https://example.com/page"
         assert link_node[0]["marks"][0]["attrs"]["href"] == "https://example.com/page"
@@ -136,7 +136,9 @@ class TestRealDescription:
     def test_heading_count(self):
         result = markdown_to_adf(self.SAMPLE)
         headings = [b for b in result["content"] if b["type"] == "heading"]
-        assert len(headings) == 4  # Problem summary, Possible Causes, Suggested Actions, Severity
+        assert (
+            len(headings) == 4
+        )  # Problem summary, Possible Causes, Suggested Actions, Severity
 
     def test_bullet_lists(self):
         result = markdown_to_adf(self.SAMPLE)

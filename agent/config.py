@@ -325,7 +325,8 @@ class Config(BaseSettings):
 
     # LLM Provider Selection
     llm_provider: str = Field(
-        "openai", env="LLM_PROVIDER",
+        "openai",
+        env="LLM_PROVIDER",
         description='LLM provider: "openai" or "bedrock"',
     )
 
@@ -351,7 +352,11 @@ class Config(BaseSettings):
         description="Bedrock model ID",
     )
     bedrock_temperature: float = Field(
-        0.0, env="BEDROCK_TEMPERATURE", ge=0.0, le=1.0, description="Bedrock temperature"
+        0.0,
+        env="BEDROCK_TEMPERATURE",
+        ge=0.0,
+        le=1.0,
+        description="Bedrock temperature",
     )
     bedrock_max_tokens: int = Field(
         4096, env="BEDROCK_MAX_TOKENS", ge=1, le=8192, description="Bedrock max tokens"
@@ -778,7 +783,8 @@ class Config(BaseSettings):
             profile=self.profile,
             llm_provider=self.llm_provider,
             llm_model=(
-                self.bedrock_model_id if self.llm_provider == "bedrock"
+                self.bedrock_model_id
+                if self.llm_provider == "bedrock"
                 else self.openai_model
             ),
             datadog_site=self.datadog_site,

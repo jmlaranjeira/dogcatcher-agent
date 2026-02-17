@@ -177,8 +177,6 @@ def markdown_to_adf(text: str) -> Dict[str, Any]:
 
     # ADF doc must have at least one block
     if not blocks:
-        blocks.append(
-            {"type": "paragraph", "content": [{"type": "text", "text": ""}]}
-        )
+        blocks.append({"type": "paragraph", "content": [{"type": "text", "text": ""}]})
 
     return {"type": "doc", "version": 1, "content": blocks}
