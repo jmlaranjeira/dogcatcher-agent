@@ -440,19 +440,25 @@ def circuit_breaker(
 # Convenience functions for common patterns
 
 
-def create_openai_circuit_breaker() -> CircuitBreaker:
-    """Create circuit breaker specifically for OpenAI API calls."""
-    from openai import OpenAIError
+def create_llm_circuit_breaker() -> CircuitBreaker:
+    """Create circuit breaker for LLM API calls (OpenAI or Bedrock)."""
+    from agent.llm_factory import get_circuit_breaker_exception_class
+
+    exc_class = get_circuit_breaker_exception_class()
 
     config = CircuitBreakerConfig(
         failure_threshold=3,
         timeout_seconds=30,
         half_open_max_calls=2,
-        expected_exception=OpenAIError,
-        name="openai_api",
+        expected_exception=exc_class,
+        name="llm_api",
     )
 
-    return _registry.register("openai_api", config)
+    return _registry.register("llm_api", config)
+
+
+# Backward compatibility alias
+create_openai_circuit_breaker = create_llm_circuit_breaker
 
 
 def create_jira_circuit_breaker() -> CircuitBreaker:

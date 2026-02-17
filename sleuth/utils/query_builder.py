@@ -7,8 +7,6 @@ and building optimized Datadog search queries.
 import re
 from typing import Dict, List, Optional
 
-from openai import OpenAI
-
 from agent.config import get_config
 from agent.utils.logger import log_info, log_error
 
@@ -113,7 +111,7 @@ def build_datadog_query(
     config = get_config()
     env = env or config.datadog_env
 
-    if use_llm and config.openai_api_key:
+    if use_llm and (config.llm_provider == "bedrock" or config.openai_api_key):
         try:
             return _build_query_with_llm(user_query, service, env, all_status)
         except Exception as e:
@@ -129,8 +127,7 @@ def _build_query_with_llm(
     all_status: bool = False,
 ) -> str:
     """Build query using LLM."""
-    config = get_config()
-    client = OpenAI(api_key=config.openai_api_key)
+    from agent.llm_factory import chat_completion
 
     status_instruction = (
         "Do NOT include any status filter - search all log levels"
@@ -161,14 +158,11 @@ Example output formats:
 
 Query:"""
 
-    response = client.chat.completions.create(
-        model=config.openai_model,
+    query = chat_completion(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=200,
     )
-
-    query = response.choices[0].message.content.strip()
     # Clean up any markdown or quotes
     query = query.strip("`\"'")
     # Validate and fix query syntax

@@ -163,9 +163,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     total = len(rows)
     by_error = Counter(r.get("error_type", "<unknown>") for r in rows)
     by_sev = Counter(str(r.get("severity", "<unknown>")).lower() for r in rows)
-    by_decision = Counter(
-        str(r.get("decision", "<unknown>")).lower() for r in rows
-    )
+    by_decision = Counter(str(r.get("decision", "<unknown>")).lower() for r in rows)
 
     def _dec(r: Dict[str, Any]) -> str:
         return str(r.get("decision", "")).lower()
@@ -174,9 +172,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     dupes = sum(1 for r in rows if _dec(r).startswith("duplicate"))
     simulated = sum(1 for r in rows if _dec(r) == "simulated")
     would_create = sum(
-        1
-        for r in rows
-        if _dec(r) == "simulated" and r.get("create_ticket") is True
+        1 for r in rows if _dec(r) == "simulated" and r.get("create_ticket") is True
     )
     cap_reached = sum(1 for r in rows if _dec(r) == "cap-reached")
     unknown_decisions = sum(1 for r in rows if not _dec(r))
@@ -191,9 +187,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         r.get("fingerprint") or r.get("log_fingerprint") or r.get("log_key")
         for r in rows
     )
-    by_issue = Counter(
-        r.get("jira_key") or r.get("existing_issue_key") for r in rows
-    )
+    by_issue = Counter(r.get("jira_key") or r.get("existing_issue_key") for r in rows)
 
     return {
         "total": total,
@@ -312,9 +306,7 @@ def _write_csv(rows: List[Dict[str, Any]]) -> None:
     if not rows:
         return
     fieldnames = sorted({k for r in rows for k in r.keys()})
-    writer = csv.DictWriter(
-        sys.stdout, fieldnames=fieldnames, extrasaction="ignore"
-    )
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     writer.writerows(rows)
 
@@ -468,18 +460,14 @@ def main() -> None:
                 if args.group_by != "none":
                     s["trends"] = {
                         k: dict(v)
-                        for k, v in temporal_breakdown(
-                            rows, args.group_by
-                        ).items()
+                        for k, v in temporal_breakdown(rows, args.group_by).items()
                     }
                 output["teams"][label] = s
         agg = _serialize_summary(summarize(all_rows))
         if args.group_by != "none":
             agg["trends"] = {
                 k: dict(v)
-                for k, v in temporal_breakdown(
-                    all_rows, args.group_by
-                ).items()
+                for k, v in temporal_breakdown(all_rows, args.group_by).items()
             }
         output["aggregate" if multi else "summary"] = agg
         print(json.dumps(output, default=str, indent=2))

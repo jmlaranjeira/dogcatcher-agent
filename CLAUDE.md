@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the **Dogcatcher Agent**, an automated LangGraph-powered agent that:
 - Fetches error logs from Datadog
-- Analyzes them with LLM (OpenAI gpt-4.1-nano)
+- Analyzes them with LLM (OpenAI or AWS Bedrock, configurable via `LLM_PROVIDER`)
 - Performs intelligent duplicate detection against Jira
 - Creates Jira tickets with configurable per-run caps
 - Includes a self-healing PR bot (Patchy)
@@ -156,8 +156,14 @@ Datadog Logs → Log Fetching → LLM Analysis → Duplicate Detection
 
 The project uses environment variables loaded from `.env`:
 
+### LLM Provider Configuration
+- `LLM_PROVIDER`: `openai` (default) or `bedrock` — selects the LLM backend
+- **OpenAI** (when `LLM_PROVIDER=openai`): requires `OPENAI_API_KEY`, uses `OPENAI_MODEL` (default: `gpt-4.1-nano`)
+- **AWS Bedrock** (when `LLM_PROVIDER=bedrock`): uses IAM credentials (no API key needed), configurable via `AWS_REGION`, `BEDROCK_MODEL_ID`, `BEDROCK_TEMPERATURE`, `BEDROCK_MAX_TOKENS`
+- Provider logic is centralized in `agent/llm_factory.py`
+
 ### Required Settings
-- `OPENAI_API_KEY`: OpenAI API access
+- `OPENAI_API_KEY`: OpenAI API access (only when `LLM_PROVIDER=openai`)
 - `DATADOG_API_KEY` & `DATADOG_APP_KEY`: Datadog API access
 - `JIRA_DOMAIN`, `JIRA_USER`, `JIRA_API_TOKEN`: Jira integration
 

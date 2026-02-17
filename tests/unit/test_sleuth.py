@@ -420,6 +420,7 @@ class TestSleuthIntegration:
             datadog_env="prod",
             datadog_limit=50,
             datadog_timeout=20,
+            llm_provider="openai",
             openai_api_key=None,  # Disable LLM for deterministic test
         )
         mock_jira.return_value = False
