@@ -267,7 +267,7 @@ def run_health_checks(verbose: bool = True) -> Tuple[bool, List[HealthCheckResul
         if result.healthy:
             log_info(f"Health check passed: {result.service}", **result.details)
         else:
-            log_error(f"Health check failed: {result.service}", message=result.message)
+            log_error(f"Health check failed: {result.service}", detail=result.message)
 
     return all_healthy, results
 
