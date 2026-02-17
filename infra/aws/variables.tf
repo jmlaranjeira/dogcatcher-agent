@@ -76,11 +76,31 @@ variable "redis_node_type" {
   default     = "cache.t3.micro"
 }
 
+# --- LLM Provider ---
+
+variable "llm_provider" {
+  description = "LLM provider: 'openai' or 'bedrock'"
+  type        = string
+  default     = "bedrock"
+
+  validation {
+    condition     = contains(["openai", "bedrock"], var.llm_provider)
+    error_message = "llm_provider must be 'openai' or 'bedrock'."
+  }
+}
+
+variable "bedrock_model_id" {
+  description = "Bedrock foundation model ID (used when llm_provider=bedrock)"
+  type        = string
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+}
+
 # --- Secrets (ARNs provided after manual creation) ---
 
 variable "openai_api_key_arn" {
-  description = "Secrets Manager ARN for OPENAI_API_KEY"
+  description = "Secrets Manager ARN for OPENAI_API_KEY (only required when llm_provider=openai)"
   type        = string
+  default     = ""
 }
 
 variable "datadog_api_key_arn" {

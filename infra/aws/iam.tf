@@ -46,14 +46,33 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
   policy = data.aws_iam_policy_document.ecs_execution_secrets.json
 }
 
-# --- ECS Task Role (runtime permissions — minimal) ---
+# --- ECS Task Role (runtime permissions) ---
 
 resource "aws_iam_role" "ecs_task" {
   name               = "${var.project_name}-${var.environment}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
 }
 
-# Task role needs no extra policies — network access to Redis/EFS is via SGs.
+# Bedrock access for LLM analysis (when LLM_PROVIDER=bedrock)
+data "aws_iam_policy_document" "ecs_task_bedrock" {
+  statement {
+    sid = "InvokeBedrock"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = [
+      "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task_bedrock" {
+  count  = var.llm_provider == "bedrock" ? 1 : 0
+  name   = "bedrock-invoke"
+  role   = aws_iam_role.ecs_task.id
+  policy = data.aws_iam_policy_document.ecs_task_bedrock.json
+}
 
 # --- EventBridge Role (invokes ECS RunTask) ---
 
@@ -80,8 +99,8 @@ data "aws_iam_policy_document" "eventbridge_run_task" {
   }
 
   statement {
-    sid       = "PassRole"
-    actions   = ["iam:PassRole"]
+    sid     = "PassRole"
+    actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.ecs_execution.arn,
       aws_iam_role.ecs_task.arn,

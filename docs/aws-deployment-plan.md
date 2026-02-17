@@ -2,16 +2,27 @@
 
 ## 1. Prerequisites
 
-- AWS account with permissions: ECS, ECR, Secrets Manager, CloudWatch, VPC
-- Terraform installed locally (`brew install hashicorp/tap/terraform`) ✅
-- AWS CLI configured (`aws configure`)
+- AWS account with permissions: ECS, ECR, Secrets Manager, CloudWatch, VPC, Bedrock
+- Terraform installed locally (`brew install hashicorp/tap/terraform`)
+- AWS CLI configured (`aws configure` or SSO)
+- Bedrock model access enabled (see step 1b)
+
+## 1b. Enable Bedrock Model Access
+
+In the AWS Console: **Amazon Bedrock > Model access > Manage model access**
+
+Request access to `anthropic.claude-3-haiku-20240307-v1:0` in your deployment region.
+This is a one-time step per account/region.
 
 ## 2. Configure Secrets in AWS
 
 Upload API keys to AWS Secrets Manager before deploying infrastructure:
-- `OPENAI_API_KEY`
 - `DATADOG_API_KEY` / `DATADOG_APP_KEY`
-- `JIRA_DOMAIN` / `JIRA_USER` / `JIRA_API_TOKEN`
+- `JIRA_API_TOKEN`
+
+**Note:** When using `llm_provider=bedrock` (default), no LLM API keys are needed.
+Bedrock authenticates via the ECS task IAM role. Only set `OPENAI_API_KEY` if
+using `llm_provider=openai`.
 
 ## 3. Configure Terraform Variables
 
@@ -19,6 +30,13 @@ Upload API keys to AWS Secrets Manager before deploying infrastructure:
 cd infra/aws
 cp terraform.tfvars.example terraform.tfvars
 # Fill in with real values
+```
+
+Key LLM settings in `terraform.tfvars`:
+```hcl
+llm_provider     = "bedrock"                                  # or "openai"
+bedrock_model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+openai_api_key_arn = ""                                       # only if llm_provider=openai
 ```
 
 ## 4. Deploy Infrastructure
@@ -56,11 +74,11 @@ All Terraform files live in `infra/aws/`:
 
 | File | Purpose |
 |---|---|
-| `ecs.tf` | Fargate cluster + task definition |
+| `ecs.tf` | Fargate cluster + task definition (includes LLM env vars) |
 | `ecr.tf` | Docker image registry |
 | `eventbridge.tf` | Scheduled execution |
 | `vpc.tf` | Private network |
-| `iam.tf` | Roles and permissions |
+| `iam.tf` | Roles and permissions (includes Bedrock policy) |
 | `secrets.tf` | Secrets Manager |
 | `efs.tf` | Persistent storage (cache/audit) |
 | `elasticache.tf` | Redis (deduplication) |

@@ -1,4 +1,5 @@
 environment         = "prod"
+llm_provider        = "bedrock"
 schedule_expression = "cron(0 * * * ? *)"  # Every hour
 task_cpu            = 1024
 task_memory         = 2048

@@ -40,6 +40,9 @@ resource "aws_ecs_task_definition" "agent" {
       secrets = [for s in local.secrets : jsondecode(s)]
 
       environment = [
+        { name = "LLM_PROVIDER", value = var.llm_provider },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
         { name = "JIRA_DOMAIN", value = var.jira_domain },
         { name = "JIRA_USER", value = var.jira_user },
         { name = "JIRA_PROJECT_KEY", value = var.jira_project_key },

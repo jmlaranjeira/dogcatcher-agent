@@ -1,4 +1,5 @@
 environment         = "dev"
+llm_provider        = "bedrock"
 schedule_expression = "cron(0 9 * * ? *)"  # Once daily at 09:00 UTC
 task_cpu            = 512
 task_memory         = 1024

@@ -5,8 +5,12 @@ aws_region   = "eu-west-1"
 environment  = "prod"
 project_name = "dogcatcher"
 
+# --- LLM Provider ---
+llm_provider     = "bedrock"                                  # "openai" or "bedrock"
+bedrock_model_id = "anthropic.claude-3-haiku-20240307-v1:0"   # Bedrock model (ignored if openai)
+
 # --- Secrets Manager ARNs (create secrets first, then paste ARNs) ---
-openai_api_key_arn  = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/openai-api-key-XXXXXX"
+openai_api_key_arn  = ""  # Only required when llm_provider=openai
 datadog_api_key_arn = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/datadog-api-key-XXXXXX"
 datadog_app_key_arn = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/datadog-app-key-XXXXXX"
 jira_api_token_arn  = "arn:aws:secretsmanager:eu-west-1:ACCOUNT:secret:dogcatcher/prod/jira-api-token-XXXXXX"
