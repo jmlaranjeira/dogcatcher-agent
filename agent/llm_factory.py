@@ -35,6 +35,7 @@ def get_langchain_llm():
     provider = _get_provider()
 
     if provider == "bedrock":
+        import boto3
         from langchain_aws import ChatBedrockConverse
 
         region = os.getenv("AWS_REGION", "eu-west-1")
@@ -45,12 +46,23 @@ def get_langchain_llm():
         temperature = float(os.getenv("BEDROCK_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 
+        # Create a fresh boto3 session per call.  The default session is
+        # cached at module level and its internal asyncio.Lock gets bound
+        # to the event loop that first used it, causing "bound to a
+        # different event loop" errors in async workers.
+        # Both `client` (runtime) and `bedrock_client` (control plane)
+        # must be provided to prevent ChatBedrockConverse from falling
+        # back to the default session for either one.
+        session = boto3.Session(region_name=region)
+
         log_info("Using Bedrock LLM", model_id=model_id, region=region)
         return ChatBedrockConverse(
             model=model_id,
             region_name=region,
             temperature=temperature,
             max_tokens=max_tokens,
+            client=session.client("bedrock-runtime"),
+            bedrock_client=session.client("bedrock"),
         )
 
     # Default: OpenAI

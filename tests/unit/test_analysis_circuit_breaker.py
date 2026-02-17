@@ -64,8 +64,10 @@ class TestAnalysisCircuitBreakerIntegration:
             "severity": "high"
         }"""
 
-        with patch("agent.nodes.analysis.chain") as mock_chain:
+        with patch("agent.nodes.analysis._build_chain") as mock_build:
+            mock_chain = MagicMock()
             mock_chain.invoke.return_value = mock_response
+            mock_build.return_value = mock_chain
 
             result = analyze_log(state)
 
@@ -85,11 +87,13 @@ class TestAnalysisCircuitBreakerIntegration:
             }
         }
 
-        with patch("agent.nodes.analysis.chain") as mock_chain:
+        with patch("agent.nodes.analysis._build_chain") as mock_build:
             from openai import OpenAIError
 
+            mock_chain = MagicMock()
             # Simulate LLM failures
             mock_chain.invoke.side_effect = OpenAIError("API Error")
+            mock_build.return_value = mock_chain
 
             # First 3 calls should fail and open circuit
             for i in range(3):
@@ -190,8 +194,10 @@ class TestAnalysisCircuitBreakerIntegration:
                 "severity": "low"
             }"""
 
-            with patch("agent.nodes.analysis.chain") as mock_chain:
+            with patch("agent.nodes.analysis._build_chain") as mock_build:
+                mock_chain = MagicMock()
                 mock_chain.invoke.return_value = mock_response
+                mock_build.return_value = mock_chain
 
                 result = analyze_log(state)
 
@@ -214,8 +220,10 @@ class TestAnalysisCircuitBreakerIntegration:
         mock_response = Mock()
         mock_response.content = "Invalid JSON response"
 
-        with patch("agent.nodes.analysis.chain") as mock_chain:
+        with patch("agent.nodes.analysis._build_chain") as mock_build:
+            mock_chain = MagicMock()
             mock_chain.invoke.return_value = mock_response
+            mock_build.return_value = mock_chain
 
             result = analyze_log(state)
 

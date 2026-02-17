@@ -228,10 +228,12 @@ class TestAnalyzeLogAsyncCircuitBreaker:
         mock_config.circuit_breaker_enabled = False
 
         with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
-            with patch("agent.nodes.analysis_async.chain") as mock_chain:
+            with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                mock_chain = MagicMock()
                 mock_response = MagicMock()
                 mock_response.content = valid_llm_response
                 mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                mock_build.return_value = mock_chain
 
                 result = await analyze_log_async(sample_state)
 
@@ -437,10 +439,12 @@ class TestCallLlmAsync:
         mock_config.circuit_breaker_enabled = False
 
         with patch("agent.nodes.analysis_async.get_config", return_value=mock_config):
-            with patch("agent.nodes.analysis_async.chain") as mock_chain:
+            with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                mock_chain = MagicMock()
                 mock_response = MagicMock()
                 mock_response.content = valid_llm_response
                 mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                mock_build.return_value = mock_chain
 
                 result = await _call_llm_async("Test log context")
 
@@ -465,10 +469,12 @@ class TestCallLlmAsync:
                 mock_breaker.call = breaker_call
                 mock_registry.return_value.get.return_value = mock_breaker
 
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                    mock_chain = MagicMock()
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                    mock_build.return_value = mock_chain
 
                     result = await _call_llm_async("Test log context")
 

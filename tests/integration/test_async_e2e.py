@@ -120,10 +120,12 @@ class TestAsyncPipelineE2E:
                     "agent.nodes.ticket_async.get_config", return_value=mock_config
                 ):
                     # Mock LLM response
-                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                    with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                        mock_chain = MagicMock()
                         mock_response = MagicMock()
                         mock_response.content = valid_llm_response
                         mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                        mock_build.return_value = mock_chain
 
                         # Mock Jira client
                         with patch(
@@ -168,10 +170,12 @@ class TestAsyncPipelineE2E:
             with patch(
                 "agent.nodes.analysis_async.get_config", return_value=mock_config
             ):
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                    mock_chain = MagicMock()
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                    mock_build.return_value = mock_chain
 
                     processor = AsyncLogProcessor(
                         max_workers=3,
@@ -218,8 +222,10 @@ class TestAsyncThroughput:
                         mock_response.content = valid_llm_response
                         return mock_response
 
-                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                    with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                        mock_chain = MagicMock()
                         mock_chain.ainvoke = fast_llm_response
+                        mock_build.return_value = mock_chain
 
                         with patch(
                             "agent.nodes.ticket_async.AsyncJiraClient"
@@ -279,8 +285,10 @@ class TestAsyncThroughput:
                         mock_response.content = valid_llm_response
                         return mock_response
 
-                    with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                    with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                        mock_chain = MagicMock()
                         mock_chain.ainvoke = slow_analysis
+                        mock_build.return_value = mock_chain
 
                         # Mock Jira client for ticket creation
                         with patch(
@@ -333,7 +341,7 @@ class TestAsyncRateLimiting:
             with patch(
                 "agent.nodes.analysis_async.get_config", return_value=mock_config
             ):
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
                     call_times = []
 
                     async def tracked_llm(*args, **kwargs):
@@ -342,7 +350,9 @@ class TestAsyncRateLimiting:
                         mock_response.content = valid_llm_response
                         return mock_response
 
+                    mock_chain = MagicMock()
                     mock_chain.ainvoke = tracked_llm
+                    mock_build.return_value = mock_chain
 
                     # Rate limiter: 10 calls per second
                     processor = AsyncLogProcessor(
@@ -406,8 +416,10 @@ class TestAsyncErrorHandling:
                 mock_response.content = valid_llm_response
                 return mock_response
 
-            with patch("agent.nodes.analysis_async.chain") as mock_chain:
+            with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                mock_chain = MagicMock()
                 mock_chain.ainvoke = sometimes_failing
+                mock_build.return_value = mock_chain
 
                 # Mock Jira client for ticket creation
                 with patch("agent.nodes.ticket_async.AsyncJiraClient") as MockJira:
@@ -460,10 +472,12 @@ class TestAsyncErrorHandling:
                 "agent.nodes.analysis_async.get_config", return_value=mock_config
             ):
                 # Simulate all LLM calls failing
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
                     from openai import OpenAIError
 
+                    mock_chain = MagicMock()
                     mock_chain.ainvoke = AsyncMock(side_effect=OpenAIError("API Error"))
+                    mock_build.return_value = mock_chain
 
                     with patch(
                         "agent.nodes.analysis_async._use_fallback_analysis_async",
@@ -497,10 +511,12 @@ class TestConvenienceFunction:
             with patch(
                 "agent.nodes.analysis_async.get_config", return_value=mock_config
             ):
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                    mock_chain = MagicMock()
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                    mock_build.return_value = mock_chain
 
                     result = await process_logs_parallel(
                         sample_logs[:3],
@@ -555,10 +571,12 @@ class TestDatadogFetchIntegration:
             with patch(
                 "agent.nodes.analysis_async.get_config", return_value=mock_config
             ):
-                with patch("agent.nodes.analysis_async.chain") as mock_chain:
+                with patch("agent.nodes.analysis_async._build_chain") as mock_build:
+                    mock_chain = MagicMock()
                     mock_response = MagicMock()
                     mock_response.content = valid_llm_response
                     mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+                    mock_build.return_value = mock_chain
 
                     processor = AsyncLogProcessor(
                         max_workers=1,
