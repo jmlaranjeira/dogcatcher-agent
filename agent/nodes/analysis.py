@@ -22,6 +22,8 @@ from agent.llm_factory import get_langchain_llm, get_circuit_breaker_exception_c
 import re
 import json
 
+from agent.nodes.json_sanitizer import parse_llm_json as _parse_llm_json
+
 llm = get_langchain_llm()
 
 prompt = ChatPromptTemplate.from_messages(
@@ -153,7 +155,7 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
         match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
         raw_json = match.group(1) if match else content
 
-        parsed = json.loads(raw_json)
+        parsed = _parse_llm_json(raw_json)
         title = parsed.get("ticket_title")
         desc = parsed.get("ticket_description")
 

@@ -9,6 +9,8 @@ import re
 import json
 from typing import Dict, Any
 
+from agent.nodes.json_sanitizer import parse_llm_json as _parse_llm_json
+
 from langchain_core.prompts import ChatPromptTemplate
 
 from agent.utils.logger import log_info, log_error, log_debug, log_warning
@@ -24,30 +26,34 @@ from agent.nodes.prompt_context import build_contextual_log
 from agent.team_loader import get_team
 from agent.llm_factory import get_langchain_llm, get_circuit_breaker_exception_class
 
-# Initialize LLM via factory (supports OpenAI and Bedrock)
-llm = get_langchain_llm()
-
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            (
-                "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
-                "Fields required: "
-                "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
-                "create_ticket (boolean), "
-                "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
-                "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
-                "severity (one of: low, medium, high). "
-                "Context fields [Service], [Environment], [Occurrences in last Nh], and [Severity hints] "
-                "are provided when available — use them to calibrate severity and create_ticket decisions."
-            ),
-        ),
-        ("human", "{log_message}"),
-    ]
+_SYSTEM_PROMPT = (
+    "You are a senior support engineer. Analyze the input log context and RETURN ONLY JSON (no code block). "
+    "Fields required: "
+    "error_type (kebab-case, e.g. pre-persist, db-constraint, kafka-consumer), "
+    "create_ticket (boolean), "
+    "ticket_title (short, action-oriented, no prefixes like [Datadog]), "
+    "ticket_description (markdown including: Problem summary; Possible Causes as bullets; Suggested Actions as bullets), "
+    "severity (one of: low, medium, high). "
+    "Context fields [Service], [Environment], [Occurrences in last Nh], and [Severity hints] "
+    "are provided when available — use them to calibrate severity and create_ticket decisions."
 )
 
-chain = prompt | llm
+
+def _build_chain():
+    """Build a fresh LLM chain for the current event loop.
+
+    Bedrock's boto3 session binds to the event loop at creation time,
+    so a module-level chain breaks when called from a different loop
+    (e.g. async workers). Creating per-call avoids this.
+    """
+    llm = get_langchain_llm()
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", _SYSTEM_PROMPT),
+            ("human", "{log_message}"),
+        ]
+    )
+    return prompt | llm
 
 # Circuit breaker state
 _circuit_breaker_initialized = False
@@ -96,6 +102,8 @@ async def _call_llm_async(contextual_log: str) -> str:
         LLM response content
     """
     config = get_config()
+
+    chain = _build_chain()
 
     if not config.circuit_breaker_enabled:
         # Circuit breaker disabled, call LLM directly
@@ -166,7 +174,7 @@ async def analyze_log_async(state: Dict[str, Any]) -> Dict[str, Any]:
         match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
         raw_json = match.group(1) if match else content
 
-        parsed = json.loads(raw_json)
+        parsed = _parse_llm_json(raw_json)
         title = parsed.get("ticket_title")
         desc = parsed.get("ticket_description")
 
