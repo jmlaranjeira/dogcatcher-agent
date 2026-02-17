@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from agent.utils.logger import log_info, log_error, log_debug, log_warning
 from agent.utils.circuit_breaker import (
@@ -18,35 +17,12 @@ from agent.config import get_config
 from agent.run_config import get_run_config
 from agent.nodes.prompt_context import build_contextual_log
 from agent.team_loader import get_team
+from agent.llm_factory import get_langchain_llm, get_circuit_breaker_exception_class
 
-import os
 import re
 import json
 
-# LLM configuration via environment variables
-# OPENAI_MODEL: model name (default: gpt-4.1-nano)
-# OPENAI_TEMPERATURE: float (default: 0)
-# OPENAI_RESPONSE_FORMAT: "json_object" or "text" (default: json_object)
-_model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
-_temp_raw = os.getenv("OPENAI_TEMPERATURE", "0")
-_resp_fmt = (
-    os.getenv("OPENAI_RESPONSE_FORMAT", "json_object") or "json_object"
-).lower()
-try:
-    _temp = float(_temp_raw)
-except Exception:
-    _temp = 0.0
-
-if _resp_fmt == "json_object":
-    _model_kwargs = {"response_format": {"type": "json_object"}}
-else:
-    _model_kwargs = {}
-
-llm = ChatOpenAI(
-    model=_model,
-    temperature=_temp,
-    model_kwargs=_model_kwargs,
-)
+llm = get_langchain_llm()
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -75,7 +51,7 @@ _circuit_breaker_initialized = False
 
 
 def _initialize_circuit_breaker():
-    """Initialize circuit breaker for OpenAI API calls."""
+    """Initialize circuit breaker for LLM API calls."""
     global _circuit_breaker_initialized
     if _circuit_breaker_initialized:
         return
@@ -83,17 +59,17 @@ def _initialize_circuit_breaker():
     config = get_config()
 
     if config.circuit_breaker_enabled:
-        from openai import OpenAIError
+        exc_class = get_circuit_breaker_exception_class()
 
         registry = get_circuit_breaker_registry()
         cb_config = CircuitBreakerConfig(
             failure_threshold=config.circuit_breaker_failure_threshold,
             timeout_seconds=config.circuit_breaker_timeout_seconds,
             half_open_max_calls=config.circuit_breaker_half_open_calls,
-            expected_exception=OpenAIError,
-            name="openai_llm",
+            expected_exception=exc_class,
+            name="llm",
         )
-        registry.register("openai_llm", cb_config)
+        registry.register("llm", cb_config)
 
         log_info(
             "Circuit breaker initialized for LLM",
@@ -115,13 +91,13 @@ async def _call_llm_with_circuit_breaker(contextual_log: str) -> str:
 
     # Get circuit breaker from registry
     registry = get_circuit_breaker_registry()
-    breaker = registry.get("openai_llm")
+    breaker = registry.get("llm")
 
     if not breaker:
         # Fallback if breaker not initialized
         log_warning("Circuit breaker not found, initializing now")
         _initialize_circuit_breaker()
-        breaker = registry.get("openai_llm")
+        breaker = registry.get("llm")
 
     # Call LLM through circuit breaker
     async def _invoke_chain():
@@ -196,7 +172,7 @@ def analyze_log(state: Dict[str, Any]) -> Dict[str, Any]:
         # Circuit breaker is open - use fallback analysis
         log_warning(
             "Circuit breaker open, using fallback analysis",
-            circuit_name="openai_llm",
+            circuit_name="llm",
             reason=str(e),
         )
 

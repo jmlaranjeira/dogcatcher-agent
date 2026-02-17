@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, TypedDict
 
 import requests
-from openai import OpenAI
 
 from agent.config import get_config
 from agent.jira.client import search as jira_search, is_configured as jira_is_configured
@@ -283,7 +282,7 @@ def analyze_results(state: Dict[str, Any]) -> Dict[str, Any]:
             "can_auto_fix": False,
         }
 
-    if not config.openai_api_key:
+    if config.llm_provider == "openai" and not config.openai_api_key:
         # Fallback to basic analysis
         return _basic_analysis(state)
 
@@ -329,17 +328,16 @@ Focus on:
 3. If a code fix is possible and safe"""
 
     try:
-        client = OpenAI(api_key=config.openai_api_key)
-        response = client.chat.completions.create(
-            model=config.openai_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            response_format={"type": "json_object"},
-        )
-
+        from agent.llm_factory import chat_completion
         import json
 
-        result = json.loads(response.choices[0].message.content)
+        raw = chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            json_response=True,
+        )
+
+        result = json.loads(raw)
 
         log_info(
             "Analysis completed",

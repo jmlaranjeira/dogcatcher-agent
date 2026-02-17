@@ -41,6 +41,32 @@ class OpenAIConfig(BaseSettings):
         return v
 
 
+class BedrockConfig(BaseSettings):
+    """AWS Bedrock configuration."""
+
+    aws_region: str = Field(
+        "eu-west-1", env="AWS_REGION", description="AWS region for Bedrock"
+    )
+    model_id: str = Field(
+        "anthropic.claude-3-haiku-20240307-v1:0",
+        env="BEDROCK_MODEL_ID",
+        description="Bedrock model ID",
+    )
+    temperature: float = Field(
+        0.0, env="BEDROCK_TEMPERATURE", ge=0.0, le=1.0, description="Model temperature"
+    )
+    max_tokens: int = Field(
+        4096, env="BEDROCK_MAX_TOKENS", ge=1, le=8192, description="Max output tokens"
+    )
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "extra": "ignore",
+    }
+
+
 class DatadogConfig(BaseSettings):
     """Datadog API configuration."""
 
@@ -297,6 +323,12 @@ class UIConfig(BaseSettings):
 class Config(BaseSettings):
     """Main configuration class combining all settings."""
 
+    # LLM Provider Selection
+    llm_provider: str = Field(
+        "openai", env="LLM_PROVIDER",
+        description='LLM provider: "openai" or "bedrock"',
+    )
+
     # OpenAI Configuration
     openai_api_key: str = Field("", env="OPENAI_API_KEY", description="OpenAI API key")
     openai_model: str = Field(
@@ -307,6 +339,22 @@ class Config(BaseSettings):
     )
     openai_response_format: str = Field(
         "json_object", env="OPENAI_RESPONSE_FORMAT", description="Response format"
+    )
+
+    # AWS Bedrock Configuration
+    aws_region: str = Field(
+        "eu-west-1", env="AWS_REGION", description="AWS region for Bedrock"
+    )
+    bedrock_model_id: str = Field(
+        "anthropic.claude-3-haiku-20240307-v1:0",
+        env="BEDROCK_MODEL_ID",
+        description="Bedrock model ID",
+    )
+    bedrock_temperature: float = Field(
+        0.0, env="BEDROCK_TEMPERATURE", ge=0.0, le=1.0, description="Bedrock temperature"
+    )
+    bedrock_max_tokens: int = Field(
+        4096, env="BEDROCK_MAX_TOKENS", ge=1, le=8192, description="Bedrock max tokens"
     )
 
     # Datadog Configuration
@@ -623,6 +671,13 @@ class Config(BaseSettings):
         "extra": "ignore",
     }
 
+    @field_validator("llm_provider", mode="after")
+    @classmethod
+    def validate_llm_provider(cls, v):
+        if v.lower() not in ("openai", "bedrock"):
+            raise ValueError('LLM_PROVIDER must be "openai" or "bedrock"')
+        return v.lower()
+
     def load_profile_overrides(self, profile_name: str) -> None:
         """Load and apply profile configuration overrides.
 
@@ -644,8 +699,8 @@ class Config(BaseSettings):
         issues = []
 
         # Check required fields
-        if not self.openai_api_key:
-            issues.append("OPENAI_API_KEY is required")
+        if self.llm_provider == "openai" and not self.openai_api_key:
+            issues.append("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
         if not self.datadog_api_key:
             issues.append("DATADOG_API_KEY is required")
         if not self.datadog_app_key:
@@ -721,7 +776,11 @@ class Config(BaseSettings):
         log_info(
             "Configuration loaded",
             profile=self.profile,
-            openai_model=self.openai_model,
+            llm_provider=self.llm_provider,
+            llm_model=(
+                self.bedrock_model_id if self.llm_provider == "bedrock"
+                else self.openai_model
+            ),
             datadog_site=self.datadog_site,
             datadog_service=self.datadog_service,
             datadog_env=self.datadog_env,

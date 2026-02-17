@@ -87,6 +87,8 @@ def apply_profile_to_config(config: "Config", profile_config: Dict[str, Any]) ->
         _apply_circuit_breaker_overrides(config, profile_config["circuit_breaker"])
     if "logging" in profile_config:
         _apply_logging_overrides(config, profile_config["logging"])
+    if "llm" in profile_config:
+        _apply_llm_overrides(config, profile_config["llm"])
 
 
 def _apply_datadog_overrides(config, overrides: Dict[str, Any]) -> None:
@@ -148,3 +150,17 @@ def _apply_logging_overrides(config, overrides: Dict[str, Any]) -> None:
     """Apply logging configuration overrides."""
     if "level" in overrides and hasattr(config, "log_level"):
         config.log_level = overrides["level"]
+
+
+def _apply_llm_overrides(config, overrides: Dict[str, Any]) -> None:
+    """Apply LLM provider configuration overrides."""
+    field_mapping = {
+        "provider": "llm_provider",
+        "aws_region": "aws_region",
+        "bedrock_model_id": "bedrock_model_id",
+        "bedrock_temperature": "bedrock_temperature",
+        "bedrock_max_tokens": "bedrock_max_tokens",
+    }
+    for yaml_key, attr in field_mapping.items():
+        if yaml_key in overrides and hasattr(config, attr):
+            setattr(config, attr, overrides[yaml_key])

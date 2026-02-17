@@ -100,7 +100,7 @@ class TestAnalysisCircuitBreakerIntegration:
 
             # Check circuit breaker is open
             registry = get_circuit_breaker_registry()
-            breaker = registry.get("openai_llm")
+            breaker = registry.get("llm")
             assert breaker is not None
             # Note: The circuit should be open after 3 failures
 
@@ -388,7 +388,7 @@ class TestCircuitBreakerConfigFromEnv:
             _initialize_circuit_breaker()
 
             # Check circuit breaker was configured correctly
-            breaker = registry.get("openai_llm")
+            breaker = registry.get("llm")
 
             assert breaker is not None
             assert breaker.config.failure_threshold == 5

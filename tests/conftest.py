@@ -82,6 +82,13 @@ def mock_config():
         config.log_configuration.return_value = None
 
         # Flat attributes (used by production code via Pydantic config)
+        config.llm_provider = "openai"
+        config.openai_api_key = "test-openai-key"
+        config.openai_model = "gpt-4.1-nano"
+        config.aws_region = "eu-west-1"
+        config.bedrock_model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+        config.bedrock_temperature = 0.0
+        config.bedrock_max_tokens = 4096
         config.jira_project_key = "TEST"
         config.jira_search_max_results = 200
         config.jira_search_window_days = 365

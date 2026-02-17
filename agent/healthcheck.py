@@ -27,10 +27,10 @@ class HealthCheckResult:
             self.details = {}
 
 
-def check_openai() -> HealthCheckResult:
-    """Check OpenAI API connectivity.
+def check_llm() -> HealthCheckResult:
+    """Check LLM API connectivity (OpenAI or Bedrock).
 
-    Makes a minimal API call to verify the API key works.
+    Makes a minimal API call to verify the provider is reachable.
 
     Returns:
         HealthCheckResult with connection status
@@ -38,37 +38,32 @@ def check_openai() -> HealthCheckResult:
     import os
 
     try:
-        from openai import OpenAI
+        from agent.llm_factory import ping_llm
 
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+
+        # For OpenAI, check that the API key is set before making a call
+        if provider == "openai" and not os.getenv("OPENAI_API_KEY", ""):
             return HealthCheckResult(
-                service="OpenAI", healthy=False, message="OPENAI_API_KEY not set"
+                service="LLM", healthy=False, message="OPENAI_API_KEY not set"
             )
 
-        client = OpenAI(api_key=api_key)
-        model = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
-
-        # Make a minimal API call to verify connectivity
-        response = client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": "ping"}], max_tokens=1
-        )
+        model_info = ping_llm()
 
         return HealthCheckResult(
-            service="OpenAI",
+            service="LLM",
             healthy=True,
-            message=f"Connected (model: {model})",
-            details={"model": model, "response_id": response.id if response else None},
+            message=f"Connected ({model_info})",
+            details={"provider": model_info},
         )
 
     except Exception as e:
         error_msg = str(e)
-        # Truncate long error messages
         if len(error_msg) > 100:
             error_msg = error_msg[:100] + "..."
 
         return HealthCheckResult(
-            service="OpenAI", healthy=False, message=f"Connection failed: {error_msg}"
+            service="LLM", healthy=False, message=f"Connection failed: {error_msg}"
         )
 
 
@@ -230,14 +225,14 @@ def run_health_checks(verbose: bool = True) -> Tuple[bool, List[HealthCheckResul
     if verbose:
         print("\n🔍 Running health checks...\n")
 
-    # Check OpenAI
+    # Check LLM (OpenAI or Bedrock)
     if verbose:
-        print("  Checking OpenAI API...", end=" ", flush=True)
-    openai_result = check_openai()
-    results.append(openai_result)
+        print("  Checking LLM API...", end=" ", flush=True)
+    llm_result = check_llm()
+    results.append(llm_result)
     if verbose:
-        icon = "✓" if openai_result.healthy else "✗"
-        print(f"{icon} {openai_result.message}")
+        icon = "✓" if llm_result.healthy else "✗"
+        print(f"{icon} {llm_result.message}")
 
     # Check Datadog
     if verbose:
