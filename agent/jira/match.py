@@ -122,8 +122,7 @@ def find_similar_ticket(
 
     # Fast path: exact label via loghash
     if norm_current_log:
-        error_stack = ((state or {}).get("log_data") or {}).get("error_stack", "")
-        loghash = compute_loghash(current_log_msg, error_stack)
+        loghash = compute_loghash(current_log_msg)
         jql_hash = (
             f"project = {rc.jira_project_key} AND statusCategory != Done AND labels = loghash-{loghash} "
             f"ORDER BY created DESC"

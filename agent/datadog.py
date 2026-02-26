@@ -200,12 +200,6 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
             if len(detail) > MAX_LOG_DETAIL_LENGTH:
                 detail = detail[:MAX_LOG_DETAIL_LENGTH] + "... [truncated]"
 
-            error_stack = (
-                attr.get("attributes", {})
-                .get("error", {})
-                .get("stack", "")
-            )
-
             results.append(
                 {
                     "logger": logger_name,
@@ -213,7 +207,6 @@ def get_logs(service=None, env=None, hours_back=None, limit=None):
                     "message": msg,
                     "timestamp": attr.get("timestamp"),
                     "detail": detail,
-                    "error_stack": error_stack,
                 }
             )
         if not cursor or page >= config.datadog_max_pages:

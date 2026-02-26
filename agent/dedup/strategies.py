@@ -150,8 +150,7 @@ class LoghashLabelSearch(DedupStrategy):
         if not jira_client.is_configured():
             return DuplicateCheckResult(is_duplicate=False)
 
-        error_stack = log_data.get("error_stack", "")
-        loghash = compute_loghash(raw_msg, error_stack)
+        loghash = compute_loghash(raw_msg)
         if not loghash:
             return DuplicateCheckResult(is_duplicate=False)
 
