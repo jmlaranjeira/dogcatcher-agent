@@ -7,6 +7,7 @@ from agent.jira.utils import (
     normalize_text,
     normalize_log_message,
     extract_text_from_description,
+    compute_loghash,
 )
 from agent.jira.match import _sim
 
@@ -278,3 +279,50 @@ class TestLLMNoCreateDecision:
 
         # Should default to allowing creation
         assert state.get("llm_no_create") is None or state.get("llm_no_create") is False
+
+
+class TestComputeLoghashWithStack:
+    """Test that compute_loghash distinguishes errors by exception type."""
+
+    MSG = "Failed to renew license (attempt will be retried on next schedule run)"
+
+    def test_same_message_no_stack_same_hash(self):
+        """Without stack trace, identical messages produce the same hash."""
+        assert compute_loghash(self.MSG) == compute_loghash(self.MSG)
+
+    def test_same_message_different_exceptions_different_hash(self):
+        """Same message but different exception types produce different hashes."""
+        h1 = compute_loghash(
+            self.MSG,
+            "j.l.IllegalArgumentException: The number of requested users must be positive.\n\tat ...",
+        )
+        h2 = compute_loghash(
+            self.MSG,
+            "o.s.w.c.HttpClientErrorException: 404 Not Found\n\tat ...",
+        )
+        assert h1 != h2
+
+    def test_same_message_same_exception_same_hash(self):
+        """Same message and same exception type produce the same hash."""
+        h1 = compute_loghash(
+            self.MSG,
+            "j.l.IllegalArgumentException: first error\n\tat ...",
+        )
+        h2 = compute_loghash(
+            self.MSG,
+            "j.l.IllegalArgumentException: different detail\n\tat ...",
+        )
+        assert h1 == h2
+
+    def test_with_vs_without_stack_different_hash(self):
+        """Message-only hash differs from message+stack hash."""
+        h_no_stack = compute_loghash(self.MSG)
+        h_with_stack = compute_loghash(
+            self.MSG,
+            "j.l.IllegalArgumentException: ...\n\tat ...",
+        )
+        assert h_no_stack != h_with_stack
+
+    def test_empty_stack_same_as_no_stack(self):
+        """Empty string stack behaves like no stack."""
+        assert compute_loghash(self.MSG, "") == compute_loghash(self.MSG)

@@ -122,15 +122,25 @@ def sanitize_for_jira(text: str) -> str:
     return t
 
 
-def compute_loghash(raw_message: str) -> str:
+def compute_loghash(raw_message: str, error_stack: str = "") -> str:
     """Compute a 12-char loghash from a raw log message.
 
     Normalizes the message first, then hashes. Used as a Jira label
     for fast duplicate lookup.
+
+    When *error_stack* is provided the exception class name (last segment
+    of the dotted type, e.g. ``IllegalArgumentException``) is appended to
+    the normalized text before hashing so that identical messages with
+    different root-cause exceptions produce distinct loghashes.
     """
     norm = normalize_log_message(raw_message)
     if not norm:
         return ""
+    if error_stack:
+        first_line = error_stack.strip().split("\n")[0]
+        exc_type = first_line.split(":")[0].strip().split(".")[-1]
+        if exc_type:
+            norm = f"{norm}|{exc_type.lower()}"
     return hashlib.sha1(norm.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 

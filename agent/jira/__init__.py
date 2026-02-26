@@ -64,7 +64,8 @@ def _base_labels(state: Dict[str, Any]) -> list[str]:
     if team_id:
         labels.append(team_id)
     try:
-        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        log_data = state.get("log_data") or {}
+        loghash = compute_loghash(log_data.get("message", ""), log_data.get("error_stack", ""))
         if loghash:
             labels.append(f"loghash-{loghash}")
     except Exception:
@@ -104,7 +105,8 @@ def _try_handle_duplicate(
 
     # Seed loghash label to accelerate future lookups
     try:
-        loghash = compute_loghash((state.get("log_data") or {}).get("message", ""))
+        _ld = state.get("log_data") or {}
+        loghash = compute_loghash(_ld.get("message", ""), _ld.get("error_stack", ""))
         if loghash:
             jira_add_labels(key, [f"loghash-{loghash}"])
     except Exception:
