@@ -42,10 +42,13 @@ def load_teams_config(path: Path | None = None) -> Optional[TeamsConfig]:
 
         cfg = TeamsConfig(**raw)
         _cache = cfg
+        disabled = [tid for tid, t in cfg.teams.items() if not t.enabled]
         log_info(
             "Loaded teams configuration",
             path=str(teams_path),
             team_count=len(cfg.teams),
+            enabled_count=len(cfg.teams) - len(disabled),
+            disabled_teams=disabled or None,
         )
         return cfg
     except Exception as exc:
