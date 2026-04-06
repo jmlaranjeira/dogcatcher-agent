@@ -16,6 +16,7 @@ jira_team_field_id: null  # e.g. "customfield_10042"
 teams:
   team-vega:
     team_name: "Team Vega"
+    enabled: true  # set to false to skip this team during runs
     jira_project_key: "VEGA"
     jira_team_field_value: "Vega"
     datadog_services:

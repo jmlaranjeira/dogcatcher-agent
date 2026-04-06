@@ -16,12 +16,12 @@ teams:
     datadog_services:
       - dehnlicense
       - dehnproject
-      - dehn-risk-api
     datadog_env: prod
     max_tickets_per_run: 3
 
   team-solar:
     team_name: "Team Solar"
+    enabled: false
     jira_project_key: "DDSIT"
     jira_team_field_value: "Team Solar"
     datadog_services:
