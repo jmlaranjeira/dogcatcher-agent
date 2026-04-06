@@ -17,7 +17,9 @@ class TeamConfig(BaseModel):
 
     team_id: str = Field(..., description="Unique team identifier (e.g. 'team-vega')")
     team_name: str = Field(..., description="Human-readable team name")
-    enabled: bool = Field(True, description="Set to false to skip this team during runs")
+    enabled: bool = Field(
+        True, description="Set to false to skip this team during runs"
+    )
 
     # Jira
     jira_project_key: str = Field(..., description="Jira project key for this team")
