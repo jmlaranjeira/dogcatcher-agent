@@ -1,5 +1,7 @@
 # --- ECS Task Execution Role (pulls image, reads secrets, writes logs) ---
 
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "ecs_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -62,7 +64,8 @@ data "aws_iam_policy_document" "ecs_task_bedrock" {
       "bedrock:InvokeModelWithResponseStream",
     ]
     resources = [
-      "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
+      "arn:aws:bedrock:*::foundation-model/*",
+      "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_model_id}",
     ]
   }
 }

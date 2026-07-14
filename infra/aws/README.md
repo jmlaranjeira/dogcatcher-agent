@@ -40,7 +40,7 @@ The agent supports two LLM providers, controlled by `llm_provider` in tfvars:
 ### 1. Enable Bedrock model access
 
 In the AWS Console, go to **Amazon Bedrock > Model access** and request access
-to `anthropic.claude-3-haiku-20240307-v1:0` (or your chosen model) in your region.
+to `anthropic.claude-haiku-4-5-20251001-v1:0` (or your chosen model) in your region.
 
 ### 2. Create secrets
 

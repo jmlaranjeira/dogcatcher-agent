@@ -41,7 +41,7 @@ def get_langchain_llm():
         region = os.getenv("AWS_REGION", "eu-west-1")
         model_id = os.getenv(
             "BEDROCK_MODEL_ID",
-            "anthropic.claude-3-haiku-20240307-v1:0",
+            "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         temperature = float(os.getenv("BEDROCK_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
@@ -151,7 +151,7 @@ def _bedrock_chat_completion(
     region = os.getenv("AWS_REGION", "eu-west-1")
     model_id = os.getenv(
         "BEDROCK_MODEL_ID",
-        "anthropic.claude-3-haiku-20240307-v1:0",
+        "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
     )
     client = boto3.client("bedrock-runtime", region_name=region)
 
@@ -211,7 +211,7 @@ def ping_llm() -> str:
 
         region = os.getenv("AWS_REGION", "eu-west-1")
         model_id = os.getenv(
-            "BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
+            "BEDROCK_MODEL_ID", "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
         )
         client = boto3.client("bedrock-runtime", region_name=region)
         client.converse(

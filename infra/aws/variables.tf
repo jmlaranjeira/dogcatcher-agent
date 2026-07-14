@@ -90,9 +90,9 @@ variable "llm_provider" {
 }
 
 variable "bedrock_model_id" {
-  description = "Bedrock foundation model ID (used when llm_provider=bedrock)"
+  description = "Bedrock model ID or cross-region inference profile ID (used when llm_provider=bedrock)"
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
 # --- Secrets (ARNs provided after manual creation) ---
