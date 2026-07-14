@@ -6,4 +6,4 @@ task_memory         = 1024
 redis_node_type     = "cache.t3.micro"
 log_retention_days  = 3
 agent_profile       = "development"
-datadog_env         = "dev"
+datadog_env         = "prod"

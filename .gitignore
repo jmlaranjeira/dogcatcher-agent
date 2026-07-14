@@ -1,5 +1,6 @@
 # IDE
 .idea/
+.claude/
 .env
 .venv/
 .venv-studio/
@@ -14,3 +15,12 @@ _agent_cache/
 .agent_cache/
 *.sh
 !scripts/*.sh
+
+# Terraform
+**/.terraform/
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
