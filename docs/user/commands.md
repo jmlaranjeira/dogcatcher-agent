@@ -54,7 +54,7 @@ python -m patchy.patchy_graph \
   --draft true
 ```
 
-- PR real (no draft), con localización y fix v1 (Java):
+- PR real (no draft), con localización del fallo y fix verificado por LLM:
 ```bash
 python -m dotenv -f .env run -- \
 python -m patchy.patchy_graph \
@@ -64,7 +64,6 @@ python -m patchy.patchy_graph \
   --stacktrace "src/main/java/com/acme/Foo.java:123" \
   --jira DPRO-2491 \
   --loghash 4c452e2d1c49 \
-  --mode fix \
   --draft false
 ```
 
@@ -74,10 +73,8 @@ python -m dotenv -f .env run -- \
 python -m patchy.patchy_graph --service myservice --error-type npe --loghash 4c452e2d1c49 --draft true
 ```
 
-### Modos de edición (`--mode`)
-- `touch`: crea/sobrescribe un archivo de metadatos.
-- `note` (default): añade nota en el archivo objetivo; si no existe, crea metadatos.
-- `fix`: intenta un fix mínimo (v1: guardia NPE en Java; comentarios guía en Python/TS/JS).
+### Cómo decide Patchy
+El LLM propone un cambio mínimo y un test nuevo que reproduce el error. Patchy solo abre la PR si el test falla con el código original, pasa con el fix aplicado y la suite completa (`test_cmd`) sigue en verde. Si no lo consigue, no abre ninguna PR y comenta el diagnóstico en el ticket de Jira. Ver `patchy/README.md`.
 
 ### Docker compose (Patchy)
 ```bash
@@ -86,5 +83,5 @@ docker compose run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN patchy \
 ```
 
 ## Tips
-- Actualiza `patchy/repos.json` con `owner`, `name`, `default_branch` y opcionalmente `allowed_paths`, `lint_cmd`, `test_cmd`.
+- Actualiza `patchy/repos.json` con `owner`, `name`, `default_branch` y opcionalmente `allowed_paths`, `lint_cmd`, `test_cmd`, `test_single_cmd`.
 - Para entornos locales, asegúrate de que `.env` no contiene secretos que no quieras exportar fuera del proceso (usa python-dotenv como arriba).

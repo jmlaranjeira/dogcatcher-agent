@@ -1,7 +1,7 @@
-"""Patchy (🩹🤖) — minimal self-healing PR bot v0.
+"""Patchy (🩹🤖) — verified-fix PR bot.
 
 Provides a LangGraph pipeline to:
-  resolve_repo → locate_fault (placeholder) → create_pr → finish
+  resolve_repo → locate_fault → create_pr (LLM fix + reproducing test) → finish
 
 CLI entrypoint lives in `patchy.patchy_graph`.
 """

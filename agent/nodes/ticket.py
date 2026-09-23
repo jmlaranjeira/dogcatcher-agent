@@ -408,7 +408,6 @@ def _invoke_patchy(state: Dict[str, Any], issue_key: str) -> None:
             "logger": logger_name,
             "hint": "",
             "stacktrace": log_data.get("detail", ""),
-            "mode": "note",
             "draft": True,
         }
 

@@ -449,7 +449,6 @@ def invoke_patchy(state: Dict[str, Any]) -> Dict[str, Any]:
             "hint": hint,
             "jira": jira_key,
             "draft": True,
-            "mode": "note",  # Safe mode - just creates a note
         }
 
         graph = build_patchy_graph()

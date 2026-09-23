@@ -438,7 +438,6 @@ def _invoke_patchy_sync(state: Dict[str, Any], issue_key: str) -> None:
             "logger": logger_name,
             "hint": "",
             "stacktrace": log_data.get("detail", ""),
-            "mode": "note",
             "draft": True,
         }
 

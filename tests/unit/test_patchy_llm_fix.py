@@ -233,21 +233,22 @@ class TestProposalValidation:
             parse_proposal(raw)
 
 
-@pytest.mark.unit
-class TestCreatePrWithLlmMode:
-    def test_llm_mode_opens_verified_pr(self, repo):
-        from patchy import patchy_nodes
+def _pr_state(repo, **overrides):
+    return {
+        **_state(),
+        "repo_dir": str(repo),
+        "repo_owner": "o",
+        "repo_name": "r",
+        "jira": "ABC-1",
+        **overrides,
+    }
 
-        llm = FakeLLM(_proposal())
-        state = {
-            **_state(),
-            "mode": "llm",
-            "repo_dir": str(repo),
-            "repo_owner": "o",
-            "repo_name": "r",
-            "has_valid_fault_line": True,
-        }
-        real_attempt = patchy_nodes.attempt_llm_fix
+
+@pytest.mark.unit
+class TestCreatePr:
+    @pytest.fixture
+    def gh(self):
+        from patchy import patchy_nodes
 
         with (
             patch.object(patchy_nodes, "find_existing_pr", return_value=None),
@@ -258,47 +259,74 @@ class TestCreatePrWithLlmMode:
                 return_value={"html_url": "https://gh/pr/1", "number": 1},
             ) as create,
             patch.object(patchy_nodes, "add_labels") as labels,
-            patch.object(
-                patchy_nodes,
-                "attempt_llm_fix",
-                side_effect=lambda d, s: real_attempt(d, s, llm=llm),
-            ),
+            patch.object(patchy_nodes, "jira_is_configured", return_value=True),
+            patch.object(patchy_nodes, "jira_add_comment") as comment,
+            patch("agent.jira.client.get_jira_domain", return_value="jira.test"),
         ):
-            result = patchy_nodes.create_pr(state)
+            yield {"push": push, "create": create, "labels": labels, "comment": comment}
+
+    @staticmethod
+    def _run(state, llm):
+        from patchy import patchy_nodes
+
+        real_attempt = patchy_nodes.attempt_llm_fix
+        with patch.object(
+            patchy_nodes,
+            "attempt_llm_fix",
+            side_effect=lambda d, s: real_attempt(d, s, llm=llm),
+        ):
+            return patchy_nodes.create_pr(state)
+
+    def test_verified_fix_opens_pr(self, repo, gh):
+        result = self._run(_pr_state(repo), FakeLLM(_proposal()))
 
         assert result["pr_url"] == "https://gh/pr/1"
         assert result["llm_fix"]["test_path"] == "tests/test_patchy_repro_ratio.py"
         assert "if b else 0" in result["llm_fix"]["diff"]
-        push.assert_called_once()
-        body = create.call_args.kwargs["body"]
+        gh["push"].assert_called_once()
+        body = gh["create"].call_args.kwargs["body"]
         assert "Diagnosis" in body and "reproducing test" in body
-        assert "Patchy note" not in (repo / "calc.py").read_text()
-        assert "verified-by-test" in labels.call_args.args[3]
+        assert "verified-by-test" in gh["labels"].call_args.args[3]
+        assert "https://gh/pr/1" in gh["comment"].call_args.args[1]
 
-    def test_llm_mode_failure_does_not_open_pr(self, repo, monkeypatch):
-        from patchy import patchy_nodes
-
+    def test_failed_fix_comments_diagnosis_on_jira_without_pr(
+        self, repo, gh, monkeypatch
+    ):
         monkeypatch.setenv("PATCHY_LLM_MAX_ATTEMPTS", "1")
-        llm = FakeLLM(json.dumps({"cannot_fix": True, "reason": "unclear"}))
-        state = {
-            **_state(),
-            "mode": "llm",
-            "repo_dir": str(repo),
-            "repo_owner": "o",
-            "repo_name": "r",
-        }
-        real_attempt = patchy_nodes.attempt_llm_fix
+        llm = FakeLLM(_proposal(replace="    return a / b  # no-op\n"))
 
-        with (
-            patch.object(patchy_nodes, "find_existing_pr", return_value=None),
-            patch.object(patchy_nodes, "create_pull_request") as create,
-            patch.object(
-                patchy_nodes,
-                "attempt_llm_fix",
-                side_effect=lambda d, s: real_attempt(d, s, llm=llm),
-            ),
-        ):
-            result = patchy_nodes.create_pr(state)
+        result = self._run(_pr_state(repo), llm)
 
         assert "LLM fix failed" in result["message"]
-        create.assert_not_called()
+        gh["create"].assert_not_called()
+        gh["push"].assert_not_called()
+        key, text = gh["comment"].call_args.args
+        assert key == "ABC-1"
+        assert "could not produce a verified fix" in text
+        assert "Division by zero when b == 0." in text
+        assert "'green'" in text
+
+    def test_declined_fix_opens_no_pr(self, repo, gh):
+        llm = FakeLLM(json.dumps({"cannot_fix": True, "reason": "unclear"}))
+
+        result = self._run(_pr_state(repo), llm)
+
+        assert "unclear" in result["message"]
+        gh["create"].assert_not_called()
+
+    def test_missing_fault_file_skips_llm(self, repo, gh):
+        llm = FakeLLM()
+        result = self._run(_pr_state(repo, fault_file=None), llm)
+
+        assert "could not be located" in result["message"]
+        assert llm.calls == []
+        gh["create"].assert_not_called()
+
+    def test_fault_file_outside_allowed_paths_skips_llm(self, repo, gh):
+        llm = FakeLLM()
+        result = self._run(_pr_state(repo, allowed_paths=["src/"]), llm)
+
+        assert "outside allowed_paths" in result["message"]
+        assert llm.calls == []
+        assert _git(repo, "branch", "--show-current").strip() != ""
+        assert "bugfix/" not in _git(repo, "branch")
