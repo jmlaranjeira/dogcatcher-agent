@@ -48,7 +48,9 @@ PyYAML>=6.0.0
 # Observability - DogStatsD metrics
 datadog>=0.50.0
 # AWS Bedrock LLM provider (dual-provider support)
-langchain-aws>=0.2.0
+# Pinned <1.0 because langchain-aws>=1.0 requires langchain-core>=1.0,
+# which conflicts with the langchain-core==0.3.72 pin above.
+langchain-aws==0.2.35
 boto3>=1.35.0
 # Phase 2 improvements - async parallel processing
 aiofiles>=24.0.0

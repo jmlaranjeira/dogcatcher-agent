@@ -536,6 +536,7 @@ def _simulate_ticket_creation(
         **state,
         "ticket_created": True,
         "message": "Ticket creation simulated (dry run)",
+        "_tickets_created_in_run": state.get("_tickets_created_in_run", 0) + 1,
     }
 
 

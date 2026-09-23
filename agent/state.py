@@ -38,6 +38,9 @@ class GraphState(TypedDict, total=False):
     team_id: str
     team_service: str
 
+    # Per-run ticket creation cap tracking
+    _tickets_created_in_run: int
+
 
 # Alias kept for compatibility if any module imported it previously
 state_schema = GraphState
