@@ -17,6 +17,8 @@ class RepoConfig:
     allowed_paths: list[str] | None = None
     lint_cmd: str | None = None
     test_cmd: str | None = None
+    # Runs one test; placeholders {test_path} / {test_class}. Used by LLM fixes.
+    test_single_cmd: str | None = None
 
 
 def _token() -> str:

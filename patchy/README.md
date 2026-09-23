@@ -36,7 +36,25 @@ Tries to apply a fix first. If the fix cannot be applied (no valid fault_line, u
 python -m patchy.patchy_graph --service myservice --error-type npe --jira TICKET-123
 ```
 
-### 2. `fix`
+### 2. `llm` (verified LLM fix)
+Asks the LLM (`LLM_PROVIDER`) for a minimal code edit **plus a new test that reproduces the error**, then proves it:
+
+1. 🔴 The new test runs on the original code and **must fail** with the expected error (it has to fail at runtime, not on a compile error)
+2. 🟢 The edit is applied and the new test **must pass**
+3. ✅ The full suite (`test_cmd`) **must still pass**
+
+When a check fails, Patchy resets the worktree and sends the output back to the LLM, retrying up to `PATCHY_LLM_MAX_ATTEMPTS` times. If no attempt passes, no PR is opened. PRs that pass include the diagnosis and the new test, and get the labels `llm-fix` and `verified-by-test`.
+
+```bash
+python -m patchy.patchy_graph --service myservice --error-type npe --mode llm \
+  --stacktrace "java.lang.NullPointerException at LicenseService.java:42"
+```
+
+To use it in `auto` mode (then templates, then note), set `PATCHY_LLM_FIX=true`.
+
+Guardrails: edits are exact search/replace blocks and must match exactly once. Edits stay inside `allowed_paths` and never touch existing tests. The test must be a new file in a test location. Edit size is capped (`PATCHY_LLM_MAX_DIFF_LINES`). Test names from the LLM are validated and shell-quoted. Patchy refuses to run without a single-test command: it uses `test_single_cmd` from `repos.json`, or infers one for Maven, Gradle, pytest or Jest.
+
+### 3. `fix`
 Only attempts to apply defensive code. Fails if it cannot find a safe insertion point.
 
 ```bash
@@ -44,7 +62,7 @@ python -m patchy.patchy_graph --service myservice --error-type npe --mode fix \
   --stacktrace "NullPointerException at MyClass.java:42"
 ```
 
-### 3. `note`
+### 4. `note`
 Only adds a comment/note to the target file with context about the error.
 
 ```bash
@@ -116,7 +134,7 @@ python -m patchy.patchy_graph --service dehnlicense --error-type optimistic-lock
 |--------|-------------|
 | `--service` | Service name (required, must be in `repos.json`) |
 | `--error-type` | Type of error (e.g., `npe`, `duplicate`, `validation`, `optimistic-locking`) |
-| `--mode` | `auto` (default), `fix`, or `note` |
+| `--mode` | `auto` (default), `llm`, `fix`, or `note` |
 | `--logger` | Java logger name to locate the file |
 | `--stacktrace` | Stacktrace to extract fault line |
 | `--hint` | Search hint for locating the file |
@@ -150,12 +168,18 @@ Services are configured in `repos.json`:
 ```json
 {
   "myservice": {
-    "repo": "https://github.com/org/repo.git",
-    "branch": "main",
-    "src_root": "src/main/java"
+    "owner": "your-org",
+    "name": "your-repo",
+    "default_branch": "main",
+    "allowed_paths": ["src/main/java/"],
+    "lint_cmd": "",
+    "test_cmd": "./mvnw -q -B test",
+    "test_single_cmd": "./mvnw -q -B test -Dtest={test_class} -Dsurefire.failIfNoSpecifiedTests=false"
   }
 }
 ```
+
+`test_single_cmd` accepts the placeholders `{test_class}` and `{test_path}`. `llm` mode needs it (or a command Patchy can infer).
 
 ## Integration with Dogcatcher
 
