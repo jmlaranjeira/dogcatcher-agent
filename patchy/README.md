@@ -1,169 +1,53 @@
-# Patchy - Automated PR Bot for Error Stabilization
+# Patchy - Verified Fix PR Bot
 
-Patchy is an automated "paramedic" bot that creates draft PRs to stabilize production errors. It does NOT fix bugs - it adds defensive code to prevent crashes while developers investigate the root cause.
+Patchy turns a production error into a draft PR, but **only when it can prove the fix**. The LLM proposes a minimal code edit together with a new test that reproduces the error. Patchy opens a PR only if that test demonstrates the bug and the fix.
 
-## Philosophy: Paramedic, Not Surgeon
+If Patchy can't produce a verified fix, it doesn't open a PR. It posts its diagnosis on the Jira ticket instead.
 
-**Patchy stabilizes, it doesn't cure.**
-
-| What Patchy Does | What Patchy Does NOT Do |
-|------------------|------------------------|
-| Add null checks to prevent NPE crashes | Fix business logic errors |
-| Add validation to catch bad inputs early | Determine correct business rules |
-| Add try-catch with logging for observability | Understand application intent |
-| Create tickets with context for developers | Replace human code review |
-
-### Why This Approach?
-
-To truly "fix" a bug, you need to know the **intent** of the code. For example:
-
-```java
-// Bug: age check fails
-if (user.getAge() > 18) { ... }
-```
-
-Should it be `>= 18`? Or `>= 21`? Or `> 16`? **Only the business knows.**
-
-Patchy can add a null check for `user`, but it cannot determine the correct age threshold.
-
-## Modes
-
-### 1. `auto` (default)
-Tries to apply a fix first. If the fix cannot be applied (no valid fault_line, unsupported pattern), falls back to adding a note.
-
-```bash
-# Let Patchy decide - tries fix, falls back to note
-python -m patchy.patchy_graph --service myservice --error-type npe --jira TICKET-123
-```
-
-### 2. `llm` (verified LLM fix)
-Asks the LLM (`LLM_PROVIDER`) for a minimal code edit **plus a new test that reproduces the error**, then proves it:
-
-1. 🔴 The new test runs on the original code and **must fail** with the expected error (it has to fail at runtime, not on a compile error)
-2. 🟢 The edit is applied and the new test **must pass**
-3. ✅ The full suite (`test_cmd`) **must still pass**
-
-When a check fails, Patchy resets the worktree and sends the output back to the LLM, retrying up to `PATCHY_LLM_MAX_ATTEMPTS` times. If no attempt passes, no PR is opened. PRs that pass include the diagnosis and the new test, and get the labels `llm-fix` and `verified-by-test`.
-
-```bash
-python -m patchy.patchy_graph --service myservice --error-type npe --mode llm \
-  --stacktrace "java.lang.NullPointerException at LicenseService.java:42"
-```
-
-To use it in `auto` mode (then templates, then note), set `PATCHY_LLM_FIX=true`.
-
-Guardrails: edits are exact search/replace blocks and must match exactly once. Edits stay inside `allowed_paths` and never touch existing tests. The test must be a new file in a test location. Edit size is capped (`PATCHY_LLM_MAX_DIFF_LINES`). Test names from the LLM are validated and shell-quoted. Patchy refuses to run without a single-test command: it uses `test_single_cmd` from `repos.json`, or infers one for Maven, Gradle, pytest or Jest.
-
-### 3. `fix`
-Only attempts to apply defensive code. Fails if it cannot find a safe insertion point.
-
-```bash
-python -m patchy.patchy_graph --service myservice --error-type npe --mode fix \
-  --stacktrace "NullPointerException at MyClass.java:42"
-```
-
-### 4. `note`
-Only adds a comment/note to the target file with context about the error.
-
-```bash
-python -m patchy.patchy_graph --service myservice --error-type npe --mode note
-```
-
-## Auto Mode Flow
+## Flow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  ¿Has valid fault_line from stacktrace?                 │
-│                                                         │
-│     YES ─────────────────────► Try FIX                  │
-│                                      │                  │
-│                              Fix successful?            │
-│                                │         │              │
-│                               YES       NO              │
-│                                │         │              │
-│                                ▼         ▼              │
-│                           PR with     Apply NOTE        │
-│                           code fix    (fallback)        │
-│                                                         │
-│     NO ──────────────────────► Apply NOTE directly      │
-└─────────────────────────────────────────────────────────┘
+resolve_repo → locate_fault → create_pr → finish
+                                  │
+                   ┌──────────────┴──────────────┐
+                   │  LLM: edit + reproducing test │ ◄── feedback (test output)
+                   └──────────────┬──────────────┘            ▲
+                                  ▼                           │
+           🔴 new test FAILS on original code with expected error
+           🟢 new test PASSES with the edit applied            │
+           ✅ full suite (test_cmd) still passes ── any fail ─┘ (≤ PATCHY_LLM_MAX_ATTEMPTS)
+                                  │
+                all passed?  yes → draft PR (+ Jira link)
+                             no  → Jira comment with diagnosis, no PR
 ```
 
-## Fix Strategies (Java)
-
-| Error Type | Strategy | What It Does |
-|------------|----------|--------------|
-| `npe`, `null`, `nullpointer` | `npe_guard` | Inserts `Objects.requireNonNull()` with TODO |
-| `duplicate`, `constraint`, `unique` | `duplicate_check` | Adds existence check TODO |
-| `illegal`, `argument`, `validation` | `validation_check` | Adds parameter validation TODO |
-| `optimistic`, `locking`, `concurrent` | `try_catch` | Adds retry logic suggestion |
-| `persist`, `prepersist`, `save` | `duplicate_check` | Adds pre-save check TODO |
-| Other | Default | Tries npe_guard, then try_catch |
+Patchy only fixes a file it has located, and only inside `allowed_paths`. Without a located file it stops before calling the LLM.
 
 ## Usage
 
-### Basic Usage (Auto Mode)
-
 ```bash
-# Patchy decides: tries fix, falls back to note if needed
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163
+python -m patchy.patchy_graph --service myservice --error-type npe --jira DDSIT-163 \
+  --stacktrace "java.lang.NullPointerException at LicenseService.java:42"
 
-# With stacktrace for better fix targeting
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163 \
-  --stacktrace "java.lang.NullPointerException at LicensePurchaseController.java:42"
-
-# With logger name to locate the file
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --jira DDSIT-163 \
-  --logger "org.devpoint.dehnlicense.controller.LicensePurchaseController"
+# Locate the file from the logger name instead
+python -m patchy.patchy_graph --service myservice --error-type npe --jira DDSIT-163 \
+  --logger "org.example.myservice.service.LicenseService"
 ```
-
-### Explicit Mode
-
-```bash
-# Force fix mode only (fails if can't apply)
-python -m patchy.patchy_graph --service dehnlicense --error-type npe --mode fix \
-  --stacktrace "NullPointerException at LicensePurchaseController.java:42"
-
-# Force note mode only
-python -m patchy.patchy_graph --service dehnlicense --error-type optimistic-locking --mode note
-```
-
-### CLI Options
 
 | Option | Description |
 |--------|-------------|
 | `--service` | Service name (required, must be in `repos.json`) |
-| `--error-type` | Type of error (e.g., `npe`, `duplicate`, `validation`, `optimistic-locking`) |
-| `--mode` | `auto` (default), `llm`, `fix`, or `note` |
-| `--logger` | Java logger name to locate the file |
-| `--stacktrace` | Stacktrace to extract fault line |
-| `--hint` | Search hint for locating the file |
-| `--jira` | Jira ticket key (e.g., `DDSIT-163`) |
-| `--draft` | Create as draft PR (`true`/`false`) |
-
-## Example Output
-
-When fix is applied:
-```java
-// TODO(Patchy): Defensive null guard - investigate root cause | See DDSIT-163
-java.util.Objects.requireNonNull(service, "service must not be null");
-```
-
-When note is applied (auto fallback):
-```java
-/*
- * Patchy note
- * Service: dehnlicense
- * Error-Type: optimistic-locking
- * Target: LicenseUsageController.java
- * Jira: DDSIT-164
- * Note: Auto-fix could not be applied; manual review needed
- */
-```
+| `--error-type` | Type of error (e.g., `npe`, `validation`) |
+| `--stacktrace` | Stacktrace to locate the fault file/line |
+| `--logger` | Java/Kotlin logger name to locate the file |
+| `--hint` | Search hint (symbol/text) to locate the file |
+| `--jira` | Jira key; gets the PR link, or the diagnosis if no fix is possible |
+| `--loghash` | Log fingerprint (used in branch naming when no hint/type) |
+| `--draft` | Create as draft PR (`true`/`false`, default `true`) |
 
 ## Configuration
 
-Services are configured in `repos.json`:
+`repos.json`, one entry per service:
 
 ```json
 {
@@ -179,33 +63,38 @@ Services are configured in `repos.json`:
 }
 ```
 
-`test_single_cmd` accepts the placeholders `{test_class}` and `{test_path}`. `llm` mode needs it (or a command Patchy can infer).
+- `test_single_cmd` runs a single test and accepts the placeholders `{test_class}` and `{test_path}`. If it's missing, Patchy infers one for Maven, Gradle, pytest or Jest. If no command can be found, Patchy refuses to run.
+- `test_cmd` is the full suite. It's strongly recommended; without it only the new test is checked.
+- `lint_cmd` runs before pushing.
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITHUB_TOKEN` | – | Required |
+| `LLM_PROVIDER` | `openai` | See `agent/llm_factory.py` |
+| `REPAIR_ALLOWED_SERVICES` | all | CSV allow-list |
+| `REPAIR_MAX_PRS_PER_RUN` | `1` | Per-run PR cap |
+| `PATCHY_LLM_MAX_ATTEMPTS` | `3` | Retries, with test output fed back |
+| `PATCHY_LLM_MAX_DIFF_LINES` | `80` | Reject larger edits |
+| `PATCHY_LLM_MAX_TOKENS` | `8192` | LLM output budget |
+| `PATCHY_TEST_TIMEOUT` | `900` | Seconds per test command |
+| `PATCHY_WORKSPACE` | `/tmp/patchy-workspace` | Clone location |
+
+## Safety
+
+- **Nothing unverified ships.** A PR is opened only after the red/green/suite checks pass.
+- **Exact edits:** the LLM returns search/replace blocks that must match exactly once, with a size cap.
+- **Scoped:** edits stay inside `allowed_paths`, never touch existing tests, and the new test must be a new file in a test location.
+- **Shell-safe:** test names and paths from the LLM are validated and shell-quoted.
+- **Guardrails:** service allow-list, per-run cap, duplicate-branch check, draft PRs by default, and an audit log in `.agent_cache/audit_patchy.jsonl`.
 
 ## Integration with Dogcatcher
 
-Patchy can be automatically invoked after ticket creation:
-
-```bash
-python main.py --dry-run --patchy --service myservice
-```
-
-This will:
-1. Fetch error logs from Datadog
-2. Create Jira tickets for new errors
-3. Invoke Patchy to create stabilization PRs
+With `INVOKE_PATCHY=true` (and `GITHUB_TOKEN` set), the agent invokes Patchy after creating a Jira ticket. Sleuth invokes it with `--invoke-patchy`.
 
 ## Limitations
 
-1. **No business logic fixes** - Patchy adds defensive code, not logic corrections
-2. **Requires context** - Fix mode works best with `fault_line` from stacktrace
-3. **Language support** - Currently optimized for Java, basic support for Python/JS/TS
-4. **Safe by design** - Will skip changes if it can't find a safe insertion point
-
-## Safety Features
-
-- **Allowlist**: Only configured services can be modified
-- **Draft PRs**: Changes go through code review
-- **Duplicate detection**: Won't create duplicate branches/PRs
-- **Safe insertion**: Won't insert code in file headers or invalid locations
-- **Audit logging**: All actions are logged for traceability
-- **Auto fallback**: If fix fails, automatically falls back to note mode
+- **Business intent:** the LLM can't know intended business rules. Review the diagnosis and the test, not just the diff.
+- **Single-file context:** the LLM sees the faulting file and one existing test, but not callers or related types.
+- **Runs on the host:** tests run on the host, not in a sandbox. Only enable Patchy for trusted repositories.

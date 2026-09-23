@@ -26,7 +26,7 @@ def build_graph():
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Patchy (🩹🤖) – minimal draft PR flow"
+        description="Patchy (🩹🤖) – verified LLM fix → draft PR"
     )
     parser.add_argument("--service", required=True)
     parser.add_argument("--error-type", dest="error_type", default="unknown")
@@ -43,15 +43,6 @@ def main() -> None:
         help="Logger name (e.g., com.example.myservice.controller.LicensePurchaseController)",
     )
     parser.add_argument("--hint", default="", help="Optional search hint (symbol/text)")
-    parser.add_argument(
-        "--mode",
-        default="auto",
-        choices=["auto", "llm", "fix", "note"],
-        help=(
-            "Mode: auto (try fix, fallback to note; tries LLM first if PATCHY_LLM_FIX=true), "
-            "llm (only verified LLM fix), fix (only template fix), note (only note)"
-        ),
-    )
     parser.add_argument("--draft", default="true")
     args = parser.parse_args()
 
@@ -64,7 +55,6 @@ def main() -> None:
         "stacktrace": args.stacktrace,
         "logger": args.logger,
         "hint": args.hint,
-        "mode": args.mode,
     }
 
     graph = build_graph()

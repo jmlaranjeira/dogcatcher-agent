@@ -9,7 +9,7 @@ from typing import Any, Dict, TypedDict
 from .utils.audit import append_audit
 from .utils.git_tools import RepoConfig, clone_repo, git_create_branch, git_commit_push
 from .utils.gh_api import create_pull_request, find_existing_pr, add_labels
-from .utils.llm_fix import attempt_llm_fix, llm_fix_enabled, worktree_diff
+from .utils.llm_fix import LLMFixResult, attempt_llm_fix, worktree_diff
 from agent.jira.client import (
     add_comment as jira_add_comment,
     is_configured as jira_is_configured,
@@ -26,7 +26,6 @@ class PatchyState(TypedDict, total=False):
     stacktrace: str
     logger: str
     hint: str
-    mode: str
 
     # Generated
     repo_dir: str
@@ -436,6 +435,34 @@ def _llm_fix_pr_section(llm_fix: Dict[str, Any], suite_ran: bool) -> list[str]:
     return lines
 
 
+def _no_fix(
+    state: Dict[str, Any],
+    branch: str,
+    message: str,
+    result: LLMFixResult | None = None,
+) -> Dict[str, Any]:
+    """Stop without a PR; leave the diagnosis on the Jira ticket instead."""
+    service = state.get("service")
+    jira = (state.get("jira") or "").strip()
+    append_audit(
+        {"service": service, "status": "no_fix", "branch": branch, "message": message}
+    )
+    if jira and jira_is_configured():
+        lines = [f"Patchy (🩹🤖) could not produce a verified fix: {message}"]
+        if state.get("fault_file"):
+            lines.append(f"Suspected file: {state['fault_file']}")
+        for h in (result.history if result else [])[-3:]:
+            entry = f"- Attempt {h.get('attempt')} failed at '{h.get('stage')}'"
+            if h.get("diagnosis"):
+                entry += f"; diagnosis: {h['diagnosis']}"
+            lines.append(entry)
+        try:
+            jira_add_comment(jira, "\n".join(lines))
+        except Exception:
+            pass
+    return {**state, "branch": branch, "message": message}
+
+
 def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     service = state.get("service")
     loghash = (state.get("loghash") or "").strip()
@@ -475,214 +502,54 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
             "message": "PR already exists",
         }
 
-    # Create branch and minimal change (restricted to allowed_paths if provided)
-    git_create_branch(repo_dir, branch)
-
-    # Decide target file: prefer fault_file if inside allowed_paths (or no restriction), else fallback
+    # Only a located fault file inside allowed_paths can be fixed
     fault_file = state.get("fault_file")
     allowed = state.get("allowed_paths") or []
-    chosen_rel: str
-    if fault_file and (
-        not allowed or any(str(fault_file).startswith(a) for a in allowed)
-    ):
-        chosen_rel = fault_file
-    else:
-        chosen_rel = (allowed or ["PATCHY_TOUCH.md"])[0]
-    touch_path = repo_dir / chosen_rel
-    touch_path.parent.mkdir(parents=True, exist_ok=True)
+    if not fault_file:
+        return _no_fix(state, branch, "Fault file could not be located")
+    if allowed and not any(str(fault_file).startswith(a) for a in allowed):
+        return _no_fix(state, branch, f"Fault file {fault_file} outside allowed_paths")
 
-    # Mode: "auto" (default) tries fix first, falls back to note
-    #       (tries a verified LLM fix first when PATCHY_LLM_FIX=true)
-    # Mode: "llm" only tries a verified LLM fix, fails if it can't
-    # Mode: "fix" only tries template fix, fails if can't apply
-    # Mode: "note" only adds note
-    mode = (state.get("mode") or "auto").strip().lower()
-    suffix = touch_path.suffix.lower()
-    fault_line = int(state.get("fault_line") or 0)
-    has_valid_fault_line = state.get("has_valid_fault_line", False)
-
-    # Build context for fix functions
-    fix_context = {
-        "jira": jira,
-        "error_type": error_type,
-        "service": service,
-    }
-
-    # Track if fix was applied (for auto mode fallback)
-    fix_applied = False
-    llm_fix: Dict[str, Any] | None = None
+    git_create_branch(repo_dir, branch)
 
     # Verified LLM fix: edit + reproducing test (red → green → suite)
-    if mode == "llm" or (mode == "auto" and llm_fix_enabled()):
-        llm_state = {
-            **state,
-            "fault_file": fault_file if chosen_rel == fault_file else None,
-        }
-        result = attempt_llm_fix(repo_dir, llm_state)
-        if result.success and result.proposal:
-            fix_applied = True
-            llm_fix = {
-                "diagnosis": result.proposal.diagnosis,
-                "summary": result.proposal.summary,
-                "confidence": result.proposal.confidence,
-                "test_path": result.proposal.test_path,
-                "files": sorted({e.file for e in result.proposal.edits}),
-                "attempts": result.attempts,
-                "diff": worktree_diff(repo_dir),
-            }
-            append_audit(
-                {
-                    "service": service,
-                    "status": "llm_fix_applied",
-                    "branch": branch,
-                    "attempts": result.attempts,
-                    "test_path": result.proposal.test_path,
-                    "confidence": result.proposal.confidence,
-                }
-            )
-        else:
-            append_audit(
-                {
-                    "service": service,
-                    "status": "llm_fix_failed",
-                    "branch": branch,
-                    "attempts": result.attempts,
-                    "message": result.message,
-                }
-            )
-            if mode == "llm":
-                return {
-                    **state,
-                    "branch": branch,
-                    "message": f"LLM fix failed: {result.message}",
-                }
-
-    # Try template fix if mode is "auto" or "fix"
-    if mode in ("auto", "fix") and not fix_applied:
-        try:
-            if suffix == ".java":
-                from .utils.fix_java import apply_java_fix  # type: ignore
-
-                result = apply_java_fix(
-                    touch_path, fault_line, error_type=error_type, context=fix_context
-                )
-                if result.changed:
-                    fix_applied = True
-                    append_audit(
-                        {
-                            "service": service,
-                            "status": "fix_applied",
-                            "branch": branch,
-                            "strategy": result.strategy,
-                            "lines_added": result.lines_added,
-                            "message": result.message,
-                        }
-                    )
-                else:
-                    append_audit(
-                        {
-                            "service": service,
-                            "status": "fix_skipped",
-                            "branch": branch,
-                            "strategy": result.strategy,
-                            "message": result.message,
-                        }
-                    )
-            elif suffix in (".py",) and has_valid_fault_line:
-                content = (
-                    touch_path.read_text(encoding="utf-8")
-                    if touch_path.exists()
-                    else ""
-                )
-                new_content = (
-                    "# Patchy: add None checks/guard clauses as needed\n" + content
-                )
-                touch_path.write_text(new_content, encoding="utf-8")
-                fix_applied = True
-            elif suffix in (".ts", ".tsx", ".js") and has_valid_fault_line:
-                content = (
-                    touch_path.read_text(encoding="utf-8")
-                    if touch_path.exists()
-                    else ""
-                )
-                new_content = (
-                    "// Patchy: add optional chaining/guard clauses as needed\n"
-                    + content
-                )
-                touch_path.write_text(new_content, encoding="utf-8")
-                fix_applied = True
-        except Exception as e:
-            append_audit(
-                {
-                    "service": service,
-                    "status": "fix_error",
-                    "branch": branch,
-                    "message": str(e),
-                }
-            )
-            # In auto mode, continue to note fallback; in fix mode, fail
-            if mode == "fix":
-                return {**state, "branch": branch, "message": f"Fix apply failed: {e}"}
-
-    # Apply note if: mode is "note", OR (mode is "auto" AND fix wasn't applied)
-    if mode == "note" or (mode == "auto" and not fix_applied):
-        # Build note content
-        note_lines = [
-            f"Service: {service}",
-            f"Error-Type: {error_type}",
-            f"Loghash: {loghash}",
-            f"Target: {chosen_rel}",
-        ]
-        if jira:
-            note_lines.append(f"Jira: {jira}")
-        if not fix_applied and mode == "auto":
-            note_lines.append(
-                "Note: Auto-fix could not be applied; manual review needed"
-            )
-
-        # Format note based on file type
-        if suffix in (".java", ".kt", ".scala", ".groovy"):
-            note_content = "/*\n * Patchy note\n"
-            for ln in note_lines:
-                note_content += f" * {ln}\n"
-            note_content += " */\n"
-        elif suffix in (".py",):
-            note_content = '"""\nPatchy note\n'
-            for ln in note_lines:
-                note_content += f"{ln}\n"
-            note_content += '"""\n'
-        elif suffix in (".ts", ".tsx", ".js", ".jsx", ".go", ".c", ".cpp", ".h"):
-            note_content = "/*\n * Patchy note\n"
-            for ln in note_lines:
-                note_content += f" * {ln}\n"
-            note_content += " */\n"
-        else:
-            note_content = "# Patchy note\n"
-            for ln in note_lines:
-                note_content += f"{ln}\n"
-
-        if touch_path.exists():
-            content = touch_path.read_text(encoding="utf-8")
-            touch_path.write_text(content + "\n" + note_content, encoding="utf-8")
-        else:
-            touch_path.write_text(note_content, encoding="utf-8")
-
+    result = attempt_llm_fix(repo_dir, state)
+    if not (result.success and result.proposal):
         append_audit(
             {
                 "service": service,
-                "status": "note_applied",
+                "status": "llm_fix_failed",
                 "branch": branch,
-                "mode": mode,
+                "attempts": result.attempts,
+                "message": result.message,
             }
         )
+        return _no_fix(state, branch, f"LLM fix failed: {result.message}", result)
+
+    llm_fix: Dict[str, Any] = {
+        "diagnosis": result.proposal.diagnosis,
+        "summary": result.proposal.summary,
+        "confidence": result.proposal.confidence,
+        "test_path": result.proposal.test_path,
+        "files": sorted({e.file for e in result.proposal.edits}),
+        "attempts": result.attempts,
+        "diff": worktree_diff(repo_dir),
+    }
+    append_audit(
+        {
+            "service": service,
+            "status": "llm_fix_applied",
+            "branch": branch,
+            "attempts": result.attempts,
+            "test_path": result.proposal.test_path,
+            "confidence": result.proposal.confidence,
+        }
+    )
 
     title = _pr_title(hint, error_type)
     commit_msg = title
-    # Optional lint/tests
+    # Optional lint (tests already passed during LLM fix verification)
     lint_cmd = (state.get("lint_cmd") or "").strip()
-    test_cmd = (state.get("test_cmd") or "").strip()
-    if llm_fix:
-        test_cmd = ""  # full suite already passed during LLM fix verification
     if lint_cmd:
         try:
             import subprocess
@@ -700,24 +567,6 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
                 }
             )
             return {**state, "branch": branch, "message": f"Lint failed: {e}"}
-    if test_cmd:
-        try:
-            import subprocess
-
-            subprocess.run(
-                test_cmd, cwd=str(repo_dir), shell=True, check=True
-            )  # nosec B602
-        except Exception as e:
-            append_audit(
-                {
-                    "service": service,
-                    "status": "tests_failed",
-                    "branch": branch,
-                    "message": str(e),
-                }
-            )
-            return {**state, "branch": branch, "message": f"Tests failed: {e}"}
-
     try:
         git_commit_push(repo_dir, commit_msg)
     except Exception as e:
@@ -733,10 +582,6 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Build descriptive PR body template
     pr_lines = []
-    pr_lines.append(
-        "This update introduces an automated fix to improve reliability and maintainability:"
-    )
-    pr_lines.append("")
     pr_lines.append("1. **Change overview**")
     pr_lines.append(f"   - Service: `{service}`")
     pr_lines.append(f"   - Error type: `{error_type}`")
@@ -745,20 +590,7 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
     if state.get("fault_file"):
         pr_lines.append(f"   - Target file: `{state.get('fault_file')}`")
     pr_lines.append("")
-    if llm_fix:
-        pr_lines.extend(_llm_fix_pr_section(llm_fix, bool(state.get("test_cmd"))))
-    else:
-        pr_lines.append("2. **Reasoning**")
-        pr_lines.append(
-            "   - Small, low-risk change generated by Patchy (🩹🤖) to address the detected issue."
-        )
-        pr_lines.append(
-            "   - Guardrails: allow-list, per-run cap, duplicate branch check, and pre-push lint/tests."
-        )
-    pr_lines.append("")
-    pr_lines.append(
-        "These improvements aim to keep the system stable and provide safer, incremental fixes."
-    )
+    pr_lines.extend(_llm_fix_pr_section(llm_fix, bool(state.get("test_cmd"))))
     pr_lines.append("")
     if jira:
         from agent.jira.client import get_jira_domain
@@ -775,12 +607,12 @@ def create_pr(state: Dict[str, Any]) -> Dict[str, Any]:
         number = int(pr.get("number", 0) or 0)
         # Label PR
         try:
-            labels = ["auto-fix", "patchy"]
-            if llm_fix:
-                labels += ["llm-fix", "verified-by-test"]
-            else:
-                labels.append("low-risk")
-            add_labels(owner, repo, number, labels)
+            add_labels(
+                owner,
+                repo,
+                number,
+                ["auto-fix", "patchy", "llm-fix", "verified-by-test"],
+            )
         except Exception:
             pass
         # Comment on Jira if configured and key provided

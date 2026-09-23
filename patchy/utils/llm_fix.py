@@ -79,10 +79,6 @@ class ProposalError(ValueError):
 # ── Configuration helpers ────────────────────────────────────────
 
 
-def llm_fix_enabled() -> bool:
-    return os.getenv("PATCHY_LLM_FIX", "").strip().lower() in ("1", "true", "yes")
-
-
 def _int_env(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)) or default)
@@ -547,6 +543,7 @@ def attempt_llm_fix(
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _user_prompt(ctx, feedback)},
         ]
+        proposal: Optional[Proposal] = None
         try:
             proposal = parse_proposal(_extract_json(llm(messages)))
             validate_proposal(proposal, repo_dir, allowed)
@@ -574,7 +571,13 @@ def attempt_llm_fix(
                 ok, stage, msg = False, "verify", f"verification crashed: {e}"
 
         history.append(
-            {"attempt": attempt, "stage": stage, "ok": ok, "message": msg[:500]}
+            {
+                "attempt": attempt,
+                "stage": stage,
+                "ok": ok,
+                "message": msg[:500],
+                "diagnosis": proposal.diagnosis if proposal else "",
+            }
         )
         append_audit(
             {
