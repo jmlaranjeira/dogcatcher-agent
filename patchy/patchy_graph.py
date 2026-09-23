@@ -46,8 +46,11 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         default="auto",
-        choices=["auto", "fix", "note"],
-        help="Mode: auto (try fix, fallback to note), fix (only fix), note (only note)",
+        choices=["auto", "llm", "fix", "note"],
+        help=(
+            "Mode: auto (try fix, fallback to note; tries LLM first if PATCHY_LLM_FIX=true), "
+            "llm (only verified LLM fix), fix (only template fix), note (only note)"
+        ),
     )
     parser.add_argument("--draft", default="true")
     args = parser.parse_args()

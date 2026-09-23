@@ -5,6 +5,7 @@
     "default_branch": "develop",
     "allowed_paths": ["src/main/java/"],
     "lint_cmd": "",
-    "test_cmd": ""
+    "test_cmd": "",
+    "test_single_cmd": "./mvnw -q -B test -Dtest={test_class} -Dsurefire.failIfNoSpecifiedTests=false"
   }
 }
