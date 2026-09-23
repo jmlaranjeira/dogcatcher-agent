@@ -87,6 +87,24 @@ def _initialize_circuit_breaker():
     _circuit_breaker_initialized = True
 
 
+def _extract_text(content) -> str:
+    """Normalize a LangChain message's `.content` to a plain string.
+
+    Extended-thinking models (e.g. Claude Sonnet 5 via Bedrock Converse)
+    return `content` as a list of blocks (reasoning_content, text, ...)
+    instead of a plain string. Only the text block(s) matter here.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return str(content)
+
+
 async def _call_llm_with_circuit_breaker(contextual_log: str) -> str:
     """Call LLM with circuit breaker protection."""
     config = get_config()
@@ -96,7 +114,7 @@ async def _call_llm_with_circuit_breaker(contextual_log: str) -> str:
     if not config.circuit_breaker_enabled:
         # Circuit breaker disabled, call LLM directly
         response = chain.invoke({"log_message": contextual_log})
-        return response.content
+        return _extract_text(response.content)
 
     # Get circuit breaker from registry
     registry = get_circuit_breaker_registry()
@@ -111,7 +129,7 @@ async def _call_llm_with_circuit_breaker(contextual_log: str) -> str:
     # Call LLM through circuit breaker
     async def _invoke_chain():
         response = chain.invoke({"log_message": contextual_log})
-        return response.content
+        return _extract_text(response.content)
 
     return await breaker.call(_invoke_chain)
 

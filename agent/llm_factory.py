@@ -43,27 +43,27 @@ def get_langchain_llm():
             "BEDROCK_MODEL_ID",
             "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         )
-        temperature = float(os.getenv("BEDROCK_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 
         # Create a fresh boto3 session per call.  The default session is
         # cached at module level and its internal asyncio.Lock gets bound
         # to the event loop that first used it, causing "bound to a
         # different event loop" errors in async workers.
-        # Both `client` (runtime) and `bedrock_client` (control plane)
-        # must be provided to prevent ChatBedrockConverse from falling
-        # back to the default session for either one.
         session = boto3.Session(region_name=region)
 
+        kwargs: Dict[str, Any] = {
+            "model": model_id,
+            "region_name": region,
+            "max_tokens": max_tokens,
+            "client": session.client("bedrock-runtime"),
+        }
+        # Some newer models (e.g. Claude Sonnet 5) reject `temperature`
+        # via the Converse API entirely, so only send it when overridden.
+        if "BEDROCK_TEMPERATURE" in os.environ:
+            kwargs["temperature"] = float(os.environ["BEDROCK_TEMPERATURE"])
+
         log_info("Using Bedrock LLM", model_id=model_id, region=region)
-        return ChatBedrockConverse(
-            model=model_id,
-            region_name=region,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            client=session.client("bedrock-runtime"),
-            bedrock_client=session.client("bedrock"),
-        )
+        return ChatBedrockConverse(**kwargs)
 
     # Default: OpenAI
     from langchain_openai import ChatOpenAI
