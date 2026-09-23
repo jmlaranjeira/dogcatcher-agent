@@ -17,6 +17,7 @@ class GraphState(TypedDict, total=False):
     seen_logs: Set[str]
     finished: bool
     skipped_duplicate: bool
+    skipped_cap: bool
 
     # Produced by analyze_log → consumed by create_ticket
     create_ticket: bool

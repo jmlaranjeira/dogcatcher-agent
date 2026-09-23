@@ -20,6 +20,8 @@ from langgraph.graph import END, StateGraph
 from agent.nodes import analyze_log, fetch_logs
 from agent.jira.utils import normalize_log_message
 from agent.nodes import create_ticket as create_jira_ticket
+from agent.nodes.ticket import _append_audit, _is_cap_reached
+from agent.run_config import get_run_config
 from agent.dedup import DuplicateDetector
 from agent.dedup.strategies import InMemorySeenLogs
 
@@ -59,6 +61,26 @@ def analyze_log_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
             strategy=dedup_result.strategy_name,
         )
         return {**state, "skipped_duplicate": True, "create_ticket": False}
+
+    # Once the per-run ticket cap is reached, skip the LLM call entirely —
+    # it can no longer result in a created ticket this run. Record a
+    # lightweight audit entry (no LLM classification) so the skipped error
+    # is still visible, and it will be re-evaluated on the next run.
+    if _is_cap_reached(state):
+        from agent.jira.utils import compute_fingerprint
+
+        fingerprint = compute_fingerprint("unknown", raw_msg)
+        _append_audit(
+            decision="cap-reached-skipped",
+            state={**state, "log_data": log, "error_type": None, "severity": None},
+            fingerprint=fingerprint,
+            occ=1,
+            jira_key=None,
+            duplicate=False,
+            create=False,
+            message="Ticket creation limit reached for this run; log skipped without LLM analysis",
+        )
+        return {**state, "skipped_cap": True, "create_ticket": False}
 
     # Mark as seen for future iterations
     norm_msg = normalize_log_message(raw_msg)
