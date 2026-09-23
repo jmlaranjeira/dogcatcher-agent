@@ -129,7 +129,7 @@ def _create_or_simulate(
     if rc.auto_create_ticket:
         log_info(
             "Creating ticket",
-            project=get_jira_project_key(),
+            project=rc.jira_project_key,
             summary=payload["fields"]["summary"],
         )
         resp = jira_create_issue(payload)
@@ -210,7 +210,7 @@ def create_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
         priority_name = _priority_name(state.get("severity"))
         payload = {
             "fields": {
-                "project": {"key": get_jira_project_key()},
+                "project": {"key": rc.jira_project_key},
                 "summary": clean_title,
                 "description": markdown_to_adf(
                     sanitize_for_jira(state.get("ticket_description") or "")
